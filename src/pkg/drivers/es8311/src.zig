@@ -18,10 +18,13 @@
 //!   try codec.setMicGain(.@"24dB");
 
 const std = @import("std");
-const i2c = @import("../../../hal/i2c.zig");
+const i2c = @import("hal").i2c;
 
-/// ES8311 I2C address (7-bit)
-pub const DEFAULT_ADDRESS: u7 = 0x18;
+/// ES8311 I2C address (7-bit, depends on AD0 pin)
+pub const Address = enum(u7) {
+    ad0_low = 0x18,
+    ad0_high = 0x19,
+};
 
 /// ES8311 register addresses
 pub const Register = enum(u8) {
@@ -286,8 +289,8 @@ const clock_coeffs = [_]ClockCoeff{
 
 /// Configuration for ES8311
 pub const Config = struct {
-    /// I2C address (default 0x18)
-    address: u7 = DEFAULT_ADDRESS,
+    /// I2C address (depends on AD0 pin wiring)
+    address: u7,
     /// Work as I2S master or slave
     master_mode: bool = false,
     /// Use external MCLK
