@@ -5,7 +5,7 @@
 
 const std = @import("std");
 const c = @cImport({
-    @cInclude("opus/opus.h");
+    @cInclude("opus.h");
 });
 
 pub const Error = error{
