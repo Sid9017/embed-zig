@@ -1,6 +1,6 @@
 # 4G Cellular Module Plan
 
-> Status: DISCUSSING | Last updated: 2026-03-12 Round 19
+> Status: DISCUSSING — Q10 blocked on main branch IO/lwIP refactoring | Last updated: 2026-03-12 Round 23
 
 ---
 
@@ -25,6 +25,9 @@ Reference: `x/c/esp/components/quectel` (C, ESP-IDF).
 | R14 | modem.zig belongs in pkg, not hal |
 | R15 | Package named `cellular`, core type named `Modem` |
 | R16 | Modem accepts generic Io, not UART. Supports UART/USB/SPI via Io abstraction |
+| R21 | Io.pollFn required (not optional). read() non-blocking (WouldBlock). CMUX pump driven by independent thread. Time/Thread/Notify via comptime generics (aligned with existing pkg style). Io remains type-erased (runtime swap) |
+| R22 | PowerControl is optional callbacks (enable/disable/reset) in InitConfig, not comptime generic. pkg/cellular defines interface only, platforms implement GPIO ops. Aligned with C code pattern |
+| R23 | Q10 (PPP/lwIP) deferred — main branch will refactor unified Io poll + add pkg/lwip userspace netstack + netlink abstraction. WiFi HAL also has no lwIP integration (same pattern). Cellular aligns: provide pppIo()/netlink, lwIP handled externally |
 
 ---
 
@@ -126,8 +129,8 @@ Modem auto-detects mode based on what is provided:
 |  Windows: COM3 -> at_io, COM4 -> data_io                   |
 |  Test:    MockIo (ring buffer)                             |
 +-----------------------------------------------------------+
-|  lwIP PPP (external)                                       |
-|  Consumes modem.pppIo() for PPP framing                   |
+|  lwIP PPP (external — 待 main 重构后由 pkg/lwip 提供)        |
+|  Consumes modem.pppIo() via netlink abstraction            |
 +-----------------------------------------------------------+
 ```
 
@@ -255,18 +258,39 @@ ModemConfig = struct {
 
 ### 5.2 io.zig
 
-Type-erased read/write interface. The universal transport abstraction.
+Type-erased read/write/poll interface. The universal transport abstraction.
+
+`read()` is **non-blocking**: returns `WouldBlock` when no data is available.
+Callers use `poll(timeout_ms)` to efficiently wait for data before reading.
+
+`pollFn` is **required** for all Io implementations. Each implementation provides
+its most efficient wait mechanism behind the same interface:
+
+| Io type | pollFn implementation |
+|---------|----------------------|
+| UART (ESP32/Beken) | Hardware interrupt + RTOS semaphore |
+| USB serial (Linux/Mac) | POSIX `poll()` syscall |
+| CMUX virtual channel | `Notify.timedWait()` (signaled by pump thread) |
+| MockIo (test) | Check ring buffer length, return immediately |
 
 ```zig
 pub const IoError = error{ WouldBlock, Timeout, Closed, IoError };
+
+pub const PollFlags = packed struct {
+    readable: bool = false,
+    writable: bool = false,
+    _padding: u6 = 0,
+};
 
 pub const Io = struct {
     ctx: *anyopaque,
     readFn: *const fn (*anyopaque, []u8) IoError!usize,
     writeFn: *const fn (*anyopaque, []const u8) IoError!usize,
+    pollFn: *const fn (*anyopaque, i32) PollFlags,
 
     pub fn read(self: Io, buf: []u8) IoError!usize;
     pub fn write(self: Io, buf: []const u8) IoError!usize;
+    pub fn poll(self: Io, timeout_ms: i32) PollFlags;
 };
 
 -- Helpers to wrap HAL types into Io
@@ -299,6 +323,9 @@ pub fn rssiToPercent(dbm: i8) u8;
 
 AT command engine. Reads/writes through Io. Transport-agnostic.
 
+Time is injected via comptime generic (aligned with existing pkg style: button, timer, audio, etc.).
+Test code passes `FakeTime`, ESP32 passes real `Time`.
+
 ```zig
 pub const AtStatus = enum { ok, error, cme_error, cms_error, timeout };
 
@@ -317,24 +344,32 @@ pub const UrcHandler = struct {
     callback: *const fn (?*anyopaque, []const u8) void,
 };
 
-pub const AtEngine = struct {
-    io: Io,
-    rx_buf: [1024]u8,
-    rx_pos: usize,
-    urc_handlers: [16]?UrcHandler,
+pub fn AtEngine(comptime Time: type) type {
+    return struct {
+        const Self = @This();
+        io: Io,
+        time: Time,
+        rx_buf: [1024]u8,
+        rx_pos: usize,
+        urc_handlers: [16]?UrcHandler,
 
-    pub fn init(io: Io) AtEngine;
-    pub fn setIo(self: *AtEngine, io: Io) void;
-    pub fn send(self: *AtEngine, cmd: []const u8, timeout_ms: u32) AtResponse;
-    pub fn registerUrc(self: *AtEngine, prefix: []const u8, handler: UrcHandler) bool;
-    pub fn unregisterUrc(self: *AtEngine, prefix: []const u8) void;
-    pub fn pumpUrcs(self: *AtEngine) void;
-};
+        pub fn init(io: Io, time: Time) Self;
+        pub fn setIo(self: *Self, io: Io) void;
+        pub fn send(self: *Self, cmd: []const u8, timeout_ms: u32) AtResponse;
+        pub fn registerUrc(self: *Self, prefix: []const u8, handler: UrcHandler) bool;
+        pub fn unregisterUrc(self: *Self, prefix: []const u8) void;
+        pub fn pumpUrcs(self: *Self) void;
+    };
+}
 ```
 
 ### 5.5 cmux.zig
 
 GSM 07.10 CMUX framing. Only used internally by Modem in single-channel mode.
+
+Pump runs in an independent thread (Thread comptime param).
+Each virtual channel has a Notify for signaling data arrival to waiters.
+The channelIo() returns Io whose pollFn wraps Notify.timedWait().
 
 ```zig
 pub const Frame = struct {
@@ -343,17 +378,22 @@ pub const Frame = struct {
     data: []const u8,
 };
 
-pub fn Cmux(comptime max_channels: u8) type {
+pub fn Cmux(comptime Thread: type, comptime Notify: type, comptime max_channels: u8) type {
     return struct {
+        const Self = @This();
         io: Io,                                -- underlying single-channel transport
         channels: [max_channels]ChannelBuf,
+        notifiers: [max_channels]Notify,       -- per-channel data arrival notification
         active: bool,
+        pump_thread: ?Thread,
 
-        pub fn init(io: Io) @This();
-        pub fn open(dlcis: []const u8) !void;
-        pub fn close(self: *@This()) void;
-        pub fn channelIo(self: *@This(), dlci: u8) ?Io;
-        pub fn pump(self: *@This()) void;
+        pub fn init(io: Io) Self;
+        pub fn open(self: *Self, dlcis: []const u8) !void;  -- SABM/UA only, caller sends AT+CMUX=0 before calling
+        pub fn close(self: *Self) void;
+        pub fn channelIo(self: *Self, dlci: u8) ?Io;  -- pollFn wraps Notify.timedWait
+        pub fn startPump(self: *Self) !void;            -- spawn pump thread
+        pub fn stopPump(self: *Self) void;
+        pub fn pump(self: *Self) void;                  -- single pump iteration (called by thread)
 
         pub fn encodeFrame(frame: Frame, out: []u8) usize;
         pub fn decodeFrame(data: []const u8) ?Frame;
@@ -366,75 +406,92 @@ pub fn Cmux(comptime max_channels: u8) type {
 
 The core abstraction. Owns transport, CMUX, AT engine, flux store.
 
+Comptime generics for platform deps (aligned with existing pkg style).
+Io remains type-erased (runtime CMUX swap requirement).
+
 ```zig
-pub const InitConfig = struct {
-    -- Single-channel mode: provide io only. CMUX used internally.
-    io: ?Io = null,
+pub fn Modem(comptime Thread: type, comptime Notify: type, comptime Time: type) type {
+    const At = AtEngine(Time);
+    const CmuxType = Cmux(Thread, Notify, 4);
 
-    -- Multi-channel mode: provide both. CMUX skipped.
-    at_io: ?Io = null,
-    data_io: ?Io = null,
+    return struct {
+        const Self = @This();
 
-    -- Modem settings
-    config: ModemConfig = .{},
-};
+        pub const PowerControl = struct {
+            enable: ?*const fn () anyerror!void = null,   -- power on / enable supply
+            disable: ?*const fn () void = null,            -- power off / cut supply
+            reset: ?*const fn () anyerror!void = null,     -- hardware reset pulse
+        };
 
-pub const Modem = struct {
-    mode: enum { single_channel, multi_channel },
-    raw_io: ?Io,                   -- original single-channel Io (for CMUX)
-    cmux: ?Cmux(4),                -- only in single-channel mode
-    at_engine: AtEngine,
-    data_io: ?Io,                  -- PPP data channel (CMUX ch or direct)
-    store: Store(ModemState, ModemEvent),
-    config: ModemConfig,
+        pub const InitConfig = struct {
+            -- Single-channel mode: provide io only. CMUX used internally.
+            io: ?Io = null,
 
-    pub fn init(cfg: InitConfig) Modem;
-    pub fn deinit(self: *Modem) void;
+            -- Multi-channel mode: provide both. CMUX skipped.
+            at_io: ?Io = null,
+            data_io: ?Io = null,
 
-    -- Flux store
-    pub fn dispatch(self: *Modem, event: ModemEvent) void;
-    pub fn getState(self: *const Modem) *const ModemState;
-    pub fn getPrev(self: *const Modem) *const ModemState;
-    pub fn isDirty(self: *const Modem) bool;
-    pub fn commitFrame(self: *Modem) void;
+            -- Time source
+            time: Time,
 
-    -- AT channel
-    pub fn at(self: *Modem) *AtEngine;
+            -- Power control (optional, all null = no hardware control)
+            power: PowerControl = .{},
 
-    -- PPP data IO (for lwIP)
-    pub fn pppIo(self: *Modem) ?Io;
-        Returns:
-        - multi-channel: data_io (always available after init)
-        - single-channel: CMUX data channel Io (available after enterCmux)
-        - null if data channel not yet established
+            -- Modem settings
+            config: ModemConfig = .{},
+        };
 
-    -- CMUX lifecycle (single-channel mode only)
-    pub fn enterCmux(self: *Modem) !void;
-        Single-channel: sends AT+CMUX=0, opens DLCIs, swaps AT engine Io.
-        Multi-channel: no-op (already separated).
+        mode: enum { single_channel, multi_channel },
+        raw_io: ?Io,                   -- original single-channel Io (for CMUX)
+        cmux: ?CmuxType,               -- only in single-channel mode
+        at_engine: At,
+        data_io: ?Io,                  -- PPP data channel (CMUX ch or direct)
+        store: Store(ModemState, ModemEvent),
+        config: ModemConfig,
 
-    pub fn exitCmux(self: *Modem) void;
-        Single-channel: sends DISC, restores AT engine Io to raw transport.
-        Multi-channel: no-op.
+        pub fn init(cfg: InitConfig) Self;
+        pub fn deinit(self: *Self) void;
 
-    pub fn isCmuxActive(self: *const Modem) bool;
+        -- Flux store
+        pub fn dispatch(self: *Self, event: ModemEvent) void;
+        pub fn getState(self: *const Self) *const ModemState;
+        pub fn getPrev(self: *const Self) *const ModemState;
+        pub fn isDirty(self: *const Self) bool;
+        pub fn commitFrame(self: *Self) void;
 
-    -- Data mode
-    pub fn enterDataMode(self: *Modem) !void;
-        Sends ATD*99#, waits for CONNECT.
-        After this, pppIo() returns the data stream.
+        -- AT channel
+        pub fn at(self: *Self) *At;
 
-    pub fn exitDataMode(self: *Modem) void;
-        Sends +++ or ATH to exit data mode.
+        -- PPP data IO (for lwIP)
+        pub fn pppIo(self: *Self) ?Io;
+            Returns:
+            - multi-channel: data_io (always available after init)
+            - single-channel: CMUX data channel Io (available after enterCmux)
+            - null if data channel not yet established
 
-    -- Pump (must be called periodically)
-    pub fn pump(self: *Modem) void;
-        Single-channel + CMUX active: demuxes incoming bytes to channels.
-        Multi-channel: no-op (channels are independent).
+        -- CMUX lifecycle (single-channel mode only)
+        pub fn enterCmux(self: *Self) !void;
+            Single-channel: sends AT+CMUX=0, opens DLCIs, starts pump thread, swaps AT engine Io.
+            Multi-channel: no-op (already separated).
 
-    -- Reducer (internal, pure logic)
-    fn reduce(state: *ModemState, event: ModemEvent) void;
-};
+        pub fn exitCmux(self: *Self) void;
+            Single-channel: stops pump thread, sends DISC, restores AT engine Io to raw transport.
+            Multi-channel: no-op.
+
+        pub fn isCmuxActive(self: *const Self) bool;
+
+        -- Data mode
+        pub fn enterDataMode(self: *Self) !void;
+            Sends ATD*99#, waits for CONNECT.
+            After this, pppIo() returns the data stream.
+
+        pub fn exitDataMode(self: *Self) void;
+            Sends +++ or ATH to exit data mode.
+
+        -- Reducer (internal, pure logic)
+        fn reduce(state: *ModemState, event: ModemEvent) void;
+    };
+}
 ```
 
 ### 5.7 sim.zig
@@ -558,22 +615,26 @@ fn reduce(state: *ModemState, event: ModemEvent) void {
 ### 7.1 ESP32 (UART, single-channel)
 
 ```
+const CellModem = Modem(EspThread, EspNotify, EspTime);
+
 const uart_io = io.fromUart(UartDriver, &uart_driver);
-var modem = Modem.init(.{ .io = uart_io });
+var modem = CellModem.init(.{ .io = uart_io, .time = board.time });
 
 -- Single Io provided -> Modem uses CMUX internally
--- modem.enterCmux() splits into AT + PPP channels
+-- modem.enterCmux() splits into AT + PPP channels, starts pump thread
 -- modem.pppIo() returns CMUX data channel for lwIP
 ```
 
 ### 7.2 Linux (USB, multi-channel)
 
 ```
+const CellModem = Modem(StdThread, StdNotify, StdTime);
+
 const at_io = linux_serial.open("/dev/ttyUSB1");   -- AT port
 const data_io = linux_serial.open("/dev/ttyUSB0"); -- data port
-var modem = Modem.init(.{ .at_io = at_io, .data_io = data_io });
+var modem = CellModem.init(.{ .at_io = at_io, .data_io = data_io, .time = StdTime{} });
 
--- Two Io provided -> no CMUX needed
+-- Two Io provided -> no CMUX needed, no pump thread
 -- modem.at() uses at_io directly
 -- modem.pppIo() returns data_io directly
 -- modem.enterCmux() is a no-op
@@ -582,13 +643,16 @@ var modem = Modem.init(.{ .at_io = at_io, .data_io = data_io });
 ### 7.3 Test (mock)
 
 ```
+const TestModem = Modem(StdThread, StdNotify, FakeTime);
+
+var fake_time = FakeTime{ .ms = 0 };
 var mock_at = MockIo.init();
 var mock_data = MockIo.init();
-var modem = Modem.init(.{ .at_io = mock_at.io(), .data_io = mock_data.io() });
+var modem = TestModem.init(.{ .at_io = mock_at.io(), .data_io = mock_data.io(), .time = &fake_time });
 
 -- Or test single-channel mode:
 var mock_uart = MockIo.init();
-var modem = Modem.init(.{ .io = mock_uart.io() });
+var modem = TestModem.init(.{ .io = mock_uart.io(), .time = &fake_time });
 ```
 
 ---
@@ -1775,6 +1839,67 @@ Phase 2 在 Phase 1 全部完成并验证后再开始。
 4. Mac/Linux 可通过 USB 接真机进行 zig test 集成测试
 5. 在 3.1 节补充了 Io 抽象策略说明、USB 端口映射表、真机测试支持说明
 
+### R22 (2026-03-12)
+
+**Topic:** Q7 电源管理 + Q8 close/flush + Q9 CMUX 职责
+
+**Q7 — 电源管理接口：**
+1. 审查了 C 代码 `quectel_task.c` 的电源控制实现：使用 `enable_modem`/`disable_modem` 可选回调
+2. 发现现有硬件使用 auto-start 模式（GPIO 使能供电，模组自动启动），不需要 PWRKEY 脉冲
+3. 错误恢复（ERROR state）不做硬件复位，只重走状态机
+4. 调研了各厂家（Quectel/SIMCom/u-blox/Fibocom）的开机方式，均为 PWRKEY 脉冲但时长不同，且都支持 auto-start
+5. 决定：PowerControl 作为可选回调放在 InitConfig 中（enable/disable/reset 三个函数指针，均可为 null）
+6. pkg/cellular 只定义接口不实现，各平台根据硬件提供具体 GPIO 操作
+
+**Q8 — close/flush：**
+1. close：Io 不负责资源释放，调用方管理生命周期（与 C 代码一致）
+2. flush：所有模式切换都有 AT command-response 天然同步点，不需要显式 flush
+3. Io 保持 read/write/poll 三个操作
+
+**Q9 — CMUX open() 职责：**
+1. AT+CMUX=0 是 AT 层的事（AtEngine 发送），SABM/UA 是 CMUX 帧层的事（Cmux.open() 处理）
+2. Modem.enterCmux() 是编排者：AtEngine.send("AT+CMUX=0") → Cmux.open() → startPump → setIo
+3. Cmux.open() 的 doc comment 需明确标注"caller must send AT+CMUX=0 before calling"
+4. 详细的 enterCmux/exitCmux 五步流程写入实施规格
+
+### R23 (2026-03-12)
+
+**Topic:** Q10 — PPP/lwIP 集成分析 + 暂缓决定
+
+1. 分析了 C 代码的 PPP 实现：完全依赖 ESP-IDF `esp_modem`，`quectel_cmux_enter_ppp()` → `esp_modem_set_mode(CMUX_MANUAL_DATA)` 一行搞定 ATD*99# 到 PPP 协商全流程
+2. 审查了现有 Zig 代码的 WiFi/网络分层：
+   - `hal/wifi.zig`：纯硬件驱动，不涉及 IP/lwIP
+   - `runtime/netif.zig`：通用网络接口查询（只读），不负责创建网卡
+   - `runtime/std/netif.zig`：只提供 loopback 接口
+   - 结论：**WiFi 也没有 lwIP 集成**，IP 层由平台胶水（ESP-IDF esp_netif）处理
+3. 确认 cellular 应对齐 WiFi 的模式：pkg/cellular 提供到 pppIo()，PPP/lwIP 由外部处理
+4. 用户通知：main 分支即将进行重大 IO 重构：
+   - 统一 uart/ble/hci/wifi/modem 的 IO + poll 机制
+   - 新增 `pkg/lwip` — lwIP 的 Zig 绑定，用户态网络栈
+   - 新增 netlink 抽象 — WiFi 和 modem 作为数据链路层
+5. 重构将改变：Io 接口定义、PPP/lwIP 集成方式、数据流架构
+6. 决定：Q10 暂缓，等 main 重构完成后再对齐。当前可先推进 AT 引擎、CMUX、状态机、PowerControl 等不受影响的部分
+
+### R21 (2026-03-12)
+
+**Topic:** Q6 — Io poll/超时语义完整解决 + 风格对齐
+
+1. 分析了 poll 的本质：高效等待数据就绪，避免忙等（对比 POSIX select/poll/epoll 三代演进）
+2. 确认 Io 可以用 type-erased 方式统一暴露 poll 能力，各平台提供最高效实现
+3. 分析了 CMUX 下的两层 timeout：物理层 poll timeout（pump 节拍 ~10ms）vs 业务层 AT 命令 timeout（~5000ms）
+4. 确认 CMUX 虚拟通道不需要物理层 poll，但 USB 直连模式必须有 pollFn
+5. 分解为 4 个子问题按依赖顺序推导：Q6-d → Q6-c → Q6-a → Q6-b
+6. Q6-d：pump 由独立线程驱动（利用已有 runtime/thread.zig + runtime/sync.zig）
+7. Q6-c：CMUX 虚拟通道的 pollFn 用 Notify.timedWait 包装 → AtEngine 统一用 poll+read 循环
+8. 关键修正：pollFn 从"可选"改为"必须"，因为 Notify 包装使得所有 Io 都能提供 poll 语义
+9. Q6-a：read() 约定非阻塞（WouldBlock），与 HAL uart.zig 行为一致
+10. Q6-b：Time 通过 comptime 类型参数注入（非裸函数指针），各平台提供毫秒时间源
+11. 风格对齐：审查现有 pkg 模块（button/timer/motion/audio/ble），发现平台依赖统一用
+    comptime 类型参数注入（Thread/Time/Notify/Mutex）。将 cellular 的 AtEngine/Cmux/Modem
+    对齐到此模式。Io 保持 type-erased（运行时 CMUX 切换的合理例外）
+12. 更新了 io.zig（加 PollFlags + pollFn）、at.zig（comptime Time）、
+    cmux.zig（comptime Thread + Notify）、modem.zig（comptime Thread + Notify + Time）接口规格
+
 ### R17 (2026-03-12)
 
 **Topic:** Full architecture review after R16 transport abstraction.
@@ -1838,11 +1963,324 @@ Phase 2 在 Phase 1 全部完成并验证后再开始。
 
 **关键遗漏（阻塞开发）：**
 
-- [ ] Q6: Io 接口缺少 poll/非阻塞语义定义。当前 Io 只有 read/write，但 HAL uart.zig 有 poll(flags, timeout_ms)。AtEngine.send(timeout_ms) 的超时如何实现？Io.read() 是阻塞还是非阻塞？如果非阻塞（WouldBlock），AT 引擎需要时间源做轮询；如果阻塞，timeout_ms 参数就是摆设。
-- [ ] Q7: 缺少电源管理接口。几乎所有 Quectel 模组需要 POWER_KEY 脉冲开机、RESET 引脚复位。Modem 没有 powerOn()/powerOff()/reset()。状态机有 power_on 事件但无对应硬件操作。error_recovery 时如何硬件复位？建议增加 PowerControl 回调接口。
-- [ ] Q8: Io 接口缺少 close/flush。USB 串口需要 close fd；UART 切换 CMUX 前可能需要 flush 等待发送完成。
-- [ ] Q9: CMUX open() 职责矛盾。文档说 open() 负责"发送 AT+CMUX=0 + SABM/UA 握手"，但 Cmux 只持有 Io 不持有 AtEngine。AT+CMUX=0 应由谁发送？Step 9 烧录验证流程暗示由 Modem.enterCmux() 通过 AtEngine 发送，但 cmux.zig 接口定义暗示由 Cmux.open() 自己发送。需要明确。
-- [ ] Q10: PPP/lwIP 集成接口完全缺失。从 enterDataMode(ATD*99#) 到 lwIP 接管之间：拨号前需要 AT+CGDCONT 设置 APN；CONNECT 后字节流是 PPP LCP 帧；lwIP pppos_create 需要 output_cb 如何与 pppIo() 对接？这是 Phase 1 联网的核心路径。
+- [x] Q6: Io poll/超时语义。**已解决（R21）**。详见下方实施规格。
+- [x] Q7: 电源管理接口。**已解决（R22）**。详见下方实施规格。
+- [x] Q8: Io close/flush。**已解决（R22）**。详见下方实施规格。
+- [x] Q9: CMUX open() 职责。**已解决（R22）**。详见下方实施规格。
+
+#### Q6 实施规格：Io poll/超时语义
+
+**涉及文件：** `io.zig`, `at.zig`, `cmux.zig`, `modem.zig`
+
+**1) io.zig — Io 接口增加 pollFn（必须字段）**
+
+```zig
+pub const PollFlags = packed struct {
+    readable: bool = false,
+    writable: bool = false,
+    _padding: u6 = 0,
+};
+
+pub const Io = struct {
+    ctx: *anyopaque,
+    readFn:  *const fn (*anyopaque, []u8) IoError!usize,
+    writeFn: *const fn (*anyopaque, []const u8) IoError!usize,
+    pollFn:  *const fn (*anyopaque, i32) PollFlags,     -- 必须提供
+
+    pub fn read(self: Io, buf: []u8) IoError!usize;
+    pub fn write(self: Io, buf: []const u8) IoError!usize;
+    pub fn poll(self: Io, timeout_ms: i32) PollFlags;   -- 等最多 timeout_ms 毫秒
+};
+```
+
+- `read()` 语义：**非阻塞**。无数据返回 `error.WouldBlock`。
+- `poll(timeout_ms)` 语义："等最多 N 毫秒，返回哪些操作就绪"。
+
+各平台 pollFn 实现要求：
+
+| Io 类型 | pollFn 实现 | 说明 |
+|---------|------------|------|
+| UART (ESP32) | 硬件中断 + RTOS 信号量等待 | 透传 HAL uart.poll() |
+| USB 串口 (Linux/Mac) | POSIX `poll()` 系统调用 | 包装 fd poll |
+| CMUX 虚拟通道 | `Notify.timedWait(timeout_ns)` | pump 线程 signal 后唤醒 |
+| MockIo (测试) | 检查 `rx_ring_buffer.len > 0`，忽略 timeout | 立即返回 |
+
+MockIo 的 pollFn 示例：
+```zig
+fn mockPoll(ctx: *anyopaque, _: i32) PollFlags {
+    const self = @ptrCast(*MockIo, @alignCast(ctx));
+    return .{ .readable = self.rx.len > 0, .writable = true };
+}
+```
+
+CMUX 虚拟通道的 pollFn 示例：
+```zig
+fn cmuxChannelPoll(ctx: *anyopaque, timeout_ms: i32) PollFlags {
+    const ch = @ptrCast(*ChannelBuf, @alignCast(ctx));
+    if (ch.buffer.len > 0) return .{ .readable = true };
+    const timeout_ns: u64 = @intCast(timeout_ms) * 1_000_000;
+    const signaled = ch.notify.timedWait(timeout_ns);
+    return .{ .readable = signaled and ch.buffer.len > 0 };
+}
+```
+
+**2) at.zig — AtEngine 使用 comptime Time，统一 poll+read 循环**
+
+```zig
+pub fn AtEngine(comptime Time: type) type {
+    return struct {
+        io: Io,
+        time: Time,    -- 有 nowMs() 和 sleepMs() 方法
+        ...
+    };
+}
+```
+
+AtEngine.send() 的超时循环伪代码：
+```zig
+pub fn send(self: *Self, cmd: []const u8, timeout_ms: u32) AtResponse {
+    _ = self.io.write(cmd);
+    const start = self.time.nowMs();
+    while (true) {
+        const elapsed = self.time.nowMs() - start;
+        if (elapsed >= timeout_ms) return .{ .status = .timeout };
+        const remaining: i32 = @intCast(timeout_ms - elapsed);
+        _ = self.io.poll(remaining);
+        const n = self.io.read(&self.rx_buf[self.rx_pos..]) catch |e| switch (e) {
+            error.WouldBlock => continue,
+            else => return .{ .status = .error },
+        };
+        self.rx_pos += n;
+        if (self.tryParseResponse()) |resp| return resp;
+    }
+}
+```
+
+Time contract 要求（与 `runtime/time.zig` 一致）：
+- `nowMs(self) -> u64`：返回毫秒时间戳
+- `sleepMs(self, ms: u32) -> void`：休眠（AtEngine 当前不需要，但 Time contract 要求）
+
+测试中传 FakeTime：
+```zig
+const FakeTime = struct {
+    ms: u64 = 0,
+    pub fn nowMs(self: *const FakeTime) u64 { return self.ms; }
+    pub fn sleepMs(_: FakeTime, _: u32) void {}
+};
+```
+
+**3) cmux.zig — pump 线程 + per-channel Notify**
+
+CMUX 单通道模式的数据流：
+```
+物理 UART
+    ↑ uart.poll() 等待数据（物理层 poll）
+    |
+pump 线程（独立 Thread，持续运行）
+    ↓ 从 UART read → CMUX 解帧 → 写入对应 DLCI buffer → notify.signal()
+    |
+虚拟通道 Io
+    ↑ channelIo.poll() = notify.timedWait()（业务层等待）
+    |
+AtEngine / lwIP（消费者）
+```
+
+pump 线程循环伪代码：
+```zig
+fn pumpLoop(self: *Self) void {
+    while (self.active) {
+        const flags = self.io.poll(50);    -- 物理层 poll，50ms 节拍
+        if (!flags.readable) continue;
+        const n = self.io.read(&self.rx_buf) catch continue;
+        for (self.decodeFrames(self.rx_buf[0..n])) |frame| {
+            if (self.channels[frame.dlci]) |*ch| {
+                ch.buffer.write(frame.data);
+                ch.notify.signal();          -- 唤醒在此通道等待的消费者
+            }
+        }
+    }
+}
+```
+
+pump 线程的启动/停止由 Modem.enterCmux()/exitCmux() 管理。
+
+**4) 依赖的已有基础设施**
+
+| 组件 | 位置 | 用途 |
+|------|------|------|
+| Thread contract | `runtime/thread.zig` | pump 线程 spawn/join |
+| Notify contract | `runtime/sync.zig` | CMUX 通道 signal/timedWait |
+| Time contract | `runtime/time.zig` | AtEngine 超时计算 |
+| HAL PollFlags | `hal/uart.zig` | Io.PollFlags 定义对齐 |
+
+---
+
+#### Q7 实施规格：电源管理接口
+
+**涉及文件：** `modem.zig`（InitConfig 内定义 PowerControl）
+
+**PowerControl 定义：**
+
+```zig
+pub const PowerControl = struct {
+    enable:  ?*const fn () anyerror!void = null,  -- 上电/开机（如 GPIO 拉高 MODEM_ENABLE，或 PWRKEY 脉冲）
+    disable: ?*const fn () void = null,            -- 断电/关机（如 GPIO 拉低，或 PWRKEY 长脉冲）
+    reset:   ?*const fn () anyerror!void = null,   -- 硬件复位（如 RESET_N 拉低 300ms 再释放）
+};
+```
+
+放在 `Modem.InitConfig` 中作为可选字段：
+```zig
+pub const InitConfig = struct {
+    ...
+    power: PowerControl = .{},   -- 默认全 null，无硬件控制
+    ...
+};
+```
+
+**Modem 内部使用方式：**
+
+```zig
+-- 在 MODEM_POWERING 状态中：
+if (self.config.power.enable) |enableFn| {
+    try enableFn();
+}
+-- 然后等 AT 就绪（AT probe with timeout）
+
+-- 在 error recovery 中：
+if (self.config.power.reset) |resetFn| {
+    try resetFn();
+} else {
+    -- 无硬件复位能力，直接重走状态机
+}
+
+-- 在 deinit/关机中：
+if (self.config.power.disable) |disableFn| {
+    disableFn();
+}
+```
+
+**各平台实现示例：**
+
+ESP32 (auto-start 模式，仅供电使能)：
+```zig
+const power = PowerControl{
+    .enable = struct {
+        fn enable() !void {
+            gpio.setLevel(MODEM_ENABLE_PIN, .high);
+        }
+    }.enable,
+    .disable = struct {
+        fn disable() void {
+            gpio.setLevel(MODEM_ENABLE_PIN, .low);
+        }
+    }.disable,
+};
+```
+
+ESP32 (PWRKEY 模式)：
+```zig
+const power = PowerControl{
+    .enable = struct {
+        fn enable() !void {
+            gpio.setLevel(PWRKEY_PIN, .low);
+            time.sleepMs(500);      -- Quectel: 500ms, SIMCom: 1000ms
+            gpio.setLevel(PWRKEY_PIN, .high);
+        }
+    }.enable,
+    .reset = struct {
+        fn reset() !void {
+            gpio.setLevel(RESET_PIN, .low);
+            time.sleepMs(300);
+            gpio.setLevel(RESET_PIN, .high);
+        }
+    }.reset,
+};
+```
+
+Linux/Mac USB、测试 Mock：
+```zig
+const power = PowerControl{};   -- 全 null，不需要硬件控制
+```
+
+---
+
+#### Q8 实施规格：Io 不加 close/flush
+
+**结论：Io 接口保持 read/write/poll 三个操作，不加 close 和 flush。**
+
+**close 不需要的原因：**
+- Io 的生命周期由调用方管理（谁创建谁释放）
+- Modem 不应该释放调用方传入的 Io 资源
+- 与 C 代码一致：`quectel_task_stop()` 不 close UART，UART 由 board 层管理
+
+**flush 不需要的原因：**
+- 所有模式切换都有 AT command-response 作为天然同步点
+- 发 AT+CMUX=0 → 等 OK：模组回 OK 时命令字节一定已全部从物理线路发出
+- 退出 CMUX 发 DISC → 等 UA/DM：同理
+- 退出数据模式 +++ → 等 OK：同理
+- 因此不存在"写了数据不等回复就要切换模式"的场景
+
+**对实施者的影响：**
+- `io.zig` 无需实现 close/flush
+- `MockIo` 无需实现 close/flush
+- `fromUart()` / `fromSpi()` 无需映射 close/flush
+- CMUX virtual channel Io 无需实现 close/flush
+
+---
+
+#### Q9 实施规格：CMUX open() 职责分离
+
+**结论：AT+CMUX=0 由 Modem 通过 AtEngine 发送，Cmux.open() 只做 SABM/UA 握手。**
+
+**Modem.enterCmux() 完整流程（单通道模式）：**
+
+```
+Step 1: Modem 用 AtEngine 发送 AT+CMUX=0
+        self.at_engine.send("AT+CMUX=0", 5000)
+        → 收到 OK → 此时模组已切换到 CMUX 帧模式
+        → 从此刻起物理 UART 上只能走 CMUX 帧，不能发裸 AT 了
+
+Step 2: Modem 调用 Cmux.open() 做 SABM/UA 握手
+        self.cmux.open(&.{1, 2})
+        → 内部：发 SABM DLCI=0 帧 → 等 UA 帧（控制通道）
+        → 内部：发 SABM DLCI=1 帧 → 等 UA 帧（PPP 通道）
+        → 内部：发 SABM DLCI=2 帧 → 等 UA 帧（AT 通道）
+
+Step 3: Modem 启动 pump 线程
+        self.cmux.startPump()
+        → pump 线程开始持续从物理 UART 读帧、解码、分发到各通道 buffer
+
+Step 4: Modem 把 AtEngine 的 Io 切换到 CMUX AT 虚拟通道
+        const at_ch_io = self.cmux.channelIo(2);
+        self.at_engine.setIo(at_ch_io);
+        → 此后 at_engine.send() 的数据走 CMUX DLCI=2
+
+Step 5: PPP 数据通道就绪
+        self.data_io = self.cmux.channelIo(1);
+        → modem.pppIo() 返回 CMUX DLCI=1 的 Io
+```
+
+**Modem.exitCmux() 完整流程（单通道模式）：**
+
+```
+Step 1: 恢复 AtEngine Io 到原始物理 UART（先停止通过 CMUX AT 通道发命令）
+Step 2: 停止 pump 线程 self.cmux.stopPump()
+Step 3: 关闭 CMUX self.cmux.close() → 发 DISC 帧
+Step 4: 等模组退出 CMUX 模式（可能需要短暂 delay）
+Step 5: AT 引擎恢复到直连物理 Io，发 AT 验证模组正常
+```
+
+**Multi-channel 模式：** enterCmux()/exitCmux() 均为 no-op（通道已天然分离）。
+
+**各组件职责边界：**
+
+| 组件 | 知道什么 | 不知道什么 |
+|------|---------|----------|
+| AtEngine | AT 命令格式、响应解析、URC | CMUX 帧格式、通道概念 |
+| Cmux | SABM/UA/DISC/UIH 帧编解码、通道复用 | AT 命令、AT+CMUX=0 |
+| Modem | 两者的编排顺序、状态机 | 具体协议细节 |
+- [~] Q10: PPP/lwIP 集成接口。**暂缓 — 等待 main 分支重构。** main 分支即将进行统一 IO poll 重构（uart/ble/hci/wifi/modem），并在 pkg 下新增 lwip Zig 绑定实现用户态网络栈，通过 netlink 抽象（WiFi 或 modem）发送数据。重构后 cellular 的 Io 接口和 PPP/lwIP 集成方式都将改变。当前结论：pkg/cellular 边界到 pppIo()（与 WiFi HAL 无 lwIP 集成的模式一致），PPP 协商和 lwIP 对接由外部 pkg/lwip 处理。具体接口待 main 重构完成后对齐。
 
 **设计深度不足：**
 
@@ -1935,8 +2373,37 @@ Io = struct {
 - 优点：灵活，UART 平台高效，简单平台也能用
 - 缺点：AtEngine 内部需要两条代码路径；可选字段增加接口复杂度
 
-### 待决定
+### 结论（R21 确定）
 
-- Io.read() 的语义约定：阻塞 vs 非阻塞（WouldBlock）
-- poll 能力放在 Io 里还是 AtEngine 里
-- 时间源如何注入
+经过四个子问题逐一推导，最终方案：
+
+**Q6-d：谁驱动 pump**
+→ 独立线程。仅 CMUX 单通道模式需要。利用已有的 `runtime/thread.zig` contract 实现跨平台兼容。
+USB 多通道模式不需要 pump 线程。
+
+**Q6-c：AtEngine 等待策略**
+→ 统一用 `io.poll(remaining_ms)` → `io.read(buf)` 循环。AtEngine 不需要知道底层是物理 Io 还是虚拟 Io。
+CMUX 虚拟通道的 pollFn 内部用 `Notify.timedWait()` 实现（pump 线程解帧后调用 `notify.signal()` 唤醒）。
+
+**Q6-a：read() 语义**
+→ 非阻塞。无数据返回 `WouldBlock`。调用方先 poll 等就绪再 read。与 HAL uart.zig 行为一致。
+
+**Q6-b：时间源**
+→ AtEngine 接受 comptime `Time` 类型参数，内部用 `self.time.nowMs()` 计算剩余超时。
+各平台注入：std 用 `runtime.std.Time`，ESP32 用 board time，测试传 `FakeTime`。
+
+**pollFn 修正为必须**
+原方案 D（可选 pollFn）修正为方案 A 方向（必须提供）。原因：如果 CMUX 虚拟通道也通过 Notify 包装为 pollFn，
+则 AtEngine 只需一条代码路径，接口统一。各 Io 实现方式不同但语义相同："等最多 N 毫秒，告诉我有没有数据。"
+
+**风格对齐**
+Time/Thread/Notify 通过 comptime 类型参数注入，与现有 pkg 模块一致
+（button, timer, motion, audio engine 均使用此模式）。
+Io 仍然是 type-erased（运行时 CMUX 切换需求），这是 cellular 特有的合理例外。
+
+**依赖的已有基础设施：**
+- `runtime/thread.zig`：Thread contract（spawn/join/detach）
+- `runtime/sync.zig`：Notify contract（signal/wait/timedWait）
+- `runtime/time.zig`：Time contract（nowMs/sleepMs）
+- `runtime/std/time.zig`：Time std 实现
+- `hal/uart.zig`：PollFlags + poll(flags, timeout_ms)
