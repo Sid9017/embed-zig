@@ -44,7 +44,8 @@ pub fn run(comptime hw: type, env: anytype) void {
     const board_spec = @import("board_spec.zig");
     const Board = board_spec.Board(hw);
 
-    const IO = runtime.io.from(hw.io);
+    const ChannelType = hw.Channel(App.Event);
+    const SelectorType = hw.Selector(App.Event);
     const Thread = Board.thread.Type;
     const Adc = Board.adc;
     const AudioSystem = Board.audio_system;
@@ -55,9 +56,9 @@ pub fn run(comptime hw: type, env: anytype) void {
     const EngineType = audio.Engine(Mutex, Cond, Thread, Time);
     const MixerType = audio.Mixer(Mutex, Cond);
     const Format = audio.Format;
-    const AdcBtnType = event.button.AdcButtonSet(Adc, Thread, Board.time, IO, App.Event, "button");
+    const AdcBtnType = event.button.AdcButtonSet(Adc, Thread, Board.time, ChannelType, App.Event, "button");
     const GestureType = event.button.ButtonGesture(App.Event, "button", Board.time);
-    const AppRt = app_mod.AppRuntime(App, IO);
+    const AppRt = app_mod.AppRuntime(App, SelectorType);
 
     const log: Board.log = .{};
     const time: Board.time = .{};
@@ -71,12 +72,6 @@ pub fn run(comptime hw: type, env: anytype) void {
         return;
     };
     defer board.deinit();
-
-    var io = IO.init(allocator) catch {
-        log.err("io init failed");
-        return;
-    };
-    defer io.deinit();
 
     // ── audio engine ──
 
@@ -100,12 +95,11 @@ pub fn run(comptime hw: type, env: anytype) void {
 
     // ── ADC buttons ──
 
-    var adc_btn = AdcBtnType.init(&board.hal_board.adc_dev, &io, time, Board.adc_button_config) catch {
+    var adc_btn = AdcBtnType.init(allocator, &board.hal_board.adc_dev, time, Board.adc_button_config) catch {
         log.err("adc button init failed");
         return;
     };
     defer adc_btn.deinit();
-    adc_btn.bind();
 
     var gesture = GestureType.init(time, .{
         .multi_click_window_ms = 300,
@@ -114,12 +108,18 @@ pub fn run(comptime hw: type, env: anytype) void {
 
     // ── flux runtime ──
 
-    var rt = AppRt.init(allocator, &io, .{
+    var selector = SelectorType.init(allocator) catch {
+        log.err("selector init failed");
+        return;
+    };
+    defer selector.deinit();
+
+    var rt = AppRt.init(allocator, &selector, .{
         .poll_timeout_ms = 50,
     });
     defer rt.deinit();
 
-    rt.register(&adc_btn.periph) catch {
+    rt.register(adc_btn.channel) catch {
         log.err("register adc button failed");
         return;
     };

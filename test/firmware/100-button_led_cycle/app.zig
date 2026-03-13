@@ -23,14 +23,15 @@ pub fn run(comptime hw: type, env: anytype) void {
     const board_spec = @import("board_spec.zig");
     const Board = board_spec.Board(hw);
 
-    const IO = runtime.io.from(hw.io);
+    const ChannelType = hw.Channel(App.Event);
+    const SelectorType = hw.Selector(App.Event);
     const Thread = Board.thread.Type;
     const Gpio = Board.gpio;
 
-    const ButtonType = event.button.GpioButton(Gpio, Board.time, IO, App.Event, "button");
+    const ButtonType = event.button.GpioButton(Gpio, Board.time, ChannelType, App.Event, "button");
     const GestureType = event.button.ButtonGesture(App.Event, "button", Board.time);
     const EventLog = event.Logger(App.Event, Board.log, "button");
-    const AppRt = app_mod.AppRuntime(App, IO);
+    const AppRt = app_mod.AppRuntime(App, SelectorType);
 
     const log: Board.log = .{};
     const time: Board.time = .{};
@@ -43,13 +44,7 @@ pub fn run(comptime hw: type, env: anytype) void {
     };
     defer board.deinit();
 
-    var io = IO.init(allocator) catch {
-        log.err("io init failed");
-        return;
-    };
-    defer io.deinit();
-
-    var btn = ButtonType.init(&board.gpio_dev, &io, time, .{
+    var btn = ButtonType.init(allocator, &board.gpio_dev, time, .{
         .id = "btn.boot",
         .pin = hw.button_pin,
         .active_level = .low,
@@ -58,19 +53,24 @@ pub fn run(comptime hw: type, env: anytype) void {
         return;
     };
     defer btn.deinit();
-    btn.bind();
 
     var gesture = GestureType.init(time, .{
         .multi_click_window_ms = 300,
         .long_press_ms = 500,
     });
 
-    var rt = AppRt.init(allocator, &io, .{
+    var selector = SelectorType.init(allocator) catch {
+        log.err("selector init failed");
+        return;
+    };
+    defer selector.deinit();
+
+    var rt = AppRt.init(allocator, &selector, .{
         .poll_timeout_ms = 50,
     });
     defer rt.deinit();
 
-    rt.register(&btn.periph) catch {
+    rt.register(btn.channel) catch {
         log.err("register button failed");
         return;
     };

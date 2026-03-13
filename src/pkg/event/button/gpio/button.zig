@@ -5,18 +5,14 @@
 //! from a dedicated thread/task; call `requestStop()` to exit the loop.
 
 const std = @import("std");
-const runtime = struct {
-    pub const io = @import("../../../../runtime/io.zig");
-};
 const hal = struct {
     pub const gpio = @import("../../../../hal/gpio.zig");
 };
 const event_pkg = struct {
     pub const types = @import("../../types.zig");
-
-    pub fn Periph(comptime EventType: type) type {
-        return @import("../../bus.zig").Periph(EventType);
-    }
+};
+const runtime_pkg = struct {
+    pub const channel = @import("../../../../runtime/channel.zig");
 };
 
 pub const BusButtonCode = enum(u16) {
@@ -37,31 +33,24 @@ pub const Config = struct {
 pub fn Button(
     comptime Gpio: type,
     comptime Time: type,
-    comptime IO: type,
+    comptime ChannelType: type,
     comptime EventType: type,
     comptime tag: []const u8,
 ) type {
     comptime {
         if (!hal.gpio.is(Gpio)) @compileError("Gpio must be a hal.gpio type");
-        _ = runtime.io.from(IO);
+        _ = runtime_pkg.channel.from(EventType, ChannelType);
         event_pkg.types.assertTaggedUnion(EventType);
     }
-
-    const fd_t = runtime.io.fd_t;
-    const PeriphType = event_pkg.Periph(EventType);
 
     return struct {
         const Self = @This();
 
-        periph: PeriphType,
+        channel: ChannelType,
         gpio: *Gpio,
-        io: *IO,
         time: Time,
         config: Config,
         running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-
-        pipe_r: fd_t,
-        pipe_w: fd_t,
 
         state: State = .idle,
         last_raw: bool = false,
@@ -70,32 +59,20 @@ pub fn Button(
 
         const State = enum { idle, debouncing };
 
-        const WireEvent = extern struct {
-            code: u16,
-        };
-
-        pub fn init(gpio: *Gpio, io: *IO, time: Time, config: Config) !Self {
-            const ch = try io.createChannel();
+        pub fn init(allocator: std.mem.Allocator, gpio: *Gpio, time: Time, config: Config) !Self {
+            const ch = try ChannelType.init(allocator, 16);
 
             return .{
-                .periph = undefined,
+                .channel = ch,
                 .gpio = gpio,
-                .io = io,
                 .time = time,
                 .config = config,
-                .pipe_r = ch.read_fd,
-                .pipe_w = ch.write_fd,
             };
-        }
-
-        pub fn bind(self: *Self) void {
-            self.periph = .{ .ctx = self, .fd = self.pipe_r, .onReady = onReady };
         }
 
         pub fn deinit(self: *Self) void {
             self.requestStop();
-            self.io.closeChannel(self.pipe_r);
-            self.io.closeChannel(self.pipe_w);
+            self.channel.deinit();
         }
 
         /// Blocking polling loop. Call from a dedicated thread/task.
@@ -155,23 +132,12 @@ pub fn Button(
         }
 
         fn sendEvent(self: *Self, code: BusButtonCode) void {
-            const wire = WireEvent{ .code = @intFromEnum(code) };
-            _ = self.io.writeChannel(self.pipe_w, std.mem.asBytes(&wire)) catch {};
-        }
-
-        fn onReady(ctx: ?*anyopaque, _: fd_t, buf: *std.ArrayList(EventType), alloc: std.mem.Allocator) void {
-            const self: *Self = @ptrCast(@alignCast(ctx orelse return));
-            var wire: WireEvent = undefined;
-            const wire_bytes = std.mem.asBytes(&wire);
-            while (true) {
-                const n = self.io.readChannel(self.pipe_r, wire_bytes) catch break;
-                if (n < wire_bytes.len) break;
-                buf.append(alloc, @unionInit(EventType, tag, .{
-                    .id = self.config.id,
-                    .code = wire.code,
-                    .data = 0,
-                })) catch {};
-            }
+            const event = @unionInit(EventType, tag, .{
+                .id = self.config.id,
+                .code = @intFromEnum(code),
+                .data = 0,
+            });
+            _ = self.channel.send(event) catch {};
         }
     };
 }

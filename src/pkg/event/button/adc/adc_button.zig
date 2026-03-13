@@ -9,19 +9,13 @@
 //! and a press for the new button are emitted back-to-back.
 
 const std = @import("std");
-const runtime = struct {
-    pub const io = @import("../../../../runtime/io.zig");
-};
 const hal = struct {
     pub const adc = @import("../../../../hal/adc.zig");
 };
 const event_pkg = struct {
     pub const types = @import("../../types.zig");
-
-    pub fn Periph(comptime EventType: type) type {
-        return @import("../../bus.zig").Periph(EventType);
-    }
 };
+const runtime_channel = @import("../../../../runtime/channel.zig");
 
 pub const BusButtonCode = enum(u16) {
     press = 1,
@@ -48,64 +42,44 @@ pub fn AdcButtonSet(
     comptime Adc: type,
     comptime Thread: type,
     comptime Time: type,
-    comptime IO: type,
+    comptime ChannelType: type,
     comptime EventType: type,
     comptime tag: []const u8,
 ) type {
     comptime {
         if (!hal.adc.is(Adc)) @compileError("Adc must be a hal.adc type");
-        _ = runtime.io.from(IO);
+        _ = runtime_channel.from(EventType, ChannelType);
         event_pkg.types.assertTaggedUnion(EventType);
     }
-
-    const fd_t = runtime.io.fd_t;
-    const PeriphType = event_pkg.Periph(EventType);
 
     return struct {
         const Self = @This();
 
-        periph: PeriphType,
+        channel: ChannelType,
         adc: *Adc,
-        io: *IO,
         time: Time,
         config: Config,
         worker: ?Thread = null,
         running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
-        ch_r: fd_t,
-        ch_w: fd_t,
-
         current_button: ?usize = null,
         stable_count: u8 = 0,
         pending_button: ?usize = null,
 
-        const WireEvent = extern struct {
-            code: u16,
-            range_idx: u16,
-        };
-
-        pub fn init(adc: *Adc, io: *IO, time: Time, config: Config) !Self {
-            const ch = try io.createChannel();
+        pub fn init(allocator: std.mem.Allocator, adc: *Adc, time: Time, config: Config) !Self {
+            const ch = try ChannelType.init(allocator, 16);
 
             return .{
-                .periph = undefined,
+                .channel = ch,
                 .adc = adc,
-                .io = io,
                 .time = time,
                 .config = config,
-                .ch_r = ch.read_fd,
-                .ch_w = ch.write_fd,
             };
-        }
-
-        pub fn bind(self: *Self) void {
-            self.periph = .{ .ctx = self, .fd = self.ch_r, .onReady = onReady };
         }
 
         pub fn deinit(self: *Self) void {
             self.stop();
-            self.io.closeChannel(self.ch_r);
-            self.io.closeChannel(self.ch_w);
+            self.channel.deinit();
         }
 
         pub fn start(self: *Self) !void {
@@ -182,27 +156,12 @@ pub fn AdcButtonSet(
         }
 
         fn sendEvent(self: *Self, code: BusButtonCode, range_idx: usize) void {
-            const wire = WireEvent{
+            const event = @unionInit(EventType, tag, .{
+                .id = self.config.ranges[range_idx].id,
                 .code = @intFromEnum(code),
-                .range_idx = @intCast(range_idx),
-            };
-            _ = self.io.writeChannel(self.ch_w, std.mem.asBytes(&wire)) catch {};
-        }
-
-        fn onReady(ctx: ?*anyopaque, _: fd_t, buf: *std.ArrayList(EventType), alloc: std.mem.Allocator) void {
-            const self: *Self = @ptrCast(@alignCast(ctx orelse return));
-            var wire: WireEvent = undefined;
-            const wire_bytes = std.mem.asBytes(&wire);
-            while (true) {
-                const n = self.io.readChannel(self.ch_r, wire_bytes) catch break;
-                if (n < wire_bytes.len) break;
-                if (wire.range_idx >= self.config.ranges.len) continue;
-                buf.append(alloc, @unionInit(EventType, tag, .{
-                    .id = self.config.ranges[wire.range_idx].id,
-                    .code = wire.code,
-                    .data = 0,
-                })) catch {};
-            }
+                .data = 0,
+            });
+            _ = self.channel.send(event) catch {};
         }
     };
 }

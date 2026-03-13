@@ -1,80 +1,64 @@
-//! IO-driven event bus, generic over EventType.
+//! Selector-driven event bus, generic over EventType.
 //!
-//! EventType must be a `union(enum)`. Each peripheral and middleware is
-//! parameterized on the same EventType so the whole pipeline is type-safe
-//! at comptime.
-//!
-//! Flow:
-//!   peripheral worker → write to its fd
-//!   bus.poll()        → io.poll(timeout) blocks
-//!                     → io fires ReadyCallback → Periph.onReady → appends to bus ready buffer
-//!                     → events pass through middleware chain
-//!                     → bus.poll returns processed events
+//! `Bus` is a thin wrapper around a selector that adds:
+//! - registration of multiple channels
+//! - buffering of ready events
+//! - a middleware pipeline
+//! - batched `poll()` output
 
 const std = @import("std");
 const types = @import("types.zig");
 const mw_mod = @import("middleware.zig");
-const runtime = struct {
-    pub const io = @import("../../runtime/io.zig");
-    pub const std = @import("../../runtime/std.zig");
-};
 
-pub const fd_t = runtime.io.fd_t;
-
-/// Type-erased peripheral handle, generic over EventType.
-pub fn Periph(comptime EventType: type) type {
-    comptime types.assertTaggedUnion(EventType);
-    return struct {
-        ctx: ?*anyopaque,
-        fd: fd_t,
-        onReady: *const fn (ctx: ?*anyopaque, fd: fd_t, buf: *std.ArrayList(EventType), alloc: std.mem.Allocator) void,
-    };
-}
-
-pub fn Bus(comptime IO: type, comptime EventType: type) type {
+pub fn Bus(comptime Selector: type, comptime EventType: type) type {
     comptime {
-        _ = runtime.io.from(IO);
+        _ = @as(type, Selector.channel_t);
+        _ = @as(type, Selector.event_t);
+        _ = @as(*const fn (std.mem.Allocator) anyerror!Selector, &Selector.init);
+        _ = @as(*const fn (*Selector) void, &Selector.deinit);
+        _ = @as(*const fn (*Selector, Selector.channel_t) anyerror!void, &Selector.add);
+        _ = @as(*const fn (*Selector, Selector.channel_t) anyerror!void, &Selector.remove);
+        _ = @as(*const fn (*Selector, ?u32) anyerror!?Selector.event_t, &Selector.poll);
+        _ = @as(*const fn () void, &Selector.channel_t.isSelectable);
         types.assertTaggedUnion(EventType);
+        if (Selector.event_t != EventType) {
+            @compileError("Bus requires `Selector.event_t == EventType`");
+        }
     }
 
-    const PeriphType = Periph(EventType);
+    const ChannelType = Selector.channel_t;
     const MiddlewareType = mw_mod.Middleware(EventType);
 
     return struct {
         const Self = @This();
 
         pub const Event = EventType;
+        pub const Channel = ChannelType;
         pub const Mw = MiddlewareType;
 
-        const Binding = struct {
-            periph: *const PeriphType,
-            bus: *Self,
-        };
-
         allocator: std.mem.Allocator,
-        io: *IO,
+        selector: *Selector,
+        channels: std.ArrayList(ChannelType),
         ready: std.ArrayList(EventType),
-        bindings: std.ArrayList(*Binding),
         middlewares: std.ArrayList(MiddlewareType),
         processed: std.ArrayList(EventType),
 
-        pub fn init(allocator: std.mem.Allocator, io: *IO) Self {
+        pub fn init(allocator: std.mem.Allocator, selector: *Selector) Self {
             return .{
                 .allocator = allocator,
-                .io = io,
+                .selector = selector,
+                .channels = .empty,
                 .ready = .empty,
-                .bindings = .empty,
                 .middlewares = .empty,
                 .processed = .empty,
             };
         }
 
         pub fn deinit(self: *Self) void {
-            for (self.bindings.items) |b| {
-                self.io.unregister(b.periph.fd);
-                self.allocator.destroy(b);
+            for (self.channels.items) |channel| {
+                self.selector.remove(channel) catch {};
             }
-            self.bindings.deinit(self.allocator);
+            self.channels.deinit(self.allocator);
             self.ready.deinit(self.allocator);
             self.middlewares.deinit(self.allocator);
             self.processed.deinit(self.allocator);
@@ -84,41 +68,35 @@ pub fn Bus(comptime IO: type, comptime EventType: type) type {
             self.middlewares.append(self.allocator, middleware) catch {};
         }
 
-        pub fn register(self: *Self, periph: *const PeriphType) !void {
-            const binding = try self.allocator.create(Binding);
-            binding.* = .{ .periph = periph, .bus = self };
+        pub fn register(self: *Self, channel: ChannelType) !void {
+            for (self.channels.items) |item| {
+                if (std.meta.eql(item, channel)) {
+                    return error.ChannelAlreadyRegistered;
+                }
+            }
 
-            errdefer self.allocator.destroy(binding);
-
-            try self.io.registerRead(periph.fd, .{
-                .ptr = binding,
-                .callback = dispatchReady,
-            });
-
-            try self.bindings.append(self.allocator, binding);
+            try self.selector.add(channel);
+            errdefer self.selector.remove(channel) catch {};
+            try self.channels.append(self.allocator, channel);
         }
 
-        pub fn unregister(self: *Self, periph_fd: fd_t) void {
-            self.io.unregister(periph_fd);
-            for (self.bindings.items, 0..) |b, i| {
-                if (b.periph.fd == periph_fd) {
-                    self.allocator.destroy(b);
-                    _ = self.bindings.swapRemove(i);
+        pub fn unregister(self: *Self, channel: ChannelType) !void {
+            for (self.channels.items, 0..) |item, i| {
+                if (std.meta.eql(item, channel)) {
+                    try self.selector.remove(channel);
+                    _ = self.channels.swapRemove(i);
                     return;
                 }
             }
+            return error.ChannelNotRegistered;
         }
 
-        pub fn poll(self: *Self, out: []EventType, timeout_ms: i32) []EventType {
+        pub fn poll(self: *Self, out: []EventType, timeout_ms: ?u32) ![]EventType {
             if (self.ready.items.len == 0 and self.processed.items.len == 0) {
-                _ = self.io.poll(timeout_ms);
+                try self.collectReady(timeout_ms);
             }
             self.applyMiddlewares();
             return self.drain(out);
-        }
-
-        pub fn wake(self: *Self) void {
-            self.io.wake();
         }
 
         fn applyMiddlewares(self: *Self) void {
@@ -168,6 +146,15 @@ pub fn Bus(comptime IO: type, comptime EventType: type) type {
             ctx.bus.runChain(ev, ctx.next_idx);
         }
 
+        fn collectReady(self: *Self, timeout_ms: ?u32) !void {
+            var next_timeout = timeout_ms;
+            while (true) {
+                const ready_event = try self.selector.poll(next_timeout) orelse break;
+                try self.ready.append(self.allocator, ready_event);
+                next_timeout = 0;
+            }
+        }
+
         fn drain(self: *Self, out: []EventType) []EventType {
             const src = &self.processed;
             const n = @min(src.items.len, out.len);
@@ -180,166 +167,164 @@ pub fn Bus(comptime IO: type, comptime EventType: type) type {
             src.items.len = remain;
             return out[0..n];
         }
-
-        fn dispatchReady(raw: ?*anyopaque, ready_fd: fd_t) void {
-            const binding: *const Binding = @ptrCast(@alignCast(raw orelse return));
-            binding.periph.onReady(binding.periph.ctx, ready_fd, &binding.bus.ready, binding.bus.allocator);
-        }
     };
 }
 
 // ---------------------------------------------------------------------------
-// Tests — real runtime.std.IO, user-defined TestEvent
+// Tests — fake selector returns EventType directly
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
-const StdIO = runtime.std.IO;
+
+const TestChannel = struct {
+    id: u8,
+
+    pub fn isSelectable() void {}
+};
 
 const TestEvent = union(enum) {
     button: types.PeriphEvent,
     system: types.SystemEvent,
 };
 
-const TestBus = Bus(StdIO, TestEvent);
-const TestPeriphType = Periph(TestEvent);
+const FakeSelector = struct {
+    allocator: std.mem.Allocator,
+    watched: std.ArrayList(TestChannel),
+    pending: std.ArrayList(PendingEvent),
 
-const WireCode = extern struct { code: u16 };
+    const PendingEvent = struct {
+        channel: TestChannel,
+        event: TestEvent,
+    };
 
-const PipePeripheral = struct {
-    pipe_r: fd_t,
-    pipe_w: fd_t,
-    id: []const u8,
-    periph: TestPeriphType,
+    pub const channel_t = TestChannel;
+    pub const event_t = TestEvent;
 
-    fn open(id: []const u8) !PipePeripheral {
-        const fds = try std.posix.pipe();
-        try setNonBlocking(fds[0]);
-        try setNonBlocking(fds[1]);
+    pub fn init(allocator: std.mem.Allocator) !@This() {
         return .{
-            .pipe_r = fds[0],
-            .pipe_w = fds[1],
-            .id = id,
-            .periph = undefined,
+            .allocator = allocator,
+            .watched = .empty,
+            .pending = .empty,
         };
     }
 
-    fn bind(self: *PipePeripheral) void {
-        self.periph = .{ .ctx = self, .fd = self.pipe_r, .onReady = onReady };
+    pub fn deinit(self: *@This()) void {
+        self.watched.deinit(self.allocator);
+        self.pending.deinit(self.allocator);
     }
 
-    fn close(self: *PipePeripheral) void {
-        std.posix.close(self.pipe_r);
-        std.posix.close(self.pipe_w);
-    }
-
-    fn send(self: *PipePeripheral, code: u16) void {
-        const wire = WireCode{ .code = code };
-        _ = std.posix.write(self.pipe_w, std.mem.asBytes(&wire)) catch {};
-    }
-
-    fn onReady(ctx: ?*anyopaque, _: fd_t, buf: *std.ArrayList(TestEvent), alloc: std.mem.Allocator) void {
-        const self: *PipePeripheral = @ptrCast(@alignCast(ctx orelse return));
-        var wire: WireCode = undefined;
-        const wire_bytes = std.mem.asBytes(&wire);
-        while (true) {
-            const n = std.posix.read(self.pipe_r, wire_bytes) catch break;
-            if (n < wire_bytes.len) break;
-            buf.append(alloc, .{
-                .button = .{ .id = self.id, .code = wire.code, .data = 0 },
-            }) catch {};
+    pub fn add(self: *@This(), channel: TestChannel) !void {
+        for (self.watched.items) |item| {
+            if (std.meta.eql(item, channel)) {
+                return error.ChannelAlreadyRegistered;
+            }
         }
+        try self.watched.append(self.allocator, channel);
     }
 
-    fn setNonBlocking(fd: fd_t) !void {
-        var fl = try std.posix.fcntl(fd, std.posix.F.GETFL, 0);
-        const mask: usize = @as(usize, 1) << @bitOffsetOf(std.posix.O, "NONBLOCK");
-        fl |= mask;
-        _ = try std.posix.fcntl(fd, std.posix.F.SETFL, fl);
+    pub fn remove(self: *@This(), channel: TestChannel) !void {
+        for (self.watched.items, 0..) |item, i| {
+            if (std.meta.eql(item, channel)) {
+                _ = self.watched.swapRemove(i);
+                return;
+            }
+        }
+        return error.ChannelNotRegistered;
+    }
+
+    pub fn poll(self: *@This(), _: ?u32) !?TestEvent {
+        if (self.pending.items.len == 0) return null;
+        return self.pending.orderedRemove(0).event;
+    }
+
+    fn signal(self: *@This(), channel: TestChannel, event: TestEvent) !void {
+        for (self.watched.items) |item| {
+            if (std.meta.eql(item, channel)) {
+                try self.pending.append(self.allocator, .{
+                    .channel = channel,
+                    .event = event,
+                });
+                return;
+            }
+        }
+        return error.ChannelNotRegistered;
     }
 };
 
-test "register peripheral and collect events via poll" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
+const TestBus = Bus(FakeSelector, TestEvent);
+
+test "register channel and collect events via poll" {
+    var selector = try FakeSelector.init(testing.allocator);
+    defer selector.deinit();
+    var bus = TestBus.init(testing.allocator, &selector);
     defer bus.deinit();
 
-    var p = try PipePeripheral.open("btn.a");
-    defer p.close();
-    p.bind();
-    try bus.register(&p.periph);
+    const channel = TestChannel{ .id = 1 };
+    try bus.register(channel);
 
-    p.send(10);
-    p.send(11);
+    try selector.signal(channel, .{ .button = .{ .id = "btn.a", .code = 10, .data = 0 } });
+    try selector.signal(channel, .{ .button = .{ .id = "btn.a", .code = 11, .data = 0 } });
 
     var out: [8]TestEvent = undefined;
-    const got = bus.poll(&out, 200);
+    const got = try bus.poll(&out, 200);
     try testing.expectEqual(@as(usize, 2), got.len);
     try testing.expectEqualStrings("btn.a", got[0].button.id);
     try testing.expectEqual(@as(u16, 10), got[0].button.code);
     try testing.expectEqual(@as(u16, 11), got[1].button.code);
 }
 
-test "multiple peripherals on same bus" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
+test "multiple channels on same bus" {
+    var selector = try FakeSelector.init(testing.allocator);
+    defer selector.deinit();
+    var bus = TestBus.init(testing.allocator, &selector);
     defer bus.deinit();
 
-    var btn = try PipePeripheral.open("btn.a");
-    defer btn.close();
-    btn.bind();
-    var sensor = try PipePeripheral.open("sensor.0");
-    defer sensor.close();
-    sensor.bind();
+    const button_channel = TestChannel{ .id = 1 };
+    const sensor_channel = TestChannel{ .id = 2 };
+    try bus.register(button_channel);
+    try bus.register(sensor_channel);
 
-    try bus.register(&btn.periph);
-    try bus.register(&sensor.periph);
-
-    btn.send(1);
-    sensor.send(2);
+    try selector.signal(button_channel, .{ .button = .{ .id = "btn.a", .code = 1, .data = 0 } });
+    try selector.signal(sensor_channel, .{ .button = .{ .id = "sensor.0", .code = 2, .data = 0 } });
 
     var out: [8]TestEvent = undefined;
-    const got = bus.poll(&out, 200);
+    const got = try bus.poll(&out, 200);
     try testing.expectEqual(@as(usize, 2), got.len);
 }
 
-test "unregister removes peripheral from poll" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
+test "unregister removes channel from poll" {
+    var selector = try FakeSelector.init(testing.allocator);
+    defer selector.deinit();
+    var bus = TestBus.init(testing.allocator, &selector);
     defer bus.deinit();
 
-    var p = try PipePeripheral.open("btn.x");
-    defer p.close();
-    p.bind();
-    try bus.register(&p.periph);
-
-    bus.unregister(p.pipe_r);
-
-    p.send(99);
-    io.wake();
+    const channel = TestChannel{ .id = 1 };
+    try bus.register(channel);
+    try bus.unregister(channel);
+    try testing.expectError(error.ChannelNotRegistered, selector.signal(channel, .{
+        .button = .{ .id = "btn.x", .code = 99, .data = 0 },
+    }));
 
     var out: [4]TestEvent = undefined;
-    const got = bus.poll(&out, 50);
+    const got = try bus.poll(&out, 50);
     try testing.expectEqual(@as(usize, 0), got.len);
 }
 
 test "poll with no ready events returns empty" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
+    var selector = try FakeSelector.init(testing.allocator);
+    defer selector.deinit();
+    var bus = TestBus.init(testing.allocator, &selector);
     defer bus.deinit();
 
     var out: [4]TestEvent = undefined;
-    const got = bus.poll(&out, 0);
+    const got = try bus.poll(&out, 0);
     try testing.expectEqual(@as(usize, 0), got.len);
 }
 
 test "middleware transforms events" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
+    var selector = try FakeSelector.init(testing.allocator);
+    defer selector.deinit();
+    var bus = TestBus.init(testing.allocator, &selector);
     defer bus.deinit();
 
     const DoubleCode = struct {
@@ -355,23 +340,20 @@ test "middleware transforms events" {
 
     bus.use(.{ .ctx = null, .processFn = DoubleCode.process, .tickFn = null });
 
-    var p = try PipePeripheral.open("btn.m");
-    defer p.close();
-    p.bind();
-    try bus.register(&p.periph);
-
-    p.send(5);
+    const channel = TestChannel{ .id = 1 };
+    try bus.register(channel);
+    try selector.signal(channel, .{ .button = .{ .id = "btn.m", .code = 5, .data = 0 } });
 
     var out: [4]TestEvent = undefined;
-    const got = bus.poll(&out, 200);
+    const got = try bus.poll(&out, 200);
     try testing.expectEqual(@as(usize, 1), got.len);
     try testing.expectEqual(@as(u16, 10), got[0].button.code);
 }
 
 test "middleware can swallow events" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
+    var selector = try FakeSelector.init(testing.allocator);
+    defer selector.deinit();
+    var bus = TestBus.init(testing.allocator, &selector);
     defer bus.deinit();
 
     const DropAll = struct {
@@ -380,23 +362,19 @@ test "middleware can swallow events" {
 
     bus.use(.{ .ctx = null, .processFn = DropAll.process, .tickFn = null });
 
-    var p = try PipePeripheral.open("btn.d");
-    defer p.close();
-    p.bind();
-    try bus.register(&p.periph);
-
-    p.send(1);
-    io.wake();
+    const channel = TestChannel{ .id = 1 };
+    try bus.register(channel);
+    try selector.signal(channel, .{ .button = .{ .id = "btn.d", .code = 1, .data = 0 } });
 
     var out: [4]TestEvent = undefined;
-    const got = bus.poll(&out, 100);
+    const got = try bus.poll(&out, 100);
     try testing.expectEqual(@as(usize, 0), got.len);
 }
 
 test "non-button events pass through middleware" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
+    var selector = try FakeSelector.init(testing.allocator);
+    defer selector.deinit();
+    var bus = TestBus.init(testing.allocator, &selector);
     defer bus.deinit();
 
     const ButtonOnly = struct {
@@ -409,14 +387,10 @@ test "non-button events pass through middleware" {
     };
 
     bus.use(.{ .ctx = null, .processFn = ButtonOnly.process, .tickFn = null });
-
     bus.ready.append(testing.allocator, .{ .system = .ready }) catch {};
 
     var out: [4]TestEvent = undefined;
-    const got = bus.poll(&out, 0);
+    const got = try bus.poll(&out, 0);
     try testing.expectEqual(@as(usize, 1), got.len);
     try testing.expectEqual(TestEvent{ .system = .ready }, got[0]);
 }
-
-// Integration tests live in bus_integration_test.zig (separate module root
-// so it can import both event and source/button packages).

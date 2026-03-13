@@ -5,16 +5,10 @@
 //! struct with at least `id: []const u8` and `count: u32` fields.
 
 const std = @import("std");
-const runtime = struct {
-    pub const io = @import("../../../runtime/io.zig");
-};
 const event_pkg = struct {
     pub const types = @import("../types.zig");
-
-    pub fn Periph(comptime EventType: type) type {
-        return @import("../bus.zig").Periph(EventType);
-    }
 };
+const runtime_channel = @import("../../../runtime/channel.zig");
 
 pub const Mode = enum {
     one_shot,
@@ -37,64 +31,38 @@ pub const TimerPayload = struct {
 pub fn TimerSource(
     comptime Thread: type,
     comptime Time: type,
-    comptime IO: type,
+    comptime ChannelType: type,
     comptime EventType: type,
     comptime tag: []const u8,
 ) type {
     comptime {
-        _ = runtime.io.from(IO);
+        _ = runtime_channel.from(EventType, ChannelType);
         event_pkg.types.assertTaggedUnion(EventType);
     }
-
-    const fd_t = runtime.io.fd_t;
-    const PeriphType = event_pkg.Periph(EventType);
 
     return struct {
         const Self = @This();
 
-        periph: PeriphType,
-        io: *IO,
+        channel: ChannelType,
         time: Time,
         config: Config,
         worker: ?Thread = null,
         running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
         count: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
 
-        pipe_r: fd_t,
-        pipe_w: fd_t,
-
-        const WireEvent = extern struct {
-            count: u32,
-        };
-
-        pub fn init(io: *IO, time: Time, config: Config) !Self {
-            const pipe_fds = try std.posix.pipe();
-            errdefer {
-                std.posix.close(pipe_fds[0]);
-                std.posix.close(pipe_fds[1]);
-            }
-
-            try setNonBlocking(pipe_fds[0]);
-            try setNonBlocking(pipe_fds[1]);
+        pub fn init(allocator: std.mem.Allocator, time: Time, config: Config) !Self {
+            const channel = try ChannelType.init(allocator, 16);
 
             return .{
-                .periph = undefined,
-                .io = io,
+                .channel = channel,
                 .time = time,
                 .config = config,
-                .pipe_r = pipe_fds[0],
-                .pipe_w = pipe_fds[1],
             };
-        }
-
-        pub fn bind(self: *Self) void {
-            self.periph = .{ .ctx = self, .fd = self.pipe_r, .onReady = onReady };
         }
 
         pub fn deinit(self: *Self) void {
             self.stop();
-            std.posix.close(self.pipe_r);
-            std.posix.close(self.pipe_w);
+            self.channel.deinit();
         }
 
         pub fn start(self: *Self) !void {
@@ -128,37 +96,18 @@ pub fn TimerSource(
                 if (!self.running.load(.acquire)) break;
 
                 const c = self.count.fetchAdd(1, .monotonic) + 1;
-                const wire = WireEvent{ .count = c };
-                _ = std.posix.write(self.pipe_w, std.mem.asBytes(&wire)) catch {};
-                self.io.wake();
+                const event = @unionInit(EventType, tag, .{
+                    .id = self.config.id,
+                    .count = c,
+                    .interval_ms = self.config.interval_ms,
+                });
+                _ = self.channel.send(event) catch {};
 
                 if (self.config.mode == .one_shot) {
                     self.running.store(false, .release);
                     break;
                 }
             }
-        }
-
-        fn onReady(ctx: ?*anyopaque, _: fd_t, buf: *std.ArrayList(EventType), alloc: std.mem.Allocator) void {
-            const self: *Self = @ptrCast(@alignCast(ctx orelse return));
-            var wire: WireEvent = undefined;
-            const wire_bytes = std.mem.asBytes(&wire);
-            while (true) {
-                const n = std.posix.read(self.pipe_r, wire_bytes) catch break;
-                if (n < wire_bytes.len) break;
-                buf.append(alloc, @unionInit(EventType, tag, .{
-                    .id = self.config.id,
-                    .count = wire.count,
-                    .interval_ms = self.config.interval_ms,
-                })) catch {};
-            }
-        }
-
-        fn setNonBlocking(fd: fd_t) !void {
-            var fl = try std.posix.fcntl(fd, std.posix.F.GETFL, 0);
-            const mask: usize = @as(usize, 1) << @bitOffsetOf(std.posix.O, "NONBLOCK");
-            fl |= mask;
-            _ = try std.posix.fcntl(fd, std.posix.F.SETFL, fl);
         }
     };
 }

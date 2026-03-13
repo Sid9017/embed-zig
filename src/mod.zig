@@ -4,6 +4,8 @@ pub const runtime = struct {
     pub const time = @import("runtime/time.zig");
     pub const thread = @import("runtime/thread.zig");
     pub const system = @import("runtime/system.zig");
+    pub const channel = @import("runtime/channel.zig");
+    pub const select = @import("runtime/select.zig");
     pub const io = @import("runtime/io.zig");
     pub const socket = @import("runtime/socket.zig");
     pub const fs = @import("runtime/fs.zig");
@@ -49,21 +51,9 @@ pub const hal = struct {
 
 pub const pkg = struct {
     pub const async = struct {
-        pub const cancellation = @import("pkg/async/cancellation.zig");
-        pub const channel = @import("pkg/async/channel.zig");
         pub const waitgroup = @import("pkg/async/wait_group.zig");
-        pub const timer = @import("pkg/async/timer.zig");
-        pub const reactor = @import("pkg/async/reactor.zig");
-        pub const executor = @import("pkg/async/executor.zig");
 
-        pub const Source = cancellation.Source;
-        pub const Token = cancellation.Token;
-        pub const Channel = channel.Channel;
         pub const WaitGroup = waitgroup.WaitGroup;
-        pub const Scheduler = timer.Scheduler;
-        pub const TimerId = timer.TimerId;
-        pub const Reactor = reactor.Reactor;
-        pub const Executor = executor.Executor;
     };
 
     pub const audio = struct {
@@ -320,215 +310,5 @@ pub const websim = struct {
 };
 
 test {
-    std.testing.refAllDecls(@This());
-    _ = @import("runtime/std.zig");
-    _ = @import("pkg/audio/engine.zig");
-    _ = @import("pkg/audio/mixer.zig");
-    _ = @import("pkg/audio/override_buffer.zig");
-    _ = @import("pkg/audio/resampler.zig");
-    _ = @import("pkg/event/bus_integration_test.zig");
-    _ = @import("pkg/net/tls/stress_test.zig");
-    _ = @import("pkg/net/ws/e2e_test.zig");
-    _ = @import("pkg/ble/xfer/xfer_test.zig");
-    _ = @import("pkg/ble/term/term_test.zig");
-    _ = @import("pkg/ble/ble_test.zig");
-    _ = @import("pkg/ui/render/framebuffer/dirty.zig");
-    _ = @import("pkg/ui/render/framebuffer/framebuffer.zig");
-    _ = @import("pkg/ui/render/framebuffer/font.zig");
-    _ = @import("pkg/ui/render/framebuffer/image.zig");
-    _ = @import("pkg/ui/render/framebuffer/anim.zig");
-    _ = @import("pkg/ui/render/framebuffer/scene.zig");
-    _ = @import("pkg/ui/render/font/api.zig");
-    _ = @import("pkg/ui/led_strip/frame.zig");
-    _ = @import("pkg/ui/led_strip/transition.zig");
-    _ = @import("pkg/ui/led_strip/animator.zig");
-    _ = @import("pkg/flux/store.zig");
-    _ = @import("pkg/flux/app_state_manager.zig");
-    _ = @import("pkg/app/app_runtime.zig");
-}
-
-const std = @import("std");
-
-const Ch = pkg.async.Channel(u32, runtime.std.Mutex, runtime.std.Condition);
-const Wg = pkg.async.WaitGroup(runtime.std.Mutex, runtime.std.Condition);
-const Exec = pkg.async.Executor(runtime.std.Mutex);
-const React = pkg.async.Reactor(runtime.std.IO);
-
-test "integration: executor tasks communicate through channel" {
-    var ch = try Ch.init(std.testing.allocator, 16);
-    defer ch.deinit();
-
-    const Sender = struct {
-        ch_ptr: *Ch,
-        fn run(raw: ?*anyopaque) !void {
-            const self: *@This() = @ptrCast(@alignCast(raw orelse return));
-            var i: u32 = 0;
-            while (i < 10) : (i += 1) {
-                self.ch_ptr.trySend(i) catch return error.ChannelFull;
-            }
-        }
-    };
-
-    var sender = Sender{ .ch_ptr = &ch };
-    var exec = Exec.init(std.testing.allocator);
-    defer exec.deinit();
-
-    try exec.submit(.{ .func = Sender.run, .ctx = &sender });
-    try exec.runAll();
-
-    try std.testing.expectEqual(@as(usize, 1), exec.stats().completed);
-    try std.testing.expectEqual(@as(usize, 10), ch.count());
-
-    var sum: u64 = 0;
-    while (!ch.isEmpty()) {
-        sum += try ch.tryRecv();
-    }
-    try std.testing.expectEqual(@as(u64, 45), sum);
-}
-
-test "integration: cancellation aborts executor tasks and timer" {
-    var cancel_src = pkg.async.Source{};
-
-    var sched = pkg.async.Scheduler.init(std.testing.allocator);
-    defer sched.deinit();
-
-    _ = try sched.scheduleWithCallback(0, 100, null, null, &cancel_src);
-    _ = try sched.scheduleWithCallback(0, 200, null, null, &cancel_src);
-
-    const tok = cancel_src.token();
-
-    const noop = struct {
-        fn run(_: ?*anyopaque) !void {}
-    }.run;
-
-    var exec = Exec.init(std.testing.allocator);
-    defer exec.deinit();
-
-    try exec.submit(.{ .func = noop, .ctx = null, .cancel_token = tok });
-    try exec.submit(.{ .func = noop, .ctx = null, .cancel_token = tok });
-    try exec.submit(.{ .func = noop, .ctx = null });
-
-    _ = cancel_src.cancel();
-
-    try exec.runAll();
-    try std.testing.expectEqual(@as(usize, 1), exec.stats().completed);
-    try std.testing.expectEqual(@as(usize, 2), exec.stats().cancelled);
-
-    var ready = std.ArrayList(pkg.async.TimerId).empty;
-    defer ready.deinit(std.testing.allocator);
-    try sched.collectReady(300, &ready);
-    try std.testing.expectEqual(@as(usize, 0), ready.items.len);
-}
-
-test "integration: waitgroup tracks executor task completion" {
-    var wg = Wg.init();
-    defer wg.deinit();
-
-    const Counter = struct {
-        var done_count: usize = 0;
-        fn onAllDone(_: ?*anyopaque) void {
-            done_count = 1;
-        }
-    };
-    Counter.done_count = 0;
-    wg.onComplete(Counter.onAllDone, null);
-    wg.add(3);
-
-    const TaskCtx = struct {
-        wg_ptr: *Wg,
-        fn run(raw: ?*anyopaque) !void {
-            const self: *@This() = @ptrCast(@alignCast(raw orelse return));
-            self.wg_ptr.done() catch {};
-        }
-    };
-
-    var ctx1 = TaskCtx{ .wg_ptr = &wg };
-    var ctx2 = TaskCtx{ .wg_ptr = &wg };
-    var ctx3 = TaskCtx{ .wg_ptr = &wg };
-
-    var exec = Exec.init(std.testing.allocator);
-    defer exec.deinit();
-
-    try exec.submit(.{ .func = TaskCtx.run, .ctx = &ctx1 });
-    try exec.submit(.{ .func = TaskCtx.run, .ctx = &ctx2 });
-    try exec.submit(.{ .func = TaskCtx.run, .ctx = &ctx3 });
-
-    try exec.runAll();
-    try std.testing.expectEqual(@as(usize, 3), exec.stats().completed);
-    try std.testing.expect(wg.isDone());
-    try std.testing.expectEqual(@as(usize, 1), Counter.done_count);
-}
-
-test "integration: reactor timer drives executor task scheduling" {
-    var io = try runtime.std.IO.init(std.testing.allocator);
-    defer io.deinit();
-    var reactor = React.init(&io, std.testing.allocator);
-    defer reactor.deinit();
-
-    const TaskState = struct {
-        var timer_fired: bool = false;
-        fn onTimer(_: ?*anyopaque) void {
-            timer_fired = true;
-        }
-    };
-    TaskState.timer_fired = false;
-
-    _ = try reactor.scheduleTimerWithCallback(0, 50, TaskState.onTimer, null, null);
-
-    var ready = std.ArrayList(pkg.async.TimerId).empty;
-    defer ready.deinit(std.testing.allocator);
-
-    const events = try reactor.tick(50, &ready);
-    try std.testing.expectEqual(@as(usize, 1), events);
-    try std.testing.expect(TaskState.timer_fired);
-
-    const noop = struct {
-        fn run(_: ?*anyopaque) !void {}
-    }.run;
-
-    var exec = Exec.init(std.testing.allocator);
-    defer exec.deinit();
-
-    for (ready.items) |_| {
-        try exec.submit(.{ .func = noop, .ctx = null });
-    }
-    try exec.runAll();
-    try std.testing.expectEqual(@as(usize, 1), exec.stats().completed);
-}
-
-test "integration: channel producer cancelled mid-stream" {
-    var ch = try Ch.init(std.testing.allocator, 32);
-    defer ch.deinit();
-
-    var cancel_src = pkg.async.Source{};
-    const tok = cancel_src.token();
-
-    const Producer = struct {
-        ch_ptr: *Ch,
-        token: pkg.async.Token,
-        fn run(raw: ?*anyopaque) !void {
-            const self: *@This() = @ptrCast(@alignCast(raw orelse return));
-            var i: u32 = 0;
-            while (i < 100) : (i += 1) {
-                if (self.token.isCancelled()) return;
-                self.ch_ptr.trySend(i) catch return;
-            }
-        }
-    };
-
-    var producer = Producer{ .ch_ptr = &ch, .token = tok };
-
-    var exec = Exec.init(std.testing.allocator);
-    defer exec.deinit();
-
-    ch.trySend(0) catch {};
-    ch.trySend(1) catch {};
-    ch.trySend(2) catch {};
-
-    _ = cancel_src.cancel();
-
-    try exec.submit(.{ .func = Producer.run, .ctx = &producer });
-    try exec.runAll();
-
-    try std.testing.expectEqual(@as(usize, 3), ch.count());
+    _ = @import("mod_test.zig");
 }

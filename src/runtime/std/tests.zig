@@ -6,10 +6,11 @@ const sync = @import("sync.zig");
 const thread = @import("thread.zig");
 const system = @import("system.zig");
 const fs = @import("fs.zig");
-const io = @import("io.zig");
 const socket = @import("socket.zig");
 const netif = @import("netif.zig");
 const ota_backend = @import("ota_backend.zig");
+const channel_test = @import("channel_test.zig");
+const select_test = @import("select_test.zig");
 const runtime = struct {
     pub const ota_backend = @import("../ota_backend.zig");
 };
@@ -35,13 +36,6 @@ fn notifyAfterDelay(ctx: ?*anyopaque) void {
     const n: *sync.Notify = @ptrCast(@alignCast(ctx.?));
     std_time.sleepMs(20);
     n.signal();
-}
-
-fn ioReadReady(ctx: ?*anyopaque, fd: std.posix.fd_t) void {
-    const called: *u32 = @ptrCast(@alignCast(ctx.?));
-    var buf: [32]u8 = undefined;
-    _ = std.posix.read(fd, &buf) catch {};
-    called.* += 1;
 }
 
 fn tcpServerEcho(ctx: ?*anyopaque) void {
@@ -154,41 +148,6 @@ test "std fs read/write roundtrip" {
     var buf: [64]u8 = undefined;
     const got = try in.readAll(&buf);
     try std.testing.expectEqualStrings("hello-std-runtime", got);
-}
-
-test "std io registerRead and poll" {
-    var io_impl = try io.IO.init(std.testing.allocator);
-    defer io_impl.deinit();
-
-    const p = try std.posix.pipe();
-    defer std.posix.close(p[0]);
-    defer std.posix.close(p[1]);
-
-    var called: u32 = 0;
-    try io_impl.registerRead(p[0], .{ .ptr = @ptrCast(&called), .callback = &ioReadReady });
-
-    const msg = [_]u8{'x'};
-    _ = try std.posix.write(p[1], &msg);
-
-    const fired = io_impl.poll(1000);
-    try std.testing.expect(fired >= 1);
-    try std.testing.expectEqual(@as(u32, 1), called);
-
-    io_impl.unregister(p[0]);
-}
-
-test "std io wake drains buffered wake bytes" {
-    var io_impl = try io.IO.init(std.testing.allocator);
-    defer io_impl.deinit();
-
-    var i: usize = 0;
-    while (i < 8192) : (i += 1) {
-        io_impl.wake();
-    }
-
-    _ = io_impl.poll(10);
-    const second = io_impl.poll(0);
-    try std.testing.expectEqual(@as(usize, 0), second);
 }
 
 test "std socket tcp loopback echo" {
@@ -331,4 +290,9 @@ test "std ota backend rollback removes image" {
 
     try ota.rollback();
     try std.testing.expectEqual(runtime.ota_backend.State.unknown, ota.getState());
+}
+
+test {
+    _ = channel_test;
+    _ = select_test;
 }
