@@ -313,3 +313,6 @@ pub const websim = struct {
     };
 };
 
+test {
+    @import("std").testing.refAllDecls(@This());
+}

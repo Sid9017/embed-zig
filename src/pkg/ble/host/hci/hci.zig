@@ -70,7 +70,3 @@ pub const Status = enum(u8) {
 // Tests
 // ============================================================================
 
-test {
-    const std = @import("std");
-    std.testing.refAllDecls(@This());
-}

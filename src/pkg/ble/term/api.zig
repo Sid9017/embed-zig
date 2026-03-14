@@ -198,9 +198,3 @@ pub fn Server(comptime Thread: type, comptime Mutex: type, comptime Cond: type) 
         }
     };
 }
-
-test {
-    _ = shell_mod;
-    _ = transport_mod;
-    _ = @import("term_test.zig");
-}

@@ -22,12 +22,3 @@ pub const start_magic = chunk.start_magic;
 pub const ack_signal = chunk.ack_signal;
 pub const dataChunkSize = chunk.dataChunkSize;
 pub const chunksNeeded = chunk.chunksNeeded;
-
-test {
-    const std = @import("std");
-    _ = std;
-    _ = chunk;
-    _ = read_x;
-    _ = write_x;
-    _ = @import("xfer_test.zig");
-}
