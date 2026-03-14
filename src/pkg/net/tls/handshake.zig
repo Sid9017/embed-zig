@@ -1,18 +1,18 @@
 const std = @import("std");
-const runtime = struct {
+pub const runtime = struct {
     pub const std = @import("../../../runtime/std.zig");
 };
-const common = @import("common.zig");
-const extensions = @import("extensions.zig");
-const record = @import("record.zig");
-const kdf = @import("kdf.zig");
+pub const common = @import("common.zig");
+pub const extensions = @import("extensions.zig");
+pub const record = @import("record.zig");
+pub const kdf = @import("kdf.zig");
 
-const HandshakeType = common.HandshakeType;
-const ProtocolVersion = common.ProtocolVersion;
-const CipherSuite = common.CipherSuite;
-const NamedGroup = common.NamedGroup;
-const SignatureScheme = common.SignatureScheme;
-const ContentType = common.ContentType;
+pub const HandshakeType = common.HandshakeType;
+pub const ProtocolVersion = common.ProtocolVersion;
+pub const CipherSuite = common.CipherSuite;
+pub const NamedGroup = common.NamedGroup;
+pub const SignatureScheme = common.SignatureScheme;
+pub const ContentType = common.ContentType;
 
 pub const HandshakeHeader = struct {
     msg_type: HandshakeType,
@@ -66,7 +66,7 @@ pub fn KeyExchange(comptime Crypto: type) type {
     };
 }
 
-fn X25519KeyExchange(comptime Crypto: type) type {
+pub fn X25519KeyExchange(comptime Crypto: type) type {
     return struct {
         secret_key: [32]u8,
         public_key: [32]u8,
@@ -97,7 +97,7 @@ fn X25519KeyExchange(comptime Crypto: type) type {
     };
 }
 
-fn P256KeyExchange(comptime Crypto: type) type {
+pub fn P256KeyExchange(comptime Crypto: type) type {
     return struct {
         secret_key: [32]u8,
         public_key: [65]u8,
@@ -148,7 +148,7 @@ pub const HandshakeState = enum {
     wait_server_hello_done,
 };
 
-fn TranscriptHash(comptime Crypto: type) type {
+pub fn TranscriptHash(comptime Crypto: type) type {
     return struct {
         sha256: Crypto.Sha256,
 
@@ -173,7 +173,7 @@ fn TranscriptHash(comptime Crypto: type) type {
     };
 }
 
-fn Tls12Prf(comptime Crypto: type) type {
+pub fn Tls12Prf(comptime Crypto: type) type {
     return struct {
         pub fn prf(out: []u8, secret: []const u8, label: []const u8, seed: []const u8) void {
             const Hmac = Crypto.HmacSha256;
@@ -1174,39 +1174,4 @@ pub const HandshakeError = error{
     UnexpectedRecord,
     IdentityElement,
     CertificateVerificationFailed,
-};
-
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    const __test_export_1 = common;
-    const __test_export_2 = extensions;
-    const __test_export_3 = record;
-    const __test_export_4 = kdf;
-    const __test_export_5 = HandshakeType;
-    const __test_export_6 = ProtocolVersion;
-    const __test_export_7 = CipherSuite;
-    const __test_export_8 = NamedGroup;
-    const __test_export_9 = SignatureScheme;
-    const __test_export_10 = ContentType;
-    const __test_export_11 = X25519KeyExchange;
-    const __test_export_12 = P256KeyExchange;
-    const __test_export_13 = TranscriptHash;
-    const __test_export_14 = Tls12Prf;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-        pub const common = __test_export_1;
-        pub const extensions = __test_export_2;
-        pub const record = __test_export_3;
-        pub const kdf = __test_export_4;
-        pub const HandshakeType = __test_export_5;
-        pub const ProtocolVersion = __test_export_6;
-        pub const CipherSuite = __test_export_7;
-        pub const NamedGroup = __test_export_8;
-        pub const SignatureScheme = __test_export_9;
-        pub const ContentType = __test_export_10;
-        pub const X25519KeyExchange = __test_export_11;
-        pub const P256KeyExchange = __test_export_12;
-        pub const TranscriptHash = __test_export_13;
-        pub const Tls12Prf = __test_export_14;
-    };
 };

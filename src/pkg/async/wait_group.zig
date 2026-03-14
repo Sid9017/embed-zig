@@ -1,11 +1,7 @@
 const std = @import("std");
-const runtime_mod = struct {
+pub const runtime = struct {
     pub const sync = @import("../../runtime/sync.zig");
     pub const std = @import("../../runtime/std.zig");
-};
-
-pub const test_exports = struct {
-    pub const runtime = runtime_mod;
 };
 
 pub const WaitGroupError = error{
@@ -19,8 +15,8 @@ pub const CallbackFn = *const fn (?*anyopaque) void;
 /// Also supports cooperative polling via `isDone()` and completion callbacks.
 pub fn WaitGroup(comptime Mutex: type, comptime Cond: type) type {
     comptime {
-        _ = runtime_mod.sync.Mutex(Mutex);
-        _ = runtime_mod.sync.ConditionWithMutex(Cond, Mutex);
+        _ = runtime.sync.Mutex(Mutex);
+        _ = runtime.sync.ConditionWithMutex(Cond, Mutex);
     }
 
     return struct {

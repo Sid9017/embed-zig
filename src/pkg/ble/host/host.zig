@@ -101,7 +101,7 @@ pub const TxPacket = struct {
 // ============================================================================
 
 /// Counting semaphore for HCI flow control, parameterized on runtime sync types.
-fn AclCredits(comptime Mutex: type, comptime Cond: type) type {
+pub fn AclCredits(comptime Mutex: type, comptime Cond: type) type {
     return struct {
         const Self = @This();
 
@@ -1257,7 +1257,7 @@ pub fn Host(
 // ============================================================================
 
 // Shared mock HCI for tests
-fn MockHci() type {
+pub fn MockHci() type {
     return struct {
         const Self = @This();
         const HciError = error{ WouldBlock, HciError };
@@ -1360,32 +1360,3 @@ fn MockHci() type {
         }
     };
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    const __test_export_1 = hci_mod;
-    const __test_export_2 = acl_mod;
-    const __test_export_3 = commands;
-    const __test_export_4 = events_mod;
-    const __test_export_5 = l2cap_mod;
-    const __test_export_6 = att_mod;
-    const __test_export_7 = gap_mod;
-    const __test_export_8 = gatt_server;
-    const __test_export_9 = gatt_client;
-    const __test_export_10 = AclCredits;
-    const __test_export_11 = MockHci;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-        pub const hci_mod = __test_export_1;
-        pub const acl_mod = __test_export_2;
-        pub const commands = __test_export_3;
-        pub const events_mod = __test_export_4;
-        pub const l2cap_mod = __test_export_5;
-        pub const att_mod = __test_export_6;
-        pub const gap_mod = __test_export_7;
-        pub const gatt_server = __test_export_8;
-        pub const gatt_client = __test_export_9;
-        pub const AclCredits = __test_export_10;
-        pub const MockHci = __test_export_11;
-    };
-};

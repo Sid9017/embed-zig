@@ -188,12 +188,3 @@ pub fn writeUsize(buf: []u8, value: usize) ?[]const u8 {
     }
     return buf[0..len];
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = mem;
-    const __test_export_1 = ascii;
-    break :blk struct {
-        pub const mem = __test_export_0;
-        pub const ascii = __test_export_1;
-    };
-};

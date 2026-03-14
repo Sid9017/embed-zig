@@ -1,16 +1,16 @@
 const std = @import("std");
-const runtime = struct {
+pub const runtime = struct {
     pub const sync = @import("../../../runtime/sync.zig");
     pub const std = @import("../../../runtime/std.zig");
 };
-const conn_mod = @import("../conn.zig");
-const common = @import("common.zig");
-const record = @import("record.zig");
-const handshake = @import("handshake.zig");
+pub const conn_mod = @import("../conn.zig");
+pub const common = @import("common.zig");
+pub const record = @import("record.zig");
+pub const handshake = @import("handshake.zig");
 
-const ProtocolVersion = common.ProtocolVersion;
-const CipherSuite = common.CipherSuite;
-const AlertDescription = common.AlertDescription;
+pub const ProtocolVersion = common.ProtocolVersion;
+pub const CipherSuite = common.CipherSuite;
+pub const AlertDescription = common.AlertDescription;
 
 pub fn Config(comptime Crypto: type) type {
     const CaStore = if (@hasDecl(Crypto, "x509") and @hasDecl(Crypto.x509, "CaStore"))
@@ -254,7 +254,7 @@ pub fn connect(
     return tls_client;
 }
 
-const TestMockConn = struct {
+pub const TestMockConn = struct {
     write_buf: [16384]u8 = undefined,
     write_len: usize = 0,
     read_buf: [16384]u8 = undefined,
@@ -297,7 +297,7 @@ const TestMockConn = struct {
 // Concurrency tests — use real std.Thread to exercise mutex paths
 // ---------------------------------------------------------------------------
 
-const ConcurrentPipeConn = struct {
+pub const ConcurrentPipeConn = struct {
     mu: std.Thread.Mutex = .{},
     cond: std.Thread.Condition = .{},
     buf: [65536]u8 = undefined,
@@ -353,29 +353,4 @@ const ConcurrentPipeConn = struct {
         self.closed = true;
         self.cond.broadcast();
     }
-};
-
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    const __test_export_1 = conn_mod;
-    const __test_export_2 = common;
-    const __test_export_3 = record;
-    const __test_export_4 = handshake;
-    const __test_export_5 = ProtocolVersion;
-    const __test_export_6 = CipherSuite;
-    const __test_export_7 = AlertDescription;
-    const __test_export_8 = TestMockConn;
-    const __test_export_9 = ConcurrentPipeConn;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-        pub const conn_mod = __test_export_1;
-        pub const common = __test_export_2;
-        pub const record = __test_export_3;
-        pub const handshake = __test_export_4;
-        pub const ProtocolVersion = __test_export_5;
-        pub const CipherSuite = __test_export_6;
-        pub const AlertDescription = __test_export_7;
-        pub const TestMockConn = __test_export_8;
-        pub const ConcurrentPipeConn = __test_export_9;
-    };
 };

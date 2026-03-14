@@ -122,14 +122,3 @@ pub fn encode(
 
     return buf[0 .. 5 + data.len];
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-pub const test_exports = blk: {
-    const __test_export_0 = hci;
-    break :blk struct {
-        pub const hci = __test_export_0;
-    };
-};

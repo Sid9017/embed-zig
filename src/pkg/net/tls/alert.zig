@@ -115,10 +115,3 @@ pub fn serializeAlert(a: Alert, buf: []u8) !void {
     buf[0] = @intFromEnum(a.level);
     buf[1] = @intFromEnum(a.description);
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = common;
-    break :blk struct {
-        pub const common = __test_export_0;
-    };
-};

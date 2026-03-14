@@ -34,7 +34,7 @@ pub const Error = error{
     ReservedOpcode,
 };
 
-const MIN_HEADER_SIZE = 2;
+pub const MIN_HEADER_SIZE = 2;
 
 pub fn decodeHeader(buf: []const u8) Error!FrameHeader {
     if (buf.len < MIN_HEADER_SIZE)
@@ -151,11 +151,11 @@ pub fn applyMaskOffset(data: []u8, mask_key: [4]u8, offset: usize) void {
     }
 }
 
-fn readU16Big(b: *const [2]u8) u16 {
+pub fn readU16Big(b: *const [2]u8) u16 {
     return @as(u16, b[0]) << 8 | @as(u16, b[1]);
 }
 
-fn readU64Big(b: *const [8]u8) u64 {
+pub fn readU64Big(b: *const [8]u8) u64 {
     var result: u64 = 0;
     inline for (0..8) |i| {
         result |= @as(u64, b[i]) << @intCast((7 - i) * 8);
@@ -168,27 +168,8 @@ pub fn writeU16Big(b: *[2]u8, v: u16) void {
     b[1] = @intCast(v & 0xFF);
 }
 
-fn writeU64Big(b: *[8]u8, v: u64) void {
+pub fn writeU64Big(b: *[8]u8, v: u64) void {
     inline for (0..8) |i| {
         b[i] = @intCast((v >> @intCast((7 - i) * 8)) & 0xFF);
     }
 }
-
-// ==========================================================================
-// Tests
-// ==========================================================================
-
-const std = @import("std");
-
-pub const test_exports = blk: {
-    const __test_export_0 = MIN_HEADER_SIZE;
-    const __test_export_1 = readU16Big;
-    const __test_export_2 = readU64Big;
-    const __test_export_3 = writeU64Big;
-    break :blk struct {
-        pub const MIN_HEADER_SIZE = __test_export_0;
-        pub const readU16Big = __test_export_1;
-        pub const readU64Big = __test_export_2;
-        pub const writeU64Big = __test_export_3;
-    };
-};

@@ -222,7 +222,7 @@ pub fn decode(data: []const u8) ?Event {
     };
 }
 
-fn decodeCommandComplete(params: []const u8) ?Event {
+pub fn decodeCommandComplete(params: []const u8) ?Event {
     if (params.len < 4) return null;
     return .{ .command_complete = .{
         .num_cmd_packets = params[0],
@@ -232,7 +232,7 @@ fn decodeCommandComplete(params: []const u8) ?Event {
     } };
 }
 
-fn decodeCommandStatus(params: []const u8) ?Event {
+pub fn decodeCommandStatus(params: []const u8) ?Event {
     if (params.len < 4) return null;
     return .{ .command_status = .{
         .status = @enumFromInt(params[0]),
@@ -241,7 +241,7 @@ fn decodeCommandStatus(params: []const u8) ?Event {
     } };
 }
 
-fn decodeDisconnectionComplete(params: []const u8) ?Event {
+pub fn decodeDisconnectionComplete(params: []const u8) ?Event {
     if (params.len < 4) return null;
     return .{ .disconnection_complete = .{
         .status = @enumFromInt(params[0]),
@@ -250,7 +250,7 @@ fn decodeDisconnectionComplete(params: []const u8) ?Event {
     } };
 }
 
-fn decodeNumCompletedPackets(params: []const u8) ?Event {
+pub fn decodeNumCompletedPackets(params: []const u8) ?Event {
     if (params.len < 1) return null;
     return .{ .num_completed_packets = .{
         .num_handles = params[0],
@@ -258,7 +258,7 @@ fn decodeNumCompletedPackets(params: []const u8) ?Event {
     } };
 }
 
-fn decodeLeMetaEvent(params: []const u8) ?Event {
+pub fn decodeLeMetaEvent(params: []const u8) ?Event {
     if (params.len < 1) return null;
 
     const sub: LeSubevent = @enumFromInt(params[0]);
@@ -280,7 +280,7 @@ fn decodeLeMetaEvent(params: []const u8) ?Event {
     };
 }
 
-fn decodeLeConnectionComplete(params: []const u8) ?Event {
+pub fn decodeLeConnectionComplete(params: []const u8) ?Event {
     if (params.len < 18) return null;
     return .{ .le_connection_complete = .{
         .status = @enumFromInt(params[0]),
@@ -294,7 +294,7 @@ fn decodeLeConnectionComplete(params: []const u8) ?Event {
     } };
 }
 
-fn decodeLeConnectionUpdateComplete(params: []const u8) ?Event {
+pub fn decodeLeConnectionUpdateComplete(params: []const u8) ?Event {
     if (params.len < 9) return null;
     return .{ .le_connection_update_complete = .{
         .status = @enumFromInt(params[0]),
@@ -305,7 +305,7 @@ fn decodeLeConnectionUpdateComplete(params: []const u8) ?Event {
     } };
 }
 
-fn decodeLeDataLengthChange(params: []const u8) ?Event {
+pub fn decodeLeDataLengthChange(params: []const u8) ?Event {
     if (params.len < 10) return null;
     return .{ .le_data_length_change = .{
         .conn_handle = std.mem.readInt(u16, params[0..2], .little) & 0x0FFF,
@@ -316,7 +316,7 @@ fn decodeLeDataLengthChange(params: []const u8) ?Event {
     } };
 }
 
-fn decodeLePhyUpdateComplete(params: []const u8) ?Event {
+pub fn decodeLePhyUpdateComplete(params: []const u8) ?Event {
     if (params.len < 5) return null;
     return .{ .le_phy_update_complete = .{
         .status = @enumFromInt(params[0]),
@@ -325,32 +325,3 @@ fn decodeLePhyUpdateComplete(params: []const u8) ?Event {
         .rx_phy = params[4],
     } };
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-pub const test_exports = blk: {
-    const __test_export_0 = hci;
-    const __test_export_1 = decodeCommandComplete;
-    const __test_export_2 = decodeCommandStatus;
-    const __test_export_3 = decodeDisconnectionComplete;
-    const __test_export_4 = decodeNumCompletedPackets;
-    const __test_export_5 = decodeLeMetaEvent;
-    const __test_export_6 = decodeLeConnectionComplete;
-    const __test_export_7 = decodeLeConnectionUpdateComplete;
-    const __test_export_8 = decodeLeDataLengthChange;
-    const __test_export_9 = decodeLePhyUpdateComplete;
-    break :blk struct {
-        pub const hci = __test_export_0;
-        pub const decodeCommandComplete = __test_export_1;
-        pub const decodeCommandStatus = __test_export_2;
-        pub const decodeDisconnectionComplete = __test_export_3;
-        pub const decodeNumCompletedPackets = __test_export_4;
-        pub const decodeLeMetaEvent = __test_export_5;
-        pub const decodeLeConnectionComplete = __test_export_6;
-        pub const decodeLeConnectionUpdateComplete = __test_export_7;
-        pub const decodeLeDataLengthChange = __test_export_8;
-        pub const decodeLePhyUpdateComplete = __test_export_9;
-    };
-};

@@ -127,7 +127,7 @@ inline fn readCp(table: []const u8, idx: usize) u32 {
 const std = @import("std");
 const testing = std.testing;
 
-fn TestBin(
+pub fn TestBin(
     comptime glyph_w: u8,
     comptime glyph_h: u8,
     comptime codepoints: []const u32,
@@ -162,10 +162,3 @@ fn TestBin(
         };
     };
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = TestBin;
-    break :blk struct {
-        pub const TestBin = __test_export_0;
-    };
-};

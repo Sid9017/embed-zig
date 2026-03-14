@@ -71,10 +71,3 @@ pub fn SocketConn(comptime Socket: type) type {
         }
     };
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-    };
-};

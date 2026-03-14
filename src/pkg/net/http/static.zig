@@ -44,13 +44,13 @@ pub fn mimeFromPath(path: []const u8) []const u8 {
     return "application/octet-stream";
 }
 
-fn endsWith(haystack: []const u8, suffix: []const u8) bool {
+pub fn endsWith(haystack: []const u8, suffix: []const u8) bool {
     return mem.endsWith(u8, haystack, suffix);
 }
 
 const testing = std.testing;
 
-const TestWriter = struct {
+pub const TestWriter = struct {
     buf: [4096]u8 = undefined,
     len: usize = 0,
 
@@ -67,30 +67,7 @@ const TestWriter = struct {
     }
 };
 
-const test_files = [_]EmbeddedFile{
+pub const test_files = [_]EmbeddedFile{
     .{ .path = "/static/app.js", .data = "console.log('hello');", .mime = "application/javascript" },
     .{ .path = "/static/style.css", .data = "body { margin: 0; }", .mime = "text/css" },
-};
-
-pub const test_exports = blk: {
-    const __test_export_0 = mem;
-    const __test_export_1 = request_mod;
-    const __test_export_2 = response_mod;
-    const __test_export_3 = router_mod;
-    const __test_export_4 = Request;
-    const __test_export_5 = Response;
-    const __test_export_6 = endsWith;
-    const __test_export_7 = TestWriter;
-    const __test_export_8 = test_files;
-    break :blk struct {
-        pub const mem = __test_export_0;
-        pub const request_mod = __test_export_1;
-        pub const response_mod = __test_export_2;
-        pub const router_mod = __test_export_3;
-        pub const Request = __test_export_4;
-        pub const Response = __test_export_5;
-        pub const endsWith = __test_export_6;
-        pub const TestWriter = __test_export_7;
-        pub const test_files = __test_export_8;
-    };
 };

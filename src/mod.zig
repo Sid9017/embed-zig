@@ -6,7 +6,6 @@ pub const runtime = struct {
     pub const system = @import("runtime/system.zig");
     pub const channel = @import("runtime/channel.zig");
     pub const select = @import("runtime/select.zig");
-    pub const io = @import("runtime/io.zig");
     pub const socket = @import("runtime/socket.zig");
     pub const fs = @import("runtime/fs.zig");
     pub const log = @import("runtime/log.zig");
@@ -14,6 +13,11 @@ pub const runtime = struct {
     pub const netif = @import("runtime/netif.zig");
     pub const ota_backend = @import("runtime/ota_backend.zig");
     pub const std = @import("runtime/std.zig");
+
+    pub const test_runners = struct {
+        pub const channel = @import("runtime/channel_test_runner.zig");
+        pub const select = @import("runtime/select_test_runner.zig");
+    };
 
     pub const crypto = struct {
         pub const hash = @import("runtime/crypto/hash.zig");
@@ -78,7 +82,7 @@ pub const pkg = struct {
         };
 
         pub const host = struct {
-            const host_mod = @import("pkg/ble/host/host.zig");
+            pub const host_mod = @import("pkg/ble/host/host.zig");
             pub const Host = host_mod.Host;
             pub const hci = struct {
                 pub const hci = @import("pkg/ble/host/hci/hci.zig");
@@ -309,6 +313,3 @@ pub const websim = struct {
     };
 };
 
-test {
-    _ = @import("mod_test.zig");
-}

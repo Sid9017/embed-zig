@@ -9,20 +9,20 @@
 //!   if (detector.update(sample)) |event| { ... }
 
 const std = @import("std");
-const types = @import("types.zig");
+pub const types = @import("types.zig");
 
-const AccelData = types.AccelData;
-const GyroData = types.GyroData;
-const SensorSample = types.SensorSample;
-const MotionAction = types.MotionAction;
-const Thresholds = types.Thresholds;
-const Axis = types.Axis;
-const Orientation = types.Orientation;
+pub const AccelData = types.AccelData;
+pub const GyroData = types.GyroData;
+pub const SensorSample = types.SensorSample;
+pub const MotionAction = types.MotionAction;
+pub const Thresholds = types.Thresholds;
+pub const Axis = types.Axis;
+pub const Orientation = types.Orientation;
 
 /// Check if a type has a method with the expected return structure
 /// Uses structural matching instead of exact type equality to support
 /// different type definitions with the same structure (e.g., hal.GyroData vs motion.GyroData)
-fn hasMethod(comptime T: type, comptime name: []const u8, comptime ExpectedFields: type) bool {
+pub fn hasMethod(comptime T: type, comptime name: []const u8, comptime ExpectedFields: type) bool {
     if (!@hasDecl(T, name)) return false;
 
     const F = @TypeOf(@field(T, name));
@@ -44,7 +44,7 @@ fn hasMethod(comptime T: type, comptime name: []const u8, comptime ExpectedField
 }
 
 /// Check if a type has the expected fields with compatible types
-fn hasExpectedFields(comptime T: type, comptime Expected: type) bool {
+pub fn hasExpectedFields(comptime T: type, comptime Expected: type) bool {
     const t_info = @typeInfo(T);
     const e_info = @typeInfo(Expected);
 
@@ -486,27 +486,3 @@ pub fn Detector(comptime Sensor: type) type {
         }
     };
 }
-pub const test_exports = blk: {
-    const __test_export_0 = types;
-    const __test_export_1 = AccelData;
-    const __test_export_2 = GyroData;
-    const __test_export_3 = SensorSample;
-    const __test_export_4 = MotionAction;
-    const __test_export_5 = Thresholds;
-    const __test_export_6 = Axis;
-    const __test_export_7 = Orientation;
-    const __test_export_8 = hasMethod;
-    const __test_export_9 = hasExpectedFields;
-    break :blk struct {
-        pub const types = __test_export_0;
-        pub const AccelData = __test_export_1;
-        pub const GyroData = __test_export_2;
-        pub const SensorSample = __test_export_3;
-        pub const MotionAction = __test_export_4;
-        pub const Thresholds = __test_export_5;
-        pub const Axis = __test_export_6;
-        pub const Orientation = __test_export_7;
-        pub const hasMethod = __test_export_8;
-        pub const hasExpectedFields = __test_export_9;
-    };
-};

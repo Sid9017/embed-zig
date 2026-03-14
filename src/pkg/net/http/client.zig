@@ -25,8 +25,8 @@ const transport_mod = @import("transport.zig");
 const RoundTripRequest = transport_mod.RoundTripRequest;
 const RoundTripResponse = transport_mod.RoundTripResponse;
 const TransportError = transport_mod.TransportError;
-const Scheme = transport_mod.Scheme;
-const Method = transport_mod.Method;
+pub const Scheme = transport_mod.Scheme;
+pub const Method = transport_mod.Method;
 
 pub fn Client(comptime RT: type) type {
     comptime _ = transport_mod.RoundTripper(RT);
@@ -104,7 +104,7 @@ pub fn Client(comptime RT: type) type {
 // Tests
 // =========================================================================
 
-const MockTransport = struct {
+pub const MockTransport = struct {
     call_count: usize = 0,
     last_method: ?Method = null,
     last_host: ?[]const u8 = null,
@@ -151,27 +151,6 @@ const MockTransport = struct {
     }
 };
 
-fn initMockClient(mock: *MockTransport) Client(MockTransport) {
+pub fn initMockClient(mock: *MockTransport) Client(MockTransport) {
     return .{ .transport = mock };
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = transport_mod;
-    const __test_export_1 = RoundTripRequest;
-    const __test_export_2 = RoundTripResponse;
-    const __test_export_3 = TransportError;
-    const __test_export_4 = Scheme;
-    const __test_export_5 = Method;
-    const __test_export_6 = MockTransport;
-    const __test_export_7 = initMockClient;
-    break :blk struct {
-        pub const transport_mod = __test_export_0;
-        pub const RoundTripRequest = __test_export_1;
-        pub const RoundTripResponse = __test_export_2;
-        pub const TransportError = __test_export_3;
-        pub const Scheme = __test_export_4;
-        pub const Method = __test_export_5;
-        pub const MockTransport = __test_export_6;
-        pub const initMockClient = __test_export_7;
-    };
-};

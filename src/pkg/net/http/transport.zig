@@ -273,7 +273,7 @@ pub fn Transport(
 // Shared HTTP helpers
 // =========================================================================
 
-fn buildHttpRequest(buf: []u8, req: RoundTripRequest) !usize {
+pub fn buildHttpRequest(buf: []u8, req: RoundTripRequest) !usize {
     var fbs = std.io.fixedBufferStream(buf);
     const w = fbs.writer();
 
@@ -303,7 +303,7 @@ fn buildHttpRequest(buf: []u8, req: RoundTripRequest) !usize {
     return fbs.pos;
 }
 
-fn findHeaderEnd(data: []const u8) ?usize {
+pub fn findHeaderEnd(data: []const u8) ?usize {
     if (data.len < 4) return null;
     for (0..data.len - 3) |i| {
         if (std.mem.eql(u8, data[i .. i + 4], "\r\n\r\n")) {
@@ -313,7 +313,7 @@ fn findHeaderEnd(data: []const u8) ?usize {
     return null;
 }
 
-fn parseContentLength(headers: []const u8) ?usize {
+pub fn parseContentLength(headers: []const u8) ?usize {
     var i: usize = 0;
     while (i < headers.len) {
         const line_end = std.mem.indexOfPos(u8, headers, i, "\r\n") orelse break;
@@ -329,13 +329,13 @@ fn parseContentLength(headers: []const u8) ?usize {
     return null;
 }
 
-fn isResponseComplete(data: []const u8) bool {
+pub fn isResponseComplete(data: []const u8) bool {
     const headers_end = findHeaderEnd(data) orelse return false;
     const content_len = parseContentLength(data[0..headers_end]) orelse return false;
     return data.len >= headers_end + content_len;
 }
 
-fn parseHttpResponse(buffer: []u8, len: usize) TransportError!RoundTripResponse {
+pub fn parseHttpResponse(buffer: []u8, len: usize) TransportError!RoundTripResponse {
     if (len < 12) return error.InvalidResponse;
 
     if (!std.mem.startsWith(u8, buffer[0..len], "HTTP/1.")) {
@@ -415,30 +415,3 @@ pub fn requestFromUrl(url_str: []const u8) TransportError!RoundTripRequest {
 // =========================================================================
 // Real network tests — Transport(Socket, void, void, void) for HTTP-only
 // =========================================================================
-
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    const __test_export_1 = conn_mod;
-    const __test_export_2 = tls_mod;
-    const __test_export_3 = dns_mod;
-    const __test_export_4 = url_mod;
-    const __test_export_5 = request_mod;
-    const __test_export_6 = buildHttpRequest;
-    const __test_export_7 = findHeaderEnd;
-    const __test_export_8 = parseContentLength;
-    const __test_export_9 = isResponseComplete;
-    const __test_export_10 = parseHttpResponse;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-        pub const conn_mod = __test_export_1;
-        pub const tls_mod = __test_export_2;
-        pub const dns_mod = __test_export_3;
-        pub const url_mod = __test_export_4;
-        pub const request_mod = __test_export_5;
-        pub const buildHttpRequest = __test_export_6;
-        pub const findHeaderEnd = __test_export_7;
-        pub const parseContentLength = __test_export_8;
-        pub const isResponseComplete = __test_export_9;
-        pub const parseHttpResponse = __test_export_10;
-    };
-};

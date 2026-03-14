@@ -246,14 +246,3 @@ pub const Reassembler = struct {
         return null;
     }
 };
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-pub const test_exports = blk: {
-    const __test_export_0 = acl;
-    break :blk struct {
-        pub const acl = __test_export_0;
-    };
-};

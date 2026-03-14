@@ -1,6 +1,6 @@
 const std = @import("std");
 
-fn AeadWrapper(comptime StdAead: type) type {
+pub fn AeadWrapper(comptime StdAead: type) type {
     return struct {
         pub const key_length = StdAead.key_length;
         pub const nonce_length = StdAead.nonce_length;
@@ -35,9 +35,3 @@ fn AeadWrapper(comptime StdAead: type) type {
 pub const Aes128Gcm = AeadWrapper(std.crypto.aead.aes_gcm.Aes128Gcm);
 pub const Aes256Gcm = AeadWrapper(std.crypto.aead.aes_gcm.Aes256Gcm);
 pub const ChaCha20Poly1305 = AeadWrapper(std.crypto.aead.chacha_poly.ChaCha20Poly1305);
-pub const test_exports = blk: {
-    const __test_export_0 = AeadWrapper;
-    break :blk struct {
-        pub const AeadWrapper = __test_export_0;
-    };
-};

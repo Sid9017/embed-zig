@@ -1,6 +1,6 @@
 const std = @import("std");
-const Certificate = std.crypto.Certificate;
-const Bundle = Certificate.Bundle;
+pub const Certificate = std.crypto.Certificate;
+pub const Bundle = Certificate.Bundle;
 
 pub const CaStore = struct {
     bundle: Bundle,
@@ -61,11 +61,3 @@ pub fn verifyChain(
 
     store.bundle.verify(subject, now) catch return error.CertificateVerificationFailed;
 }
-pub const test_exports = blk: {
-    const __test_export_0 = Certificate;
-    const __test_export_1 = Bundle;
-    break :blk struct {
-        pub const Certificate = __test_export_0;
-        pub const Bundle = __test_export_1;
-    };
-};

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-fn HmacWrapper(comptime StdHmac: type) type {
+pub fn HmacWrapper(comptime StdHmac: type) type {
     return struct {
         pub const mac_length = StdHmac.mac_length;
 
@@ -29,9 +29,3 @@ fn HmacWrapper(comptime StdHmac: type) type {
 pub const HmacSha256 = HmacWrapper(std.crypto.auth.hmac.sha2.HmacSha256);
 pub const HmacSha384 = HmacWrapper(std.crypto.auth.hmac.sha2.HmacSha384);
 pub const HmacSha512 = HmacWrapper(std.crypto.auth.hmac.sha2.HmacSha512);
-pub const test_exports = blk: {
-    const __test_export_0 = HmacWrapper;
-    break :blk struct {
-        pub const HmacWrapper = __test_export_0;
-    };
-};

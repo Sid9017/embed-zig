@@ -1,7 +1,7 @@
 //! Audio resampling and channel conversion helpers.
 
 const std = @import("std");
-const speexdsp = @import("../../third_party/speexdsp/src.zig");
+pub const speexdsp = @import("../../third_party/speexdsp/src.zig");
 
 pub const Format = struct {
     rate: u32,
@@ -101,10 +101,4 @@ pub const Resampler = struct {
         const res = try self.inner.processInterleavedInt(in_buf, out_buf);
         return .{ .in_consumed = res.in_consumed, .out_produced = res.out_written };
     }
-};
-pub const test_exports = blk: {
-    const __test_export_0 = speexdsp;
-    break :blk struct {
-        pub const speexdsp = __test_export_0;
-    };
 };

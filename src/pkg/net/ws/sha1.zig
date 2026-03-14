@@ -90,7 +90,7 @@ pub fn hash(data: []const u8) [digest_length]u8 {
     return h.final();
 }
 
-fn processBlock(state: *[5]u32, block: *const [64]u8) void {
+pub fn processBlock(state: *[5]u32, block: *const [64]u8) void {
     var w: [80]u32 = undefined;
 
     for (0..16) |i| {
@@ -142,23 +142,6 @@ fn processBlock(state: *[5]u32, block: *const [64]u8) void {
     state[4] +%= e;
 }
 
-fn rotl(x: u32, comptime n: u5) u32 {
+pub fn rotl(x: u32, comptime n: u5) u32 {
     return (x << n) | (x >> @intCast(@as(u6, 32) - n));
 }
-
-// ==========================================================================
-// Tests
-// ==========================================================================
-
-const std = @import("std");
-
-pub const test_exports = blk: {
-    const __test_export_0 = Self;
-    const __test_export_1 = processBlock;
-    const __test_export_2 = rotl;
-    break :blk struct {
-        pub const Self = __test_export_0;
-        pub const processBlock = __test_export_1;
-        pub const rotl = __test_export_2;
-    };
-};

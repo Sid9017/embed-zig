@@ -19,7 +19,7 @@ pub const Error = error{
     Closed,
 };
 
-const ws_guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+pub const ws_guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 pub fn computeAcceptKey(key: []const u8, out: *[28]u8) void {
     var h = sha1.init();
@@ -148,7 +148,7 @@ pub fn writeAll(conn: anytype, data: []const u8) !void {
     }
 }
 
-fn findHeaderEnd(data: []const u8) ?usize {
+pub fn findHeaderEnd(data: []const u8) ?usize {
     if (data.len < 4) return null;
     for (0..data.len - 3) |i| {
         if (data[i] == '\r' and data[i + 1] == '\n' and data[i + 2] == '\r' and data[i + 3] == '\n')
@@ -157,7 +157,7 @@ fn findHeaderEnd(data: []const u8) ?usize {
     return null;
 }
 
-fn findHeaderValue(header: []const u8, name: []const u8) ?[]const u8 {
+pub fn findHeaderValue(header: []const u8, name: []const u8) ?[]const u8 {
     var i: usize = 0;
     while (i < header.len) {
         const line_start = i;
@@ -176,7 +176,7 @@ fn findHeaderValue(header: []const u8, name: []const u8) ?[]const u8 {
     return null;
 }
 
-fn eql(a: []const u8, b: []const u8) bool {
+pub fn eql(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
     for (a, b) |ca, cb| {
         if (ca != cb) return false;
@@ -184,7 +184,7 @@ fn eql(a: []const u8, b: []const u8) bool {
     return true;
 }
 
-fn eqlIgnoreCase(a: []const u8, b: []const u8) bool {
+pub fn eqlIgnoreCase(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
     for (a, b) |ca, cb| {
         if (toLower(ca) != toLower(cb)) return false;
@@ -192,17 +192,17 @@ fn eqlIgnoreCase(a: []const u8, b: []const u8) bool {
     return true;
 }
 
-fn toLower(c: u8) u8 {
+pub fn toLower(c: u8) u8 {
     if (c >= 'A' and c <= 'Z') return c + 32;
     return c;
 }
 
-fn startsWith(haystack: []const u8, prefix: []const u8) bool {
+pub fn startsWith(haystack: []const u8, prefix: []const u8) bool {
     if (haystack.len < prefix.len) return false;
     return eql(haystack[0..prefix.len], prefix);
 }
 
-const BufWriter = struct {
+pub const BufWriter = struct {
     buf: []u8,
     pos: usize = 0,
 
@@ -221,7 +221,7 @@ const BufWriter = struct {
 
 const std = @import("std");
 
-fn contains(haystack: []const u8, needle: []const u8) bool {
+pub fn contains(haystack: []const u8, needle: []const u8) bool {
     if (needle.len > haystack.len) return false;
     for (0..haystack.len - needle.len + 1) |i| {
         if (eql(haystack[i..][0..needle.len], needle)) return true;
@@ -229,38 +229,7 @@ fn contains(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
-fn endsWith(haystack: []const u8, suffix: []const u8) bool {
+pub fn endsWith(haystack: []const u8, suffix: []const u8) bool {
     if (haystack.len < suffix.len) return false;
     return eql(haystack[haystack.len - suffix.len ..], suffix);
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = sha1;
-    const __test_export_1 = base64;
-    const __test_export_2 = client_mod;
-    const __test_export_3 = ws_guid;
-    const __test_export_4 = findHeaderEnd;
-    const __test_export_5 = findHeaderValue;
-    const __test_export_6 = eql;
-    const __test_export_7 = eqlIgnoreCase;
-    const __test_export_8 = toLower;
-    const __test_export_9 = startsWith;
-    const __test_export_10 = BufWriter;
-    const __test_export_11 = contains;
-    const __test_export_12 = endsWith;
-    break :blk struct {
-        pub const sha1 = __test_export_0;
-        pub const base64 = __test_export_1;
-        pub const client_mod = __test_export_2;
-        pub const ws_guid = __test_export_3;
-        pub const findHeaderEnd = __test_export_4;
-        pub const findHeaderValue = __test_export_5;
-        pub const eql = __test_export_6;
-        pub const eqlIgnoreCase = __test_export_7;
-        pub const toLower = __test_export_8;
-        pub const startsWith = __test_export_9;
-        pub const BufWriter = __test_export_10;
-        pub const contains = __test_export_11;
-        pub const endsWith = __test_export_12;
-    };
-};

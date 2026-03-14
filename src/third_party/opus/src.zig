@@ -19,7 +19,7 @@ pub const Error = error{
     Unknown,
 };
 
-fn checkError(code: c_int) Error!void {
+pub fn checkError(code: c_int) Error!void {
     if (code < 0) {
         return switch (code) {
             c.OPUS_BAD_ARG => Error.BadArg,
@@ -256,13 +256,5 @@ pub fn packetGetFrames(data: []const u8) Error!u32 {
     return @intCast(try checkedPositive(c.opus_packet_get_nb_frames(data.ptr, @intCast(data.len))));
 }
 
-pub const test_exports = blk: {
-    const __test_export_0 = checkError;
-    const __test_export_1 = c.OPUS_BAD_ARG;
-    const __test_export_2 = c.OPUS_INVALID_STATE;
-    break :blk struct {
-        pub const checkError = __test_export_0;
-        pub const OPUS_BAD_ARG = __test_export_1;
-        pub const OPUS_INVALID_STATE = __test_export_2;
-    };
-};
+pub const OPUS_BAD_ARG: c_int = c.OPUS_BAD_ARG;
+pub const OPUS_INVALID_STATE: c_int = c.OPUS_INVALID_STATE;

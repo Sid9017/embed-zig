@@ -76,26 +76,5 @@ pub fn match(routes: []const Route, method: Method, path: []const u8) RouteMatch
 
 const testing = std.testing;
 
-fn dummyHandler(_: *Request, _: *Response) void {}
-fn dummyHandler2(_: *Request, _: *Response) void {}
-
-pub const test_exports = blk: {
-    const __test_export_0 = mem;
-    const __test_export_1 = request_mod;
-    const __test_export_2 = response_mod;
-    const __test_export_3 = Request;
-    const __test_export_4 = Response;
-    const __test_export_5 = Method;
-    const __test_export_6 = dummyHandler;
-    const __test_export_7 = dummyHandler2;
-    break :blk struct {
-        pub const mem = __test_export_0;
-        pub const request_mod = __test_export_1;
-        pub const response_mod = __test_export_2;
-        pub const Request = __test_export_3;
-        pub const Response = __test_export_4;
-        pub const Method = __test_export_5;
-        pub const dummyHandler = __test_export_6;
-        pub const dummyHandler2 = __test_export_7;
-    };
-};
+pub fn dummyHandler(_: *Request, _: *Response) void {}
+pub fn dummyHandler2(_: *Request, _: *Response) void {}

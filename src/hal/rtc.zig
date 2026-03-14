@@ -231,13 +231,3 @@ fn secsToMs(secs: i64) WriterError!i64 {
     if (out[1] != 0) return error.Overflow;
     return out[0];
 }
-pub const test_exports = blk: {
-    const __test_export_0 = hal_marker;
-    const __test_export_1 = msToSecsFloor;
-    const __test_export_2 = secsToMs;
-    break :blk struct {
-        pub const hal_marker = __test_export_0;
-        pub const msToSecsFloor = __test_export_1;
-        pub const secsToMs = __test_export_2;
-    };
-};

@@ -311,7 +311,7 @@ pub fn copyForward(dst: []u8, src: []const u8) void {
     }
 }
 
-fn writeAll(conn: anytype, data: []const u8) !void {
+pub fn writeAll(conn: anytype, data: []const u8) !void {
     var sent: usize = 0;
     while (sent < data.len) {
         const n = conn.write(data[sent..]) catch return error.SendFailed;
@@ -325,9 +325,9 @@ fn writeAll(conn: anytype, data: []const u8) !void {
 // ==========================================================================
 
 const std = @import("std");
-const conn_mod = @import("../conn.zig");
+pub const conn_mod = @import("../conn.zig");
 
-const MockConn = struct {
+pub const MockConn = struct {
     recv_data: []const u8,
     recv_pos: usize = 0,
     sent_buf: [4096]u8 = undefined,
@@ -360,13 +360,13 @@ const MockConn = struct {
     }
 };
 
-fn deterministicRng(buf: []u8) void {
+pub fn deterministicRng(buf: []u8) void {
     for (buf, 0..) |*b, i| {
         b.* = @intCast(i % 256);
     }
 }
 
-fn buildServerFrame(allocator: std.mem.Allocator, opcode: frame.Opcode, payload: []const u8) ![]u8 {
+pub fn buildServerFrame(allocator: std.mem.Allocator, opcode: frame.Opcode, payload: []const u8) ![]u8 {
     var hdr_buf: [frame.MAX_HEADER_SIZE]u8 = undefined;
     const hdr_len = frame.encodeHeader(&hdr_buf, opcode, payload.len, true, null);
     const total = hdr_len + payload.len;
@@ -375,24 +375,3 @@ fn buildServerFrame(allocator: std.mem.Allocator, opcode: frame.Opcode, payload:
     @memcpy(buf[hdr_len..], payload);
     return buf;
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = Allocator;
-    const __test_export_1 = frame;
-    const __test_export_2 = handshake_mod;
-    const __test_export_3 = writeAll;
-    const __test_export_4 = conn_mod;
-    const __test_export_5 = MockConn;
-    const __test_export_6 = deterministicRng;
-    const __test_export_7 = buildServerFrame;
-    break :blk struct {
-        pub const Allocator = __test_export_0;
-        pub const frame = __test_export_1;
-        pub const handshake_mod = __test_export_2;
-        pub const writeAll = __test_export_3;
-        pub const conn_mod = __test_export_4;
-        pub const MockConn = __test_export_5;
-        pub const deterministicRng = __test_export_6;
-        pub const buildServerFrame = __test_export_7;
-    };
-};

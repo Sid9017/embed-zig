@@ -1,5 +1,5 @@
 const std = @import("std");
-const runtime = struct {
+pub const runtime = struct {
     pub const std = @import("../../../runtime/std.zig");
 };
 
@@ -33,10 +33,3 @@ pub fn hkdfExpandLabel(
 
     return Hkdf.expand(&secret, hkdf_label[0..pos], len);
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-    };
-};

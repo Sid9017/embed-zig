@@ -120,7 +120,7 @@ pub fn GattTransport(comptime Mutex: type, comptime Cond: type) type {
 
 const builtin = @import("builtin");
 
-const TestMutex = if (builtin.os.tag == .freestanding) void else struct {
+pub const TestMutex = if (builtin.os.tag == .freestanding) void else struct {
     raw: std.Thread.Mutex = .{},
     pub fn init() @This() {
         return .{};
@@ -134,7 +134,7 @@ const TestMutex = if (builtin.os.tag == .freestanding) void else struct {
     }
 };
 
-const TestCond = if (builtin.os.tag == .freestanding) void else struct {
+pub const TestCond = if (builtin.os.tag == .freestanding) void else struct {
     raw: std.Thread.Condition = .{},
     pub fn init() @This() {
         return .{};
@@ -155,17 +155,4 @@ const TestCond = if (builtin.os.tag == .freestanding) void else struct {
     }
 };
 
-fn testNotify(_: ?*anyopaque, _: []const u8) anyerror!void {}
-
-pub const test_exports = blk: {
-    const __test_export_0 = builtin;
-    const __test_export_1 = TestMutex;
-    const __test_export_2 = TestCond;
-    const __test_export_3 = testNotify;
-    break :blk struct {
-        pub const builtin = __test_export_0;
-        pub const TestMutex = __test_export_1;
-        pub const TestCond = __test_export_2;
-        pub const testNotify = __test_export_3;
-    };
-};
+pub fn testNotify(_: ?*anyopaque, _: []const u8) anyerror!void {}

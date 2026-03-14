@@ -470,18 +470,3 @@ pub const Gap = struct {
         self.pending_count += 1;
     }
 };
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-pub const test_exports = blk: {
-    const __test_export_0 = hci;
-    const __test_export_1 = commands;
-    const __test_export_2 = events;
-    break :blk struct {
-        pub const hci = __test_export_0;
-        pub const commands = __test_export_1;
-        pub const events = __test_export_2;
-    };
-};

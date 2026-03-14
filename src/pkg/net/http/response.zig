@@ -100,21 +100,21 @@ pub const Response = struct {
     }
 };
 
-fn containsCrlf(s: []const u8) bool {
+pub fn containsCrlf(s: []const u8) bool {
     for (s) |c| {
         if (c == '\r' or c == '\n') return true;
     }
     return false;
 }
 
-fn appendBuf(buf: []u8, pos: usize, data: []const u8) usize {
+pub fn appendBuf(buf: []u8, pos: usize, data: []const u8) usize {
     const available = buf.len - pos;
     if (data.len > available) return pos;
     @memcpy(buf[pos .. pos + data.len], data);
     return pos + data.len;
 }
 
-fn writeStatusCode(buf: *[3]u8, code: u16) []const u8 {
+pub fn writeStatusCode(buf: *[3]u8, code: u16) []const u8 {
     buf[0] = @intCast(code / 100 + '0');
     buf[1] = @intCast((code / 10) % 10 + '0');
     buf[2] = @intCast(code % 10 + '0');
@@ -145,7 +145,7 @@ pub fn statusText(code: u16) []const u8 {
 
 const testing = std.testing;
 
-const TestWriter = struct {
+pub const TestWriter = struct {
     buf: [4096]u8 = undefined,
     len: usize = 0,
 
@@ -160,21 +160,4 @@ const TestWriter = struct {
     pub fn output(self: *const TestWriter) []const u8 {
         return self.buf[0..self.len];
     }
-};
-
-pub const test_exports = blk: {
-    const __test_export_0 = mem;
-    const __test_export_1 = request;
-    const __test_export_2 = containsCrlf;
-    const __test_export_3 = appendBuf;
-    const __test_export_4 = writeStatusCode;
-    const __test_export_5 = TestWriter;
-    break :blk struct {
-        pub const mem = __test_export_0;
-        pub const request = __test_export_1;
-        pub const containsCrlf = __test_export_2;
-        pub const appendBuf = __test_export_3;
-        pub const writeStatusCode = __test_export_4;
-        pub const TestWriter = __test_export_5;
-    };
 };

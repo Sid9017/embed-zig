@@ -3,7 +3,7 @@
 //! Minimal freestanding implementation for WebSocket handshake.
 //! Only standard alphabet (no URL-safe variant).
 
-const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+pub const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 pub fn encodedLen(input_len: usize) usize {
     return ((input_len + 2) / 3) * 4;
@@ -80,7 +80,7 @@ pub fn decode(out: []u8, input: []const u8) DecodeError![]const u8 {
     return out[0..pos];
 }
 
-fn decodeChar(c: u8) DecodeError!u8 {
+pub fn decodeChar(c: u8) DecodeError!u8 {
     if (c >= 'A' and c <= 'Z') return @intCast(c - 'A');
     if (c >= 'a' and c <= 'z') return @intCast(c - 'a' + 26);
     if (c >= '0' and c <= '9') return @intCast(c - '0' + 52);
@@ -88,18 +88,3 @@ fn decodeChar(c: u8) DecodeError!u8 {
     if (c == '/') return 63;
     return error.InvalidCharacter;
 }
-
-// ==========================================================================
-// Tests
-// ==========================================================================
-
-const std = @import("std");
-
-pub const test_exports = blk: {
-    const __test_export_0 = alphabet;
-    const __test_export_1 = decodeChar;
-    break :blk struct {
-        pub const alphabet = __test_export_0;
-        pub const decodeChar = __test_export_1;
-    };
-};

@@ -8,14 +8,14 @@
 //! while using a simpler in-memory queue strategy for deterministic bring-up.
 
 const std = @import("std");
-const resampler_mod = @import("resampler.zig");
-const runtime = struct {
+pub const resampler_mod = @import("resampler.zig");
+pub const runtime = struct {
     pub const sync = @import("../../runtime/sync.zig");
     pub const std = @import("../../runtime/std.zig");
 };
 
-const Allocator = std.mem.Allocator;
-const Resampler = resampler_mod.Resampler;
+pub const Allocator = std.mem.Allocator;
+pub const Resampler = resampler_mod.Resampler;
 
 /// Bounded sample buffer for mixer tracks.
 /// Write blocks when the buffer is at capacity (backpressure).
@@ -465,15 +465,3 @@ pub fn Mixer(comptime MutexImpl: type, comptime CondImpl: type) type {
         }
     };
 }
-pub const test_exports = blk: {
-    const __test_export_0 = resampler_mod;
-    const __test_export_1 = runtime;
-    const __test_export_2 = Allocator;
-    const __test_export_3 = Resampler;
-    break :blk struct {
-        pub const resampler_mod = __test_export_0;
-        pub const runtime = __test_export_1;
-        pub const Allocator = __test_export_2;
-        pub const Resampler = __test_export_3;
-    };
-};

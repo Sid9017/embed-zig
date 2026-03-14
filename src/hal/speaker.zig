@@ -93,9 +93,3 @@ pub fn from(comptime spec: type) type {
         }
     };
 }
-pub const test_exports = blk: {
-    const __test_export_0 = hal_marker;
-    break :blk struct {
-        pub const hal_marker = __test_export_0;
-    };
-};

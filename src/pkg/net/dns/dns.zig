@@ -145,7 +145,7 @@ pub fn ResolverWithTls(comptime Socket: type, comptime Crypto: type, comptime Mu
 ///   fn resolve(*const Self, []const u8) ?[4]u8
 ///
 /// Pass `void` to disable custom resolution (zero overhead).
-fn validateDomainResolver(comptime Impl: type) type {
+pub fn validateDomainResolver(comptime Impl: type) type {
     if (Impl == void) return void;
 
     comptime {
@@ -165,7 +165,7 @@ fn validateDomainResolver(comptime Impl: type) type {
     return Impl;
 }
 
-fn ResolverImpl(comptime Socket: type, comptime TlsClient: type, comptime Crypto: type, comptime DomainResolver: type) type {
+pub fn ResolverImpl(comptime Socket: type, comptime TlsClient: type, comptime Crypto: type, comptime DomainResolver: type) type {
     comptime _ = runtime.socket.from(Socket);
     const has_tls = TlsClient != void;
     const has_custom_resolver = DomainResolver != void;
@@ -419,7 +419,7 @@ pub fn buildHttpRequest(buf: []u8, host: []const u8, dns_query: []const u8) ![]c
 }
 
 /// Find HTTP body (after \r\n\r\n)
-fn findHttpBody(data: []const u8) ?[]const u8 {
+pub fn findHttpBody(data: []const u8) ?[]const u8 {
     const separator = "\r\n\r\n";
     if (std.mem.indexOf(u8, data, separator)) |pos| {
         return data[pos + separator.len ..];
@@ -428,7 +428,7 @@ fn findHttpBody(data: []const u8) ?[]const u8 {
 }
 
 /// Parse IPv4 string to address
-fn parseIpv4String(s: []const u8) ?Ipv4Address {
+pub fn parseIpv4String(s: []const u8) ?Ipv4Address {
     var result: Ipv4Address = undefined;
     var octet_idx: usize = 0;
     var current: u16 = 0;
@@ -459,7 +459,7 @@ fn parseIpv4String(s: []const u8) ?Ipv4Address {
 /// Simple transaction ID generator
 var tx_id_counter: u16 = 0x1234;
 
-fn generateTxId() u16 {
+pub fn generateTxId() u16 {
     tx_id_counter +%= 1;
     return tx_id_counter;
 }
@@ -609,7 +609,7 @@ pub fn formatIpv4(addr: Ipv4Address, buf: []u8) []const u8 {
 // DomainResolver Tests
 // ============================================================================
 
-const TestMockSocket = struct {
+pub const TestMockSocket = struct {
     pub fn udp() runtime.socket.Error!@This() {
         return .{};
     }
@@ -651,35 +651,10 @@ const TestMockSocket = struct {
 // Real Network Tests (using runtime.std.Socket)
 // ============================================================================
 
-fn isAliDnsIp(ip: Ipv4Address) bool {
+pub fn isAliDnsIp(ip: Ipv4Address) bool {
     return std.mem.eql(u8, &ip, &Servers.alidns) or std.mem.eql(u8, &ip, &Servers.alidns2);
 }
 
 // =========================================================================
 // DoH (DNS over HTTPS) tests — requires TLS + Crypto
 // =========================================================================
-
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    const __test_export_1 = conn_mod;
-    const __test_export_2 = tls;
-    const __test_export_3 = validateDomainResolver;
-    const __test_export_4 = ResolverImpl;
-    const __test_export_5 = findHttpBody;
-    const __test_export_6 = parseIpv4String;
-    const __test_export_7 = generateTxId;
-    const __test_export_8 = TestMockSocket;
-    const __test_export_9 = isAliDnsIp;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-        pub const conn_mod = __test_export_1;
-        pub const tls = __test_export_2;
-        pub const validateDomainResolver = __test_export_3;
-        pub const ResolverImpl = __test_export_4;
-        pub const findHttpBody = __test_export_5;
-        pub const parseIpv4String = __test_export_6;
-        pub const generateTxId = __test_export_7;
-        pub const TestMockSocket = __test_export_8;
-        pub const isAliDnsIp = __test_export_9;
-    };
-};

@@ -359,14 +359,3 @@ pub fn leReadPhy(buf: *[MAX_CMD_LEN]u8, conn_handle: u16) []const u8 {
     std.mem.writeInt(u16, p[0..2], conn_handle, .little);
     return encode(buf, LE_READ_PHY, &p);
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-pub const test_exports = blk: {
-    const __test_export_0 = hci;
-    break :blk struct {
-        pub const hci = __test_export_0;
-    };
-};

@@ -1,80 +1,64 @@
-//! IO-driven event bus, generic over EventType.
+//! Selector-driven event bus, generic over EventType.
 //!
-//! EventType must be a `union(enum)`. Each peripheral and middleware is
-//! parameterized on the same EventType so the whole pipeline is type-safe
-//! at comptime.
-//!
-//! Flow:
-//!   peripheral worker → write to its fd
-//!   bus.poll()        → io.poll(timeout) blocks
-//!                     → io fires ReadyCallback → Periph.onReady → appends to bus ready buffer
-//!                     → events pass through middleware chain
-//!                     → bus.poll returns processed events
+//! `Bus` is a thin wrapper around a selector that adds:
+//! - registration of multiple channels
+//! - buffering of ready events
+//! - a middleware pipeline
+//! - batched `poll()` output
 
 const std = @import("std");
 const types = @import("types.zig");
 const mw_mod = @import("middleware.zig");
-const runtime = struct {
-    pub const io = @import("../../runtime/io.zig");
-    pub const std = @import("../../runtime/std.zig");
-};
 
-pub const fd_t = runtime.io.fd_t;
-
-/// Type-erased peripheral handle, generic over EventType.
-pub fn Periph(comptime EventType: type) type {
-    comptime types.assertTaggedUnion(EventType);
-    return struct {
-        ctx: ?*anyopaque,
-        fd: fd_t,
-        onReady: *const fn (ctx: ?*anyopaque, fd: fd_t, buf: *std.ArrayList(EventType), alloc: std.mem.Allocator) void,
-    };
-}
-
-pub fn Bus(comptime IO: type, comptime EventType: type) type {
+pub fn Bus(comptime Selector: type, comptime EventType: type) type {
     comptime {
-        _ = runtime.io.from(IO);
+        _ = @as(type, Selector.channel_t);
+        _ = @as(type, Selector.event_t);
+        _ = @as(*const fn (std.mem.Allocator) anyerror!Selector, &Selector.init);
+        _ = @as(*const fn (*Selector) void, &Selector.deinit);
+        _ = @as(*const fn (*Selector, Selector.channel_t) anyerror!void, &Selector.add);
+        _ = @as(*const fn (*Selector, Selector.channel_t) anyerror!void, &Selector.remove);
+        _ = @as(*const fn (*Selector, ?u32) anyerror!?Selector.event_t, &Selector.poll);
+        _ = @as(*const fn () void, &Selector.channel_t.isSelectable);
         types.assertTaggedUnion(EventType);
+        if (Selector.event_t != EventType) {
+            @compileError("Bus requires `Selector.event_t == EventType`");
+        }
     }
 
-    const PeriphType = Periph(EventType);
+    const ChannelType = Selector.channel_t;
     const MiddlewareType = mw_mod.Middleware(EventType);
 
     return struct {
         const Self = @This();
 
         pub const Event = EventType;
+        pub const Channel = ChannelType;
         pub const Mw = MiddlewareType;
 
-        const Binding = struct {
-            periph: *const PeriphType,
-            bus: *Self,
-        };
-
         allocator: std.mem.Allocator,
-        io: *IO,
+        selector: *Selector,
+        channels: std.ArrayList(ChannelType),
         ready: std.ArrayList(EventType),
-        bindings: std.ArrayList(*Binding),
         middlewares: std.ArrayList(MiddlewareType),
         processed: std.ArrayList(EventType),
 
-        pub fn init(allocator: std.mem.Allocator, io: *IO) Self {
+        pub fn init(allocator: std.mem.Allocator, selector: *Selector) Self {
             return .{
                 .allocator = allocator,
-                .io = io,
+                .selector = selector,
+                .channels = .empty,
                 .ready = .empty,
-                .bindings = .empty,
                 .middlewares = .empty,
                 .processed = .empty,
             };
         }
 
         pub fn deinit(self: *Self) void {
-            for (self.bindings.items) |b| {
-                self.io.unregister(b.periph.fd);
-                self.allocator.destroy(b);
+            for (self.channels.items) |channel| {
+                self.selector.remove(channel) catch {};
             }
-            self.bindings.deinit(self.allocator);
+            self.channels.deinit(self.allocator);
             self.ready.deinit(self.allocator);
             self.middlewares.deinit(self.allocator);
             self.processed.deinit(self.allocator);
@@ -84,41 +68,35 @@ pub fn Bus(comptime IO: type, comptime EventType: type) type {
             self.middlewares.append(self.allocator, middleware) catch {};
         }
 
-        pub fn register(self: *Self, periph: *const PeriphType) !void {
-            const binding = try self.allocator.create(Binding);
-            binding.* = .{ .periph = periph, .bus = self };
+        pub fn register(self: *Self, channel: ChannelType) !void {
+            for (self.channels.items) |item| {
+                if (std.meta.eql(item, channel)) {
+                    return error.ChannelAlreadyRegistered;
+                }
+            }
 
-            errdefer self.allocator.destroy(binding);
-
-            try self.io.registerRead(periph.fd, .{
-                .ptr = binding,
-                .callback = dispatchReady,
-            });
-
-            try self.bindings.append(self.allocator, binding);
+            try self.selector.add(channel);
+            errdefer self.selector.remove(channel) catch {};
+            try self.channels.append(self.allocator, channel);
         }
 
-        pub fn unregister(self: *Self, periph_fd: fd_t) void {
-            self.io.unregister(periph_fd);
-            for (self.bindings.items, 0..) |b, i| {
-                if (b.periph.fd == periph_fd) {
-                    self.allocator.destroy(b);
-                    _ = self.bindings.swapRemove(i);
+        pub fn unregister(self: *Self, channel: ChannelType) !void {
+            for (self.channels.items, 0..) |item, i| {
+                if (std.meta.eql(item, channel)) {
+                    try self.selector.remove(channel);
+                    _ = self.channels.swapRemove(i);
                     return;
                 }
             }
+            return error.ChannelNotRegistered;
         }
 
-        pub fn poll(self: *Self, out: []EventType, timeout_ms: i32) []EventType {
+        pub fn poll(self: *Self, out: []EventType, timeout_ms: ?u32) ![]EventType {
             if (self.ready.items.len == 0 and self.processed.items.len == 0) {
-                _ = self.io.poll(timeout_ms);
+                try self.collectReady(timeout_ms);
             }
             self.applyMiddlewares();
             return self.drain(out);
-        }
-
-        pub fn wake(self: *Self) void {
-            self.io.wake();
         }
 
         fn applyMiddlewares(self: *Self) void {
@@ -168,6 +146,15 @@ pub fn Bus(comptime IO: type, comptime EventType: type) type {
             ctx.bus.runChain(ev, ctx.next_idx);
         }
 
+        fn collectReady(self: *Self, timeout_ms: ?u32) !void {
+            var next_timeout = timeout_ms;
+            while (true) {
+                const ready_event = try self.selector.poll(next_timeout) orelse break;
+                try self.ready.append(self.allocator, ready_event);
+                next_timeout = 0;
+            }
+        }
+
         fn drain(self: *Self, out: []EventType) []EventType {
             const src = &self.processed;
             const n = @min(src.items.len, out.len);
@@ -180,23 +167,5 @@ pub fn Bus(comptime IO: type, comptime EventType: type) type {
             src.items.len = remain;
             return out[0..n];
         }
-
-        fn dispatchReady(raw: ?*anyopaque, ready_fd: fd_t) void {
-            const binding: *const Binding = @ptrCast(@alignCast(raw orelse return));
-            binding.periph.onReady(binding.periph.ctx, ready_fd, &binding.bus.ready, binding.bus.allocator);
-        }
     };
 }
-
-// Integration tests live in bus_integration_test.zig (separate module root
-// so it can import both event and source/button packages).
-pub const test_exports = blk: {
-    const __test_export_0 = types;
-    const __test_export_1 = mw_mod;
-    const __test_export_2 = runtime;
-    break :blk struct {
-        pub const types = __test_export_0;
-        pub const mw_mod = __test_export_1;
-        pub const runtime = __test_export_2;
-    };
-};

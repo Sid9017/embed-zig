@@ -9,7 +9,7 @@
 //! consumer can afford to wait.
 
 const std = @import("std");
-const runtime = struct {
+pub const runtime = struct {
     pub const sync = @import("../../runtime/sync.zig");
     pub const std = @import("../../runtime/std.zig");
 };
@@ -158,9 +158,3 @@ pub fn OverrideBuffer(
         }
     };
 }
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-    };
-};

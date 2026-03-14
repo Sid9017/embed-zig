@@ -24,18 +24,18 @@
 //!   [speaker_ring]  (OverrideBuffer — circular overwrite, also serves as ref)
 
 const std = @import("std");
-const mixer_mod = @import("mixer.zig");
-const obuf_mod = @import("override_buffer.zig");
-const resampler_mod = @import("resampler.zig");
-const runtime = struct {
+pub const mixer_mod = @import("mixer.zig");
+pub const obuf_mod = @import("override_buffer.zig");
+pub const resampler_mod = @import("resampler.zig");
+pub const runtime = struct {
     pub const sync = @import("../../runtime/sync.zig");
     pub const thread = @import("../../runtime/thread.zig");
     pub const time = @import("../../runtime/time.zig");
     pub const std = @import("../../runtime/std.zig");
 };
 
-const Allocator = std.mem.Allocator;
-const Format = resampler_mod.Format;
+pub const Allocator = std.mem.Allocator;
+pub const Format = resampler_mod.Format;
 
 // ---------------------------------------------------------------------------
 // Vtable: Beamformer — multi-mic matrix → mono
@@ -458,20 +458,4 @@ pub const PassthroughProcessor = struct {
     }
 
     fn noop(_: *anyopaque) void {}
-};
-pub const test_exports = blk: {
-    const __test_export_0 = mixer_mod;
-    const __test_export_1 = obuf_mod;
-    const __test_export_2 = resampler_mod;
-    const __test_export_3 = runtime;
-    const __test_export_4 = Allocator;
-    const __test_export_5 = Format;
-    break :blk struct {
-        pub const mixer_mod = __test_export_0;
-        pub const obuf_mod = __test_export_1;
-        pub const resampler_mod = __test_export_2;
-        pub const runtime = __test_export_3;
-        pub const Allocator = __test_export_4;
-        pub const Format = __test_export_5;
-    };
 };

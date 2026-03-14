@@ -1,10 +1,10 @@
 const std = @import("std");
-const runtime = struct {
+pub const runtime = struct {
     pub const std = @import("../../../runtime/std.zig");
 };
-const conn_mod = @import("../conn.zig");
-const client_mod = @import("client.zig");
-const common = @import("common.zig");
+pub const conn_mod = @import("../conn.zig");
+pub const client_mod = @import("client.zig");
+pub const common = @import("common.zig");
 
 pub const Options = struct {
     skip_cert_verify: bool = false,
@@ -88,7 +88,7 @@ pub fn Stream(comptime Conn: type, comptime Crypto: type, comptime Mutex: type) 
     };
 }
 
-const TestMockConn = struct {
+pub const TestMockConn = struct {
     const Self = @This();
     closed: bool = false,
 
@@ -101,19 +101,4 @@ const TestMockConn = struct {
     pub fn close(self: *Self) void {
         self.closed = true;
     }
-};
-
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    const __test_export_1 = conn_mod;
-    const __test_export_2 = client_mod;
-    const __test_export_3 = common;
-    const __test_export_4 = TestMockConn;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-        pub const conn_mod = __test_export_1;
-        pub const client_mod = __test_export_2;
-        pub const common = __test_export_3;
-        pub const TestMockConn = __test_export_4;
-    };
 };

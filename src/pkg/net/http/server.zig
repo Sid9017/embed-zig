@@ -134,7 +134,7 @@ pub fn Server(comptime Conn: type, comptime config: Config) type {
     };
 }
 
-fn connWriteFn(comptime Conn: type) *const fn (*anyopaque, []const u8) Response.WriteError!void {
+pub fn connWriteFn(comptime Conn: type) *const fn (*anyopaque, []const u8) Response.WriteError!void {
     return struct {
         fn write(ctx: *anyopaque, data: []const u8) Response.WriteError!void {
             const c: *Conn = @ptrCast(@alignCast(ctx));
@@ -148,10 +148,10 @@ fn connWriteFn(comptime Conn: type) *const fn (*anyopaque, []const u8) Response.
 
 const testing = std.testing;
 
-const MockConn = struct {
+pub const MockConn = struct {
     state: *State,
 
-    const State = struct {
+    pub const State = struct {
         input: []const u8,
         input_pos: usize = 0,
         output: [8192]u8 = undefined,
@@ -187,7 +187,7 @@ const MockConn = struct {
     }
 };
 
-fn testHandler(_: *Request, resp: *Response) void {
+pub fn testHandler(_: *Request, resp: *Response) void {
     _ = resp.contentType("text/plain");
     resp.send("Hello");
 }
@@ -196,12 +196,12 @@ fn testHandler(_: *Request, resp: *Response) void {
 // Real TCP loopback concurrency tests
 // =========================================================================
 
-const runtime = struct {
+pub const runtime = struct {
     pub const std = @import("../../../runtime/std.zig");
 };
-const Socket = runtime.std.Socket;
+pub const Socket = runtime.std.Socket;
 
-const SocketConn = struct {
+pub const SocketConn = struct {
     sock: Socket,
 
     pub const ConnError = error{ Timeout, Closed };
@@ -226,7 +226,7 @@ const SocketConn = struct {
     }
 };
 
-fn echoHandler(req: *Request, resp: *Response) void {
+pub fn echoHandler(req: *Request, resp: *Response) void {
     _ = resp.contentType("text/plain");
     if (req.body) |b| {
         resp.send(b);
@@ -235,23 +235,23 @@ fn echoHandler(req: *Request, resp: *Response) void {
     }
 }
 
-fn jsonHandler(_: *Request, resp: *Response) void {
+pub fn jsonHandler(_: *Request, resp: *Response) void {
     resp.json("{\"ok\":true}");
 }
 
-fn slowHandler(_: *Request, resp: *Response) void {
+pub fn slowHandler(_: *Request, resp: *Response) void {
     std.Thread.sleep(10 * std.time.ns_per_ms);
     resp.send("slow");
 }
 
-const test_routes = [_]Route{
+pub const test_routes = [_]Route{
     router_mod.get("/echo", echoHandler),
     router_mod.get("/json", jsonHandler),
     router_mod.post("/echo", echoHandler),
     router_mod.get("/slow", slowHandler),
 };
 
-fn startTestServer(port_out: *u16) !Socket {
+pub fn startTestServer(port_out: *u16) !Socket {
     var listener = try Socket.tcp();
     try listener.bind(.{ 127, 0, 0, 1 }, 0);
     try listener.listen();
@@ -259,7 +259,7 @@ fn startTestServer(port_out: *u16) !Socket {
     return listener;
 }
 
-fn serveOne(listener: *Socket) void {
+pub fn serveOne(listener: *Socket) void {
     const HttpServer = Server(SocketConn, .{ .read_buf_size = 4096, .write_buf_size = 2048 });
     const server = HttpServer.init(testing.allocator, &test_routes);
     var client_sock = listener.accept() catch return;
@@ -269,7 +269,7 @@ fn serveOne(listener: *Socket) void {
     _ = &conn;
 }
 
-fn httpGet(port: u16, path: []const u8, buf: []u8) ![]const u8 {
+pub fn httpGet(port: u16, path: []const u8, buf: []u8) ![]const u8 {
     var sock = try Socket.tcp();
     defer sock.close();
     sock.setRecvTimeout(5000);
@@ -290,7 +290,7 @@ fn httpGet(port: u16, path: []const u8, buf: []u8) ![]const u8 {
     return buf[0..total];
 }
 
-fn httpPost(port: u16, path: []const u8, body: []const u8, buf: []u8) ![]const u8 {
+pub fn httpPost(port: u16, path: []const u8, body: []const u8, buf: []u8) ![]const u8 {
     var sock = try Socket.tcp();
     defer sock.close();
     sock.setRecvTimeout(5000);
@@ -311,56 +311,3 @@ fn httpPost(port: u16, path: []const u8, body: []const u8, buf: []u8) ![]const u
     }
     return buf[0..total];
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = mem;
-    const __test_export_1 = Allocator;
-    const __test_export_2 = request_mod;
-    const __test_export_3 = response_mod;
-    const __test_export_4 = router_mod;
-    const __test_export_5 = Request;
-    const __test_export_6 = Response;
-    const __test_export_7 = Route;
-    const __test_export_8 = Handler;
-    const __test_export_9 = connWriteFn;
-    const __test_export_10 = MockConn;
-    const __test_export_11 = MockConn.State;
-    const __test_export_12 = testHandler;
-    const __test_export_13 = runtime;
-    const __test_export_14 = Socket;
-    const __test_export_15 = SocketConn;
-    const __test_export_16 = echoHandler;
-    const __test_export_17 = jsonHandler;
-    const __test_export_18 = slowHandler;
-    const __test_export_19 = test_routes;
-    const __test_export_20 = startTestServer;
-    const __test_export_21 = serveOne;
-    const __test_export_22 = httpGet;
-    const __test_export_23 = httpPost;
-    break :blk struct {
-        pub const mem = __test_export_0;
-        pub const Allocator = __test_export_1;
-        pub const request_mod = __test_export_2;
-        pub const response_mod = __test_export_3;
-        pub const router_mod = __test_export_4;
-        pub const Request = __test_export_5;
-        pub const Response = __test_export_6;
-        pub const Route = __test_export_7;
-        pub const Handler = __test_export_8;
-        pub const connWriteFn = __test_export_9;
-        pub const MockConn = __test_export_10;
-        pub const MockState = __test_export_11;
-        pub const testHandler = __test_export_12;
-        pub const runtime = __test_export_13;
-        pub const Socket = __test_export_14;
-        pub const SocketConn = __test_export_15;
-        pub const echoHandler = __test_export_16;
-        pub const jsonHandler = __test_export_17;
-        pub const slowHandler = __test_export_18;
-        pub const test_routes = __test_export_19;
-        pub const startTestServer = __test_export_20;
-        pub const serveOne = __test_export_21;
-        pub const httpGet = __test_export_22;
-        pub const httpPost = __test_export_23;
-    };
-};

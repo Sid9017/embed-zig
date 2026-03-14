@@ -195,7 +195,7 @@ pub fn parse(raw: []const u8) ParseError!Url {
 /// Returns the index of ':' if a valid scheme precedes it, null otherwise.
 ///
 /// RFC 3986 §3.1: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-fn getSchemeEnd(s: []const u8) ?usize {
+pub fn getSchemeEnd(s: []const u8) ?usize {
     if (s.len == 0) return null;
 
     // First character must be alphabetic
@@ -212,7 +212,7 @@ fn getSchemeEnd(s: []const u8) ?usize {
 }
 
 /// Parse the authority component: [userinfo@]host[:port]
-fn parseAuthority(result: *Url, authority: []const u8) ParseError!void {
+pub fn parseAuthority(result: *Url, authority: []const u8) ParseError!void {
     if (authority.len == 0) return;
 
     var host_part = authority;
@@ -266,7 +266,7 @@ fn parseAuthority(result: *Url, authority: []const u8) ParseError!void {
 }
 
 /// Parse a decimal port string as u16. Returns null on invalid input.
-fn parsePort(s: []const u8) ?u16 {
+pub fn parsePort(s: []const u8) ?u16 {
     if (s.len == 0) return null;
     var acc: u32 = 0;
     for (s) |c| {
@@ -277,22 +277,22 @@ fn parsePort(s: []const u8) ?u16 {
     return @intCast(acc);
 }
 
-fn isAlpha(c: u8) bool {
+pub fn isAlpha(c: u8) bool {
     return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z');
 }
 
-fn isDigit(c: u8) bool {
+pub fn isDigit(c: u8) bool {
     return c >= '0' and c <= '9';
 }
 
-fn indexOf(s: []const u8, needle: u8) ?usize {
+pub fn indexOf(s: []const u8, needle: u8) ?usize {
     for (s, 0..) |c, i| {
         if (c == needle) return i;
     }
     return null;
 }
 
-fn lastIndexOf(s: []const u8, needle: u8) ?usize {
+pub fn lastIndexOf(s: []const u8, needle: u8) ?usize {
     var i = s.len;
     while (i > 0) {
         i -= 1;
@@ -306,22 +306,3 @@ fn lastIndexOf(s: []const u8, needle: u8) ?usize {
 // ===========================================================================
 
 const testing = @import("std").testing;
-
-pub const test_exports = blk: {
-    const __test_export_0 = getSchemeEnd;
-    const __test_export_1 = parseAuthority;
-    const __test_export_2 = parsePort;
-    const __test_export_3 = isAlpha;
-    const __test_export_4 = isDigit;
-    const __test_export_5 = indexOf;
-    const __test_export_6 = lastIndexOf;
-    break :blk struct {
-        pub const getSchemeEnd = __test_export_0;
-        pub const parseAuthority = __test_export_1;
-        pub const parsePort = __test_export_2;
-        pub const isAlpha = __test_export_3;
-        pub const isDigit = __test_export_4;
-        pub const indexOf = __test_export_5;
-        pub const lastIndexOf = __test_export_6;
-    };
-};

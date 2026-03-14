@@ -1,12 +1,12 @@
 const std = @import("std");
-const common = @import("common.zig");
+pub const common = @import("common.zig");
 
-const ExtensionType = common.ExtensionType;
-const NamedGroup = common.NamedGroup;
-const SignatureScheme = common.SignatureScheme;
-const ProtocolVersion = common.ProtocolVersion;
-const CipherSuite = common.CipherSuite;
-const PskKeyExchangeMode = common.PskKeyExchangeMode;
+pub const ExtensionType = common.ExtensionType;
+pub const NamedGroup = common.NamedGroup;
+pub const SignatureScheme = common.SignatureScheme;
+pub const ProtocolVersion = common.ProtocolVersion;
+pub const CipherSuite = common.CipherSuite;
+pub const PskKeyExchangeMode = common.PskKeyExchangeMode;
 
 pub const ExtensionError = error{
     BufferTooSmall,
@@ -287,22 +287,3 @@ pub fn parseKeyShareServer(data: []const u8) !KeyShareEntry {
         .key_exchange = data[4..][0..key_len],
     };
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = common;
-    const __test_export_1 = ExtensionType;
-    const __test_export_2 = NamedGroup;
-    const __test_export_3 = SignatureScheme;
-    const __test_export_4 = ProtocolVersion;
-    const __test_export_5 = CipherSuite;
-    const __test_export_6 = PskKeyExchangeMode;
-    break :blk struct {
-        pub const common = __test_export_0;
-        pub const ExtensionType = __test_export_1;
-        pub const NamedGroup = __test_export_2;
-        pub const SignatureScheme = __test_export_3;
-        pub const ProtocolVersion = __test_export_4;
-        pub const CipherSuite = __test_export_5;
-        pub const PskKeyExchangeMode = __test_export_6;
-    };
-};

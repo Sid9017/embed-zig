@@ -1,6 +1,6 @@
 const std = @import("std");
 
-fn HashWrapper(comptime StdHash: type) type {
+pub fn HashWrapper(comptime StdHash: type) type {
     return struct {
         pub const digest_length = StdHash.digest_length;
 
@@ -29,9 +29,3 @@ fn HashWrapper(comptime StdHash: type) type {
 pub const Sha256 = HashWrapper(std.crypto.hash.sha2.Sha256);
 pub const Sha384 = HashWrapper(std.crypto.hash.sha2.Sha384);
 pub const Sha512 = HashWrapper(std.crypto.hash.sha2.Sha512);
-pub const test_exports = blk: {
-    const __test_export_0 = HashWrapper;
-    break :blk struct {
-        pub const HashWrapper = __test_export_0;
-    };
-};

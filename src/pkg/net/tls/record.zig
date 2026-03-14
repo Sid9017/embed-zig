@@ -1,14 +1,14 @@
 const std = @import("std");
-const runtime = struct {
+pub const runtime = struct {
     pub const std = @import("../../../runtime/std.zig");
 };
-const common = @import("common.zig");
+pub const common = @import("common.zig");
 
-const ContentType = common.ContentType;
-const ProtocolVersion = common.ProtocolVersion;
-const CipherSuite = common.CipherSuite;
-const AlertDescription = common.AlertDescription;
-const AlertLevel = common.AlertLevel;
+pub const ContentType = common.ContentType;
+pub const ProtocolVersion = common.ProtocolVersion;
+pub const CipherSuite = common.CipherSuite;
+pub const AlertDescription = common.AlertDescription;
+pub const AlertLevel = common.AlertLevel;
 
 pub const RecordHeader = struct {
     content_type: ContentType,
@@ -66,7 +66,7 @@ pub fn CipherState(comptime Crypto: type) type {
     };
 }
 
-fn AesGcmState(comptime Crypto: type, comptime key_len: usize) type {
+pub fn AesGcmState(comptime Crypto: type, comptime key_len: usize) type {
     return struct {
         key: [key_len]u8,
         iv: [12]u8,
@@ -118,7 +118,7 @@ fn AesGcmState(comptime Crypto: type, comptime key_len: usize) type {
     };
 }
 
-fn ChaChaState(comptime Crypto: type) type {
+pub fn ChaChaState(comptime Crypto: type) type {
     return struct {
         key: [32]u8,
         iv: [12]u8,
@@ -436,7 +436,7 @@ pub fn RecordLayer(comptime Conn: type, comptime Crypto: type) type {
     };
 }
 
-const MockConn = struct {
+pub const MockConn = struct {
     write_buf: [16384]u8 = undefined,
     write_len: usize = 0,
     read_buf: [16384]u8 = undefined,
@@ -475,29 +475,4 @@ const MockConn = struct {
         self.read_len = data.len;
         self.read_pos = 0;
     }
-};
-
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    const __test_export_1 = common;
-    const __test_export_2 = ContentType;
-    const __test_export_3 = ProtocolVersion;
-    const __test_export_4 = CipherSuite;
-    const __test_export_5 = AlertDescription;
-    const __test_export_6 = AlertLevel;
-    const __test_export_7 = AesGcmState;
-    const __test_export_8 = ChaChaState;
-    const __test_export_9 = MockConn;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-        pub const common = __test_export_1;
-        pub const ContentType = __test_export_2;
-        pub const ProtocolVersion = __test_export_3;
-        pub const CipherSuite = __test_export_4;
-        pub const AlertDescription = __test_export_5;
-        pub const AlertLevel = __test_export_6;
-        pub const AesGcmState = __test_export_7;
-        pub const ChaChaState = __test_export_8;
-        pub const MockConn = __test_export_9;
-    };
 };

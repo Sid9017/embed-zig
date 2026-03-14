@@ -104,42 +104,4 @@ pub fn build(b: *std.Build) void {
     }
 
     b.installArtifact(embed_link);
-
-    // ===================================================================
-    // Tests
-    // ===================================================================
-
-    const project_tests_root = b.createModule(.{
-        .root_source_file = b.path("src/mod_test.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    portaudio_pkg.configureModule(b, project_tests_root, target);
-    speexdsp_pkg.configureModule(b, project_tests_root);
-    opus_pkg.configureModule(b, project_tests_root);
-    ogg_pkg.configureModule(b, project_tests_root);
-    stb_truetype_pkg.configureModule(b, project_tests_root);
-
-    const project_tests = b.addTest(.{
-        .root_module = project_tests_root,
-    });
-    project_tests.linkLibrary(spx);
-    project_tests.linkLibrary(stb_tt);
-    const run_project_tests = b.addRunArtifact(project_tests);
-
-    // ===================================================================
-    // Steps
-    // ===================================================================
-
-    b.step("test-runtime-std", "Run runtime std tests").dependOn(&run_project_tests.step);
-    b.step("test-async", "Run async package tests").dependOn(&run_project_tests.step);
-    b.step("test-audio", "Run audio package tests").dependOn(&run_project_tests.step);
-    b.step("test-net", "Run net package tests").dependOn(&run_project_tests.step);
-    b.step("test-ble", "Run BLE package tests").dependOn(&run_project_tests.step);
-    b.step("test-ui", "Run UI tests").dependOn(&run_project_tests.step);
-    b.step("test-event", "Run event package tests").dependOn(&run_project_tests.step);
-    b.step("test-app", "Run app runtime tests").dependOn(&run_project_tests.step);
-
-    const all = b.step("test", "Run all tests");
-    all.dependOn(&run_project_tests.step);
 }

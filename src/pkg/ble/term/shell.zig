@@ -110,7 +110,7 @@ pub const HandlerFn = *const fn (*const Request, *ResponseWriter) void;
 pub const max_commands: usize = 32;
 pub const max_name_len: usize = 32;
 
-const CommandEntry = struct {
+pub const CommandEntry = struct {
     name: [max_name_len]u8 = .{0} ** max_name_len,
     name_len: u8 = 0,
     handler: HandlerFn = undefined,
@@ -240,7 +240,7 @@ pub fn encodeResponse(buf: []u8, id: u32, out: []const u8, err_msg: []const u8, 
 // JSON helpers (no allocator, no std.json)
 // ============================================================================
 
-fn extractString(data: []const u8, key: []const u8) ?[]const u8 {
+pub fn extractString(data: []const u8, key: []const u8) ?[]const u8 {
     // Find "key":"value"
     var i: usize = 0;
     while (i + key.len + 4 < data.len) : (i += 1) {
@@ -264,7 +264,7 @@ fn extractString(data: []const u8, key: []const u8) ?[]const u8 {
     return null;
 }
 
-fn extractU32(data: []const u8, key: []const u8) ?u32 {
+pub fn extractU32(data: []const u8, key: []const u8) ?u32 {
     var i: usize = 0;
     while (i + key.len + 4 < data.len) : (i += 1) {
         if (data[i] == '"' and i + 1 + key.len + 1 < data.len and
@@ -285,13 +285,13 @@ fn extractU32(data: []const u8, key: []const u8) ?u32 {
     return null;
 }
 
-fn copyTo(dst: []u8, src: []const u8) usize {
+pub fn copyTo(dst: []u8, src: []const u8) usize {
     const n = @min(src.len, dst.len);
     @memcpy(dst[0..n], src[0..n]);
     return n;
 }
 
-fn fmtU32(dst: []u8, val: u32) usize {
+pub fn fmtU32(dst: []u8, val: u32) usize {
     if (dst.len == 0) return 0;
     if (val == 0) {
         dst[0] = '0';
@@ -311,7 +311,7 @@ fn fmtU32(dst: []u8, val: u32) usize {
     return n;
 }
 
-fn escapeJson(dst: []u8, src: []const u8) usize {
+pub fn escapeJson(dst: []u8, src: []const u8) usize {
     var pos: usize = 0;
     for (src) |c| {
         switch (c) {
@@ -354,24 +354,3 @@ fn escapeJson(dst: []u8, src: []const u8) usize {
     }
     return pos;
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-pub const test_exports = blk: {
-    const __test_export_0 = CommandEntry;
-    const __test_export_1 = extractString;
-    const __test_export_2 = extractU32;
-    const __test_export_3 = copyTo;
-    const __test_export_4 = fmtU32;
-    const __test_export_5 = escapeJson;
-    break :blk struct {
-        pub const CommandEntry = __test_export_0;
-        pub const extractString = __test_export_1;
-        pub const extractU32 = __test_export_2;
-        pub const copyTo = __test_export_3;
-        pub const fmtU32 = __test_export_4;
-        pub const escapeJson = __test_export_5;
-    };
-};

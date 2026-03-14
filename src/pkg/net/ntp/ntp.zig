@@ -294,7 +294,7 @@ pub fn Client(comptime Socket: type) type {
 }
 
 /// Build NTP request packet (48 bytes)
-fn buildRequest(buf: *[48]u8, origin_time_ms: i64) void {
+pub fn buildRequest(buf: *[48]u8, origin_time_ms: i64) void {
     @memset(buf, 0);
 
     // LI (0) | VN (4) | Mode (3 = client)
@@ -328,7 +328,7 @@ fn buildRequest(buf: *[48]u8, origin_time_ms: i64) void {
 /// Parse NTP response packet
 /// Validates that the response's Origin Timestamp matches what we sent in Transmit Timestamp
 /// (RFC 5905 security - server echoes back our Transmit Timestamp in Origin field)
-fn parseResponse(buf: *const [48]u8, expected_origin: NtpTimestamp) NtpError!Response {
+pub fn parseResponse(buf: *const [48]u8, expected_origin: NtpTimestamp) NtpError!Response {
     // Check LI (Leap Indicator) - if 3, server is not synchronized
     const li = (buf[0] >> 6) & 0x03;
     if (li == 3) return error.InvalidResponse;
@@ -372,14 +372,14 @@ fn parseResponse(buf: *const [48]u8, expected_origin: NtpTimestamp) NtpError!Res
 
 /// NTP timestamp (internal representation using i64 to avoid Y2036 overflow)
 /// Wire format uses 32-bit unsigned, but we store as i64 for extended range
-const NtpTimestamp = struct {
+pub const NtpTimestamp = struct {
     seconds: i64,
     fraction: u32,
 };
 
 /// Read NTP timestamp from buffer (big-endian)
 /// Wire format is u32, but we extend to i64 to handle Y2036+ timestamps
-fn readTimestamp(buf: *const [8]u8) NtpTimestamp {
+pub fn readTimestamp(buf: *const [8]u8) NtpTimestamp {
     return .{
         .seconds = @as(i64, std.mem.readInt(u32, buf[0..4], .big)),
         .fraction = std.mem.readInt(u32, buf[4..8], .big),
@@ -388,7 +388,7 @@ fn readTimestamp(buf: *const [8]u8) NtpTimestamp {
 
 /// Write NTP timestamp to buffer (big-endian)
 /// Truncates to u32 for wire format (handles nonce values safely)
-fn writeTimestamp(buf: *[8]u8, ts: NtpTimestamp) void {
+pub fn writeTimestamp(buf: *[8]u8, ts: NtpTimestamp) void {
     // Use @truncate to safely handle large values from generateNonce()
     // This preserves the lower 32 bits which is all that matters for NTP wire format
     std.mem.writeInt(u32, buf[0..4], @truncate(@as(u64, @bitCast(ts.seconds))), .big);
@@ -396,7 +396,7 @@ fn writeTimestamp(buf: *[8]u8, ts: NtpTimestamp) void {
 }
 
 /// Convert NTP timestamp to Unix milliseconds
-fn ntpToUnixMs(ntp: NtpTimestamp) i64 {
+pub fn ntpToUnixMs(ntp: NtpTimestamp) i64 {
     // NTP seconds since 1900 -> Unix seconds since 1970
     const unix_secs: i64 = ntp.seconds - NTP_UNIX_OFFSET;
     // Fraction to milliseconds: fraction * 1000 / 2^32
@@ -405,7 +405,7 @@ fn ntpToUnixMs(ntp: NtpTimestamp) i64 {
 }
 
 /// Convert Unix milliseconds to NTP timestamp
-fn unixMsToNtp(unix_ms: i64) NtpTimestamp {
+pub fn unixMsToNtp(unix_ms: i64) NtpTimestamp {
     const unix_secs = @divFloor(unix_ms, 1000);
     const ms = @mod(unix_ms, 1000);
 
@@ -453,29 +453,6 @@ pub fn formatTime(epoch_ms: i64, buf: []u8) []const u8 {
 // Real Network Tests (using runtime.std.Socket)
 // ============================================================================
 
-fn nowMs() i64 {
+pub fn nowMs() i64 {
     return @intCast(@divFloor(std.time.nanoTimestamp(), 1_000_000));
 }
-
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    const __test_export_1 = buildRequest;
-    const __test_export_2 = parseResponse;
-    const __test_export_3 = NtpTimestamp;
-    const __test_export_4 = readTimestamp;
-    const __test_export_5 = writeTimestamp;
-    const __test_export_6 = ntpToUnixMs;
-    const __test_export_7 = unixMsToNtp;
-    const __test_export_8 = nowMs;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-        pub const buildRequest = __test_export_1;
-        pub const parseResponse = __test_export_2;
-        pub const NtpTimestamp = __test_export_3;
-        pub const readTimestamp = __test_export_4;
-        pub const writeTimestamp = __test_export_5;
-        pub const ntpToUnixMs = __test_export_6;
-        pub const unixMsToNtp = __test_export_7;
-        pub const nowMs = __test_export_8;
-    };
-};

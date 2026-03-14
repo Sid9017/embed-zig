@@ -748,16 +748,3 @@ pub fn GattServer(comptime Thread: type, comptime services: []const ServiceDef) 
         }
     };
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-pub const test_exports = blk: {
-    const __test_export_0 = runtime;
-    const __test_export_1 = att;
-    break :blk struct {
-        pub const runtime = __test_export_0;
-        pub const att = __test_export_1;
-    };
-};

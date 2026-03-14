@@ -588,25 +588,3 @@ pub fn Board(comptime spec: type) type {
 pub fn from(comptime spec: type) type {
     return Board(spec);
 }
-pub const test_exports = blk: {
-    const __test_export_0 = hal_marker;
-    const __test_export_1 = rtc_mod;
-    const __test_export_2 = getMarkedKind;
-    const __test_export_3 = findPeripheralType;
-    const __test_export_4 = findRtcReaderType;
-    const __test_export_5 = driverTypeOf;
-    const __test_export_6 = validatePeripheralType;
-    const __test_export_7 = driverInit;
-    const __test_export_8 = driverDeinit;
-    break :blk struct {
-        pub const hal_marker = __test_export_0;
-        pub const rtc_mod = __test_export_1;
-        pub const getMarkedKind = __test_export_2;
-        pub const findPeripheralType = __test_export_3;
-        pub const findRtcReaderType = __test_export_4;
-        pub const driverTypeOf = __test_export_5;
-        pub const validatePeripheralType = __test_export_6;
-        pub const driverInit = __test_export_7;
-        pub const driverDeinit = __test_export_8;
-    };
-};
