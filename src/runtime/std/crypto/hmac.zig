@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn HmacWrapper(comptime StdHmac: type) type {
+fn HmacWrapper(comptime StdHmac: type) type {
     return struct {
         pub const mac_length = StdHmac.mac_length;
 
@@ -26,6 +26,11 @@ pub fn HmacWrapper(comptime StdHmac: type) type {
     };
 }
 
-pub const HmacSha256 = HmacWrapper(std.crypto.auth.hmac.sha2.HmacSha256);
-pub const HmacSha384 = HmacWrapper(std.crypto.auth.hmac.sha2.HmacSha384);
-pub const HmacSha512 = HmacWrapper(std.crypto.auth.hmac.sha2.HmacSha512);
+pub fn hmac(comptime mac_len: usize) type {
+    return switch (mac_len) {
+        32 => HmacWrapper(std.crypto.auth.hmac.sha2.HmacSha256),
+        48 => HmacWrapper(std.crypto.auth.hmac.sha2.HmacSha384),
+        64 => HmacWrapper(std.crypto.auth.hmac.sha2.HmacSha512),
+        else => @compileError("unsupported hmac mac length"),
+    };
+}

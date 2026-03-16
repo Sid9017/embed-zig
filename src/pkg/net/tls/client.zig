@@ -1,12 +1,7 @@
 const std = @import("std");
-pub const runtime = struct {
-    pub const sync = struct {
-        pub const mutex = @import("../../../runtime/sync/mutex.zig");
-        pub const isMutex = mutex.is;
-    };
-    pub const rng = @import("../../../runtime/rng.zig");
-    pub const std = @import("../../../runtime/std.zig");
-};
+const crypto_suite = @import("../../../runtime/crypto/suite.zig");
+const mutex_contract = @import("../../../runtime/sync/mutex.zig");
+const rng_contract = @import("../../../runtime/rng.zig");
 pub const conn_mod = @import("../conn.zig");
 pub const common = @import("common.zig");
 pub const record = @import("record.zig");
@@ -16,44 +11,37 @@ pub const ProtocolVersion = common.ProtocolVersion;
 pub const CipherSuite = common.CipherSuite;
 pub const AlertDescription = common.AlertDescription;
 
-pub fn Config(comptime Crypto: type) type {
-    const CaStore = if (@hasDecl(Crypto, "x509") and @hasDecl(Crypto.x509, "CaStore"))
-        Crypto.x509.CaStore
-    else
-        void;
-
-    return struct {
-        allocator: std.mem.Allocator,
-        hostname: []const u8 = "",
-        skip_verify: bool = false,
-        ca_store: ?CaStore = null,
-        alpn_protocols: []const []const u8 = &.{},
-        min_version: ProtocolVersion = .tls_1_2,
-        max_version: ProtocolVersion = .tls_1_3,
-        timeout_ms: u32 = 30000,
-    };
-}
+pub const Config = struct {
+    allocator: std.mem.Allocator,
+    hostname: []const u8 = "",
+    skip_verify: bool = false,
+    alpn_protocols: []const []const u8 = &.{},
+    min_version: ProtocolVersion = .tls_1_2,
+    max_version: ProtocolVersion = .tls_1_3,
+    timeout_ms: u32 = 30000,
+};
 
 /// TLS Client — upgrades a plain `Conn` into a secure channel.
 ///
 /// Thread-safe: `send` and `recv` can be called concurrently.
 ///
 /// Type parameters:
-///   - `Conn`:   underlying transport (must satisfy `net.conn.from` contract)
-///   - `Crypto`: crypto primitives (must satisfy `runtime.crypto.suite` contract)
+///   - `Conn`:   underlying transport (must satisfy `net.conn` contract)
+///   - `Crypto`: crypto suite (must satisfy `runtime.crypto.suite` contract)
 ///   - `Rng`:    random number generator (must satisfy `runtime.rng` contract)
 ///   - `Mutex`:  mutex type (must satisfy `runtime.sync.mutex` contract)
 pub fn Client(comptime Conn: type, comptime Crypto: type, comptime Rng: type, comptime Mutex: type) type {
     comptime {
         _ = conn_mod.from(Conn);
-        _ = runtime.sync.mutex.is(Mutex);
-        _ = runtime.rng.is(Rng);
+        _ = crypto_suite.is(Crypto);
+        _ = mutex_contract.is(Mutex);
+        _ = rng_contract.is(Rng);
     }
 
     return struct {
-        config: Config(Crypto),
+        config: Config,
         conn: *Conn,
-        hs: handshake.ClientHandshake(Conn, Crypto),
+        hs: handshake.ClientHandshake(Conn, Crypto, Rng),
         connected: bool,
         received_close_notify: bool,
 
@@ -71,31 +59,22 @@ pub fn Client(comptime Conn: type, comptime Crypto: type, comptime Rng: type, co
 
         pub const crypto = Crypto;
 
-        fn rngFill(buf: []u8) void {
-            const rng = Rng.init();
-            rng.fill(buf) catch {};
-        }
-
-        pub fn init(conn: *Conn, config: Config(Crypto)) !Self {
+        pub fn init(conn: *Conn, config: Config) !Self {
             const read_buffer = try config.allocator.alloc(u8, common.MAX_CIPHERTEXT_LEN + 256);
             errdefer config.allocator.free(read_buffer);
 
             const write_buffer = try config.allocator.alloc(u8, common.MAX_CIPHERTEXT_LEN + 256);
             errdefer config.allocator.free(write_buffer);
 
-            const Hs = handshake.ClientHandshake(Conn, Crypto);
-            const hs_ca_store: if (Hs.CaStoreType != void) ?Hs.CaStoreType else void =
-                if (Hs.CaStoreType != void) config.ca_store else {};
-
             return Self{
                 .config = config,
                 .conn = conn,
-                .hs = Hs.init(
+                .hs = try handshake.ClientHandshake(Conn, Crypto, Rng).init(
                     conn,
                     config.hostname,
                     config.allocator,
-                    hs_ca_store,
-                    &rngFill,
+                    config.skip_verify,
+                    Rng.init(),
                 ),
                 .connected = false,
                 .received_close_notify = false,
@@ -113,14 +92,11 @@ pub fn Client(comptime Conn: type, comptime Crypto: type, comptime Rng: type, co
             self.config.allocator.free(self.write_buffer);
         }
 
-        /// Perform TLS handshake over the underlying Conn.
-        /// Must be called before any concurrent send/recv.
         pub fn connect(self: *Self) !void {
             try self.hs.handshake(self.write_buffer);
             self.connected = true;
         }
 
-        /// Send encrypted data (thread-safe).
         pub fn send(self: *Self, data: []const u8) !usize {
             self.write_mutex.lock();
             defer self.write_mutex.unlock();
@@ -141,7 +117,6 @@ pub fn Client(comptime Conn: type, comptime Crypto: type, comptime Rng: type, co
             return sent;
         }
 
-        /// Receive and decrypt data (thread-safe).
         pub fn recv(self: *Self, buffer: []u8) !usize {
             self.read_mutex.lock();
             defer self.read_mutex.unlock();
@@ -194,7 +169,6 @@ pub fn Client(comptime Conn: type, comptime Crypto: type, comptime Rng: type, co
             }
         }
 
-        /// Send close_notify alert and close connection (thread-safe).
         pub fn close(self: *Self) !void {
             self.write_mutex.lock();
             defer self.write_mutex.unlock();
@@ -247,7 +221,6 @@ pub const Error = error{
     CertificateVerificationFailed,
 };
 
-/// Convenience: create + handshake in one call.
 pub fn connect(
     comptime Conn: type,
     comptime Crypto: type,
@@ -257,6 +230,12 @@ pub fn connect(
     hostname: []const u8,
     allocator: std.mem.Allocator,
 ) !Client(Conn, Crypto, Rng, Mutex) {
+    comptime {
+        _ = conn_mod.from(Conn);
+        _ = crypto_suite.is(Crypto);
+        _ = mutex_contract.is(Mutex);
+        _ = rng_contract.is(Rng);
+    }
     var tls_client = try Client(Conn, Crypto, Rng, Mutex).init(conn, .{
         .allocator = allocator,
         .hostname = hostname,
@@ -305,10 +284,6 @@ pub const TestMockConn = struct {
         self.read_pos = 0;
     }
 };
-
-// ---------------------------------------------------------------------------
-// Concurrency tests — use real std.Thread to exercise mutex paths
-// ---------------------------------------------------------------------------
 
 pub const ConcurrentPipeConn = struct {
     mu: std.Thread.Mutex = .{},

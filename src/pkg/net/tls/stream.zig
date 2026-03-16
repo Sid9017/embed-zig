@@ -1,7 +1,7 @@
 const std = @import("std");
-pub const runtime = struct {
-    pub const std = @import("../../../runtime/std.zig");
-};
+const crypto_suite = @import("../../../runtime/crypto/suite.zig");
+const mutex_contract = @import("../../../runtime/sync/mutex.zig");
+const rng_contract = @import("../../../runtime/rng.zig");
 pub const conn_mod = @import("../conn.zig");
 pub const client_mod = @import("client.zig");
 pub const common = @import("common.zig");
@@ -19,6 +19,9 @@ pub const Options = struct {
 pub fn Stream(comptime Conn: type, comptime Crypto: type, comptime Rng: type, comptime Mutex: type) type {
     comptime {
         _ = conn_mod.from(Conn);
+        _ = crypto_suite.is(Crypto);
+        _ = mutex_contract.is(Mutex);
+        _ = rng_contract.is(Rng);
     }
 
     return struct {

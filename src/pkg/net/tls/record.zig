@@ -1,7 +1,5 @@
 const std = @import("std");
-pub const runtime = struct {
-    pub const std = @import("../../../runtime/std.zig");
-};
+const crypto_suite = @import("../../../runtime/crypto/suite.zig");
 pub const common = @import("common.zig");
 
 pub const ContentType = common.ContentType;
@@ -35,6 +33,9 @@ pub const RecordHeader = struct {
 };
 
 pub fn CipherState(comptime Crypto: type) type {
+    comptime {
+        _ = crypto_suite.is(Crypto);
+    }
     return union(enum) {
         none,
         aes_128_gcm: AesGcmState(Crypto, 16),
@@ -67,12 +68,15 @@ pub fn CipherState(comptime Crypto: type) type {
 }
 
 pub fn AesGcmState(comptime Crypto: type, comptime key_len: usize) type {
+    comptime {
+        _ = crypto_suite.is(Crypto);
+    }
     return struct {
         key: [key_len]u8,
         iv: [12]u8,
 
         const Self = @This();
-        const AEAD = if (key_len == 16) Crypto.Aes128Gcm else Crypto.Aes256Gcm;
+        const AEAD = if (key_len == 16) Crypto.Aead.Aes128Gcm() else Crypto.Aead.Aes256Gcm();
 
         pub fn init(key: []const u8, iv: []const u8) !Self {
             if (key.len != key_len) return error.InvalidKeyLength;
@@ -119,12 +123,15 @@ pub fn AesGcmState(comptime Crypto: type, comptime key_len: usize) type {
 }
 
 pub fn ChaChaState(comptime Crypto: type) type {
+    comptime {
+        _ = crypto_suite.is(Crypto);
+    }
     return struct {
         key: [32]u8,
         iv: [12]u8,
 
         const Self = @This();
-        const AEAD = Crypto.ChaCha20Poly1305;
+        const AEAD = Crypto.Aead.ChaCha20Poly1305();
 
         pub fn init(key: []const u8, iv: []const u8) !Self {
             if (key.len != 32) return error.InvalidKeyLength;
@@ -187,6 +194,9 @@ pub const RecordError = error{
 ///
 /// `Conn` must satisfy the `net.conn.from` contract (`read`/`write`/`close`).
 pub fn RecordLayer(comptime Conn: type, comptime Crypto: type) type {
+    comptime {
+        _ = crypto_suite.is(Crypto);
+    }
     return struct {
         conn: *Conn,
         read_cipher: CipherState(Crypto),

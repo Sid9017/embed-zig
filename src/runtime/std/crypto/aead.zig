@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn AeadWrapper(comptime StdAead: type) type {
+fn AeadWrapper(comptime StdAead: type) type {
     return struct {
         pub const key_length = StdAead.key_length;
         pub const nonce_length = StdAead.nonce_length;
@@ -32,6 +32,14 @@ pub fn AeadWrapper(comptime StdAead: type) type {
     };
 }
 
-pub const Aes128Gcm = AeadWrapper(std.crypto.aead.aes_gcm.Aes128Gcm);
-pub const Aes256Gcm = AeadWrapper(std.crypto.aead.aes_gcm.Aes256Gcm);
-pub const ChaCha20Poly1305 = AeadWrapper(std.crypto.aead.chacha_poly.ChaCha20Poly1305);
+/// Aes256Gcm and ChaCha20Poly1305 share (32, 12, 16) — the contract's
+/// convenience methods both resolve to the same factory call, so we pick
+/// one canonical backend (Aes256Gcm) for that parameter triple.
+pub fn aead(comptime key_len: usize, comptime nonce_len: usize, comptime tag_len: usize) type {
+    if (nonce_len != 12 or tag_len != 16) @compileError("unsupported aead nonce/tag length");
+    return switch (key_len) {
+        16 => AeadWrapper(std.crypto.aead.aes_gcm.Aes128Gcm),
+        32 => AeadWrapper(std.crypto.aead.aes_gcm.Aes256Gcm),
+        else => @compileError("unsupported aead key length"),
+    };
+}

@@ -64,4 +64,4 @@ pub const Fs = runtime.fs.Make(std.fs.Fs);
 pub const ChannelFactory = runtime.channel_factory.Make(std.channel_factory.ChannelFactory);
 pub const Socket = runtime.socket.Make(std.socket.Socket);
 pub const OtaBackend = runtime.ota_backend.Make(std.ota_backend.OtaBackend);
-pub const Crypto = runtime.crypto.suite.Make(std.crypto.suite.Crypto);
+pub const Crypto = runtime.crypto.suite.Make(std.crypto.suite);

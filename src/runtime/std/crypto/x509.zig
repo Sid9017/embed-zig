@@ -1,41 +1,30 @@
 const std = @import("std");
-pub const Certificate = std.crypto.Certificate;
-pub const Bundle = Certificate.Bundle;
+const x509_contract = @import("../../crypto/x509.zig");
 
-pub const CaStore = struct {
-    bundle: Bundle,
-    allocator: std.mem.Allocator,
+const Certificate = std.crypto.Certificate;
+const Bundle = Certificate.Bundle;
 
-    pub fn initSystem(allocator: std.mem.Allocator) !CaStore {
-        var bundle: Bundle = .{};
-        try bundle.rescan(allocator);
-        return .{ .bundle = bundle, .allocator = allocator };
-    }
+bundle: Bundle,
+allocator: std.mem.Allocator,
 
-    pub fn deinit(self: *CaStore) void {
-        self.bundle.deinit(self.allocator);
-    }
-};
+const Self = @This();
 
-pub const VerifyError = error{
-    CertificateVerificationFailed,
-    CertificateHostMismatch,
-    CertificateParseError,
-    CertificateChainTooShort,
-};
+pub fn init(allocator: std.mem.Allocator) anyerror!Self {
+    var bundle: Bundle = .{};
+    bundle.rescan(allocator) catch |e| return e;
+    return .{ .bundle = bundle, .allocator = allocator };
+}
 
-/// Verify a DER-encoded certificate chain against a CA store.
-///
-/// - `chain`: leaf certificate first, intermediates follow, root optional.
-/// - `hostname`: if non-null, the leaf's SAN / CN is checked.
-/// - `store`: system CA bundle loaded via `CaStore.initSystem`.
-/// - `now_sec`: current UNIX timestamp for validity window checks.
+pub fn deinit(self: *Self) void {
+    self.bundle.deinit(self.allocator);
+}
+
 pub fn verifyChain(
+    self: *Self,
     chain: []const []const u8,
     hostname: ?[]const u8,
-    store: CaStore,
     now_sec: i64,
-) VerifyError!void {
+) x509_contract.VerifyError!void {
     if (chain.len == 0) return error.CertificateChainTooShort;
 
     const leaf_cert = Certificate{ .buffer = chain[0], .index = 0 };
@@ -59,5 +48,5 @@ pub fn verifyChain(
         subject = issuer;
     }
 
-    store.bundle.verify(subject, now) catch return error.CertificateVerificationFailed;
+    self.bundle.verify(subject, now) catch return error.CertificateVerificationFailed;
 }
