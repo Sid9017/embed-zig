@@ -16,13 +16,13 @@ pub const Options = struct {
 ///
 /// This is the primary high-level API: create a `Stream`, call `handshake`,
 /// then use `read`/`write`/`close` like any other `Conn`.
-pub fn Stream(comptime Conn: type, comptime Crypto: type, comptime Mutex: type) type {
+pub fn Stream(comptime Conn: type, comptime Crypto: type, comptime Rng: type, comptime Mutex: type) type {
     comptime {
         _ = conn_mod.from(Conn);
     }
 
     return struct {
-        client: ?client_mod.Client(Conn, Crypto, Mutex),
+        client: ?client_mod.Client(Conn, Crypto, Rng, Mutex),
         conn: *Conn,
         allocator: std.mem.Allocator,
         hostname: []const u8,
@@ -49,7 +49,7 @@ pub fn Stream(comptime Conn: type, comptime Crypto: type, comptime Mutex: type) 
 
         /// Perform TLS handshake, upgrading the underlying Conn.
         pub fn handshake(self: *Self) !void {
-            self.client = try client_mod.Client(Conn, Crypto, Mutex).init(self.conn, .{
+            self.client = try client_mod.Client(Conn, Crypto, Rng, Mutex).init(self.conn, .{
                 .allocator = self.allocator,
                 .hostname = self.hostname,
                 .skip_verify = self.options.skip_cert_verify,

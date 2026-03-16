@@ -23,14 +23,14 @@ pub fn Board(comptime hw: type) type {
     const spec = struct {
         pub const meta = .{ .id = hw.name };
 
-        pub const log = runtime.log.from(hw.log);
-        pub const time = runtime.time.from(hw.time);
+        pub const log = runtime.log.Log(hw.log);
+        pub const time = runtime.time.Time(hw.time);
+        pub const channel = hw.channel;
 
         pub const thread = struct {
-            pub const Type = runtime.thread.from(hw.thread.Thread);
-            pub const user = hw.thread.user_defaults;
-            pub const system = hw.thread.system_defaults;
-            pub const default = hw.thread.default_defaults;
+            pub const user = runtime.thread.Thread(hw.thread.user);
+            pub const system = runtime.thread.Thread(hw.thread.system);
+            pub const default = runtime.thread.Thread(hw.thread.default);
         };
 
         pub const allocator = struct {

@@ -18,6 +18,10 @@ const CipherSuite = module.CipherSuite;
 const NamedGroup = module.NamedGroup;
 const SignatureScheme = module.SignatureScheme;
 const ContentType = module.ContentType;
+
+fn testRngFill(buf: []u8) void {
+    std.crypto.random.bytes(buf);
+}
 const X25519KeyExchange = module.X25519KeyExchange;
 const P256KeyExchange = module.P256KeyExchange;
 const TranscriptHash = module.TranscriptHash;
@@ -103,7 +107,7 @@ test "ClientHandshake init with Conn" {
     var conn = MockConn{};
     const Hs = ClientHandshake(MockConn, Crypto);
 
-    const hs = Hs.init(&conn, "example.com", std.testing.allocator, null);
+    const hs = Hs.init(&conn, "example.com", std.testing.allocator, null, &testRngFill);
 
     try std.testing.expectEqualStrings("example.com", hs.hostname);
     try std.testing.expect(hs.state == .initial);
@@ -211,7 +215,7 @@ test "TLS 1.2 PRF large output" {
 test "KeyExchange X25519 generate and public key" {
     const Crypto = runtime.std.Crypto;
 
-    var kx = try KeyExchange(Crypto).generate(.x25519, &Crypto.Rng.fill);
+    var kx = try KeyExchange(Crypto).generate(.x25519, &testRngFill);
     const pub_key = kx.publicKey();
     try std.testing.expectEqual(@as(usize, 32), pub_key.len);
 
@@ -224,15 +228,15 @@ test "KeyExchange unsupported group" {
 
     try std.testing.expectError(
         error.UnsupportedGroup,
-        KeyExchange(Crypto).generate(.x448, &Crypto.Rng.fill),
+        KeyExchange(Crypto).generate(.x448, &testRngFill),
     );
 }
 
 test "X25519 shared secret computation" {
     const Crypto = runtime.std.Crypto;
 
-    var kx_a = try KeyExchange(Crypto).generate(.x25519, &Crypto.Rng.fill);
-    var kx_b = try KeyExchange(Crypto).generate(.x25519, &Crypto.Rng.fill);
+    var kx_a = try KeyExchange(Crypto).generate(.x25519, &testRngFill);
+    var kx_b = try KeyExchange(Crypto).generate(.x25519, &testRngFill);
 
     const shared_a = try kx_a.computeSharedSecret(kx_b.publicKey());
     const shared_b = try kx_b.computeSharedSecret(kx_a.publicKey());
@@ -243,7 +247,7 @@ test "X25519 shared secret computation" {
 test "X25519 invalid public key length" {
     const Crypto = runtime.std.Crypto;
 
-    var kx = try KeyExchange(Crypto).generate(.x25519, &Crypto.Rng.fill);
+    var kx = try KeyExchange(Crypto).generate(.x25519, &testRngFill);
     const short_key: [16]u8 = [_]u8{0} ** 16;
     try std.testing.expectError(error.InvalidPublicKey, kx.computeSharedSecret(&short_key));
 }
@@ -264,7 +268,7 @@ test "ClientHandshake init fills client_random" {
     };
 
     var conn = MockConn2{};
-    const hs = ClientHandshake(MockConn2, Crypto).init(&conn, "test.com", std.testing.allocator, null);
+    const hs = ClientHandshake(MockConn2, Crypto).init(&conn, "test.com", std.testing.allocator, null, &testRngFill);
 
     const all_zero = std.mem.allEqual(u8, &hs.client_random, 0);
     try std.testing.expect(!all_zero);
@@ -286,7 +290,7 @@ test "ClientHandshake initial state" {
     };
 
     var conn = MockConn3{};
-    const hs = ClientHandshake(MockConn3, Crypto).init(&conn, "host.example.com", std.testing.allocator, null);
+    const hs = ClientHandshake(MockConn3, Crypto).init(&conn, "host.example.com", std.testing.allocator, null, &testRngFill);
 
     try std.testing.expectEqual(HandshakeState.initial, hs.state);
     try std.testing.expectEqual(ProtocolVersion.tls_1_3, hs.version);

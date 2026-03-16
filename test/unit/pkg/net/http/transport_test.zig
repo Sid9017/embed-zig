@@ -194,13 +194,13 @@ test "isResponseComplete" {
 
 test "Transport comptime validation" {
     const Socket = runtime.std.Socket;
-    const T = Transport(Socket, void, void, void);
+    const T = Transport(Socket, void, void, void, void);
     _ = RoundTripper(T);
 }
 
 test "HTTP GET httpbin.org/get" {
     const Socket = runtime.std.Socket;
-    const T = Transport(Socket, void, void, void);
+    const T = Transport(Socket, void, void, void, void);
     var t = T{ .allocator = std.testing.allocator, .dns_server = dns_mod.Servers.alidns };
 
     var buf: [8192]u8 = undefined;
@@ -217,15 +217,15 @@ test "HTTP GET httpbin.org/get" {
 
 test "HTTP GET to IP address (no DNS)" {
     const Socket = runtime.std.Socket;
-    const T = Transport(Socket, void, void, void);
+    const T = Transport(Socket, void, void, void, void);
     var t = T{ .allocator = std.testing.allocator };
 
     var buf: [4096]u8 = undefined;
     const resp = t.roundTrip(.{
-        .host = "93.184.215.14",
+        .host = "223.5.5.5",
         .port = 80,
         .path = "/",
-        .timeout_ms = 10000,
+        .timeout_ms = 5000,
     }, &buf) catch |err| switch (err) {
         error.ConnectionFailed, error.Timeout, error.ReceiveFailed => return,
         else => return err,
@@ -235,7 +235,7 @@ test "HTTP GET to IP address (no DNS)" {
 
 test "HTTP GET with DNS resolution" {
     const Socket = runtime.std.Socket;
-    const T = Transport(Socket, void, void, void);
+    const T = Transport(Socket, void, void, void, void);
     var t = T{ .allocator = std.testing.allocator, .dns_server = dns_mod.Servers.alidns };
 
     var buf: [8192]u8 = undefined;
@@ -253,7 +253,7 @@ test "HTTP GET with DNS resolution" {
 
 test "HTTP POST with body" {
     const Socket = runtime.std.Socket;
-    const T = Transport(Socket, void, void, void);
+    const T = Transport(Socket, void, void, void, void);
     var t = T{ .allocator = std.testing.allocator, .dns_server = dns_mod.Servers.alidns };
 
     var buf: [8192]u8 = undefined;
@@ -273,7 +273,7 @@ test "HTTP POST with body" {
 
 test "HTTP nonexistent host returns DnsResolveFailed" {
     const Socket = runtime.std.Socket;
-    const T = Transport(Socket, void, void, void);
+    const T = Transport(Socket, void, void, void, void);
     var t = T{ .allocator = std.testing.allocator, .dns_server = dns_mod.Servers.alidns };
 
     var buf: [4096]u8 = undefined;
@@ -287,7 +287,7 @@ test "HTTP nonexistent host returns DnsResolveFailed" {
 
 test "HTTP HTTPS without TLS returns TlsNotSupported" {
     const Socket = runtime.std.Socket;
-    const T = Transport(Socket, void, void, void);
+    const T = Transport(Socket, void, void, void, void);
     var t = T{ .allocator = std.testing.allocator, .dns_server = dns_mod.Servers.alidns };
 
     var buf: [4096]u8 = undefined;
@@ -313,7 +313,7 @@ test "Transport with DomainResolver intercepts" {
             return null;
         }
     };
-    const T = Transport(Socket, void, void, FakeResolver);
+    const T = Transport(Socket, void, void, void, FakeResolver);
     const custom = FakeResolver{};
     var t = T{
         .allocator = std.testing.allocator,
@@ -334,7 +334,7 @@ test "Transport with DomainResolver intercepts" {
 
 test "concurrent HTTP GETs from multiple threads" {
     const Socket = runtime.std.Socket;
-    const T = Transport(Socket, void, void, void);
+    const T = Transport(Socket, void, void, void, void);
 
     const Worker = struct {
         fn run(host: []const u8) void {
@@ -359,7 +359,7 @@ test "concurrent HTTP GETs from multiple threads" {
 
 test "concurrent HTTP requests — same host" {
     const Socket = runtime.std.Socket;
-    const T = Transport(Socket, void, void, void);
+    const T = Transport(Socket, void, void, void, void);
 
     const Worker = struct {
         fn run() void {

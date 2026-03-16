@@ -50,7 +50,12 @@
 
 const std = @import("std");
 const runtime = struct {
-    pub const sync = @import("../../../runtime/sync.zig");
+    pub const sync = struct {
+        pub const mutex = @import("../../../runtime/sync/mutex.zig");
+        pub const condition = @import("../../../runtime/sync/condition.zig");
+        pub const isMutex = mutex.is;
+        pub const isCondition = condition.is;
+    };
     pub const thread = @import("../../../runtime/thread.zig");
     pub const std = @import("../../../runtime/std.zig");
 };
@@ -174,9 +179,9 @@ pub fn Host(
     comptime service_table: []const gatt_server.ServiceDef,
 ) type {
     comptime {
-        _ = runtime.sync.Mutex(Mutex);
-        _ = runtime.sync.ConditionWithMutex(Cond, Mutex);
-        _ = runtime.thread.from(Thread);
+        _ = runtime.sync.isMutex(Mutex);
+        _ = runtime.sync.isCondition(Cond);
+        _ = runtime.thread.is(Thread);
     }
 
     const Credits = AclCredits(Mutex, Cond);

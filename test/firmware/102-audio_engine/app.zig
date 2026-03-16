@@ -18,25 +18,11 @@ const embed = @import("embed");
 const runtime = embed.runtime;
 const hal = embed.hal;
 const event = embed.pkg.event;
-const app_mod = embed.pkg.app;
+const button = event.button;
 const audio = embed.pkg.audio;
 
 pub const App = @import("state.zig");
 const songs = @import("songs.zig");
-
-const rom_printf = struct {
-    extern fn esp_rom_printf(fmt: [*:0]const u8, ...) c_int;
-}.esp_rom_printf;
-
-fn gestureLogger(ctx: ?*anyopaque, ev: App.Event, emit_ctx: *anyopaque, emit: event.EmitFn(App.Event)) void {
-    _ = ctx;
-    switch (ev) {
-        .button => |b| {
-            _ = rom_printf("[btn] id=%s code=%d\n", b.id.ptr, @as(c_int, b.code));
-        },
-    }
-    emit(emit_ctx, ev);
-}
 
 pub fn run(comptime hw: type, env: anytype) void {
     _ = env;
@@ -44,24 +30,26 @@ pub fn run(comptime hw: type, env: anytype) void {
     const board_spec = @import("board_spec.zig");
     const Board = board_spec.Board(hw);
 
-    const ChannelType = hw.Channel(App.Event);
-    const SelectorType = hw.Selector(App.Event);
+    const Time = Board.time;
     const Thread = Board.thread.Type;
     const Adc = Board.adc;
     const AudioSystem = Board.audio_system;
     const Mutex = hw.sync.Mutex;
     const Cond = hw.sync.Condition;
-    const Time = hw.time;
+
+    const MyBus = event.Bus(App.InputSpec, App.OutputSpec, Board.channel);
+    const AdcBtnType = button.AdcButtonSet(Adc, Time);
+    const Gesture = button.ButtonGesture(Time, .{
+        .multi_click_window_ms = 300,
+        .long_press_ms = 800,
+    });
 
     const EngineType = audio.Engine(Mutex, Cond, Thread, Time);
     const MixerType = audio.Mixer(Mutex, Cond);
     const Format = audio.Format;
-    const AdcBtnType = event.button.AdcButtonSet(Adc, Thread, Board.time, ChannelType, App.Event, "button");
-    const GestureType = event.button.ButtonGesture(App.Event, "button", Board.time);
-    const AppRt = app_mod.AppRuntime(App, SelectorType);
 
     const log: Board.log = .{};
-    const time: Board.time = .{};
+    const time: Time = .{};
     const allocator = Board.allocator.system;
 
     // ── board init ──
@@ -93,38 +81,40 @@ pub fn run(comptime hw: type, env: anytype) void {
         return;
     };
 
+    // ── event bus ──
+
+    var bus = MyBus.init(allocator, 16) catch {
+        log.err("bus init failed");
+        return;
+    };
+    defer bus.deinit();
+
     // ── ADC buttons ──
 
-    var adc_btn = AdcBtnType.init(allocator, &board.hal_board.adc_dev, time, Board.adc_button_config) catch {
-        log.err("adc button init failed");
+    var adc_btn = AdcBtnType.init(
+        &board.hal_board.adc_dev,
+        time,
+        .{ .ranges = Board.adc_button_config.ranges },
+        bus.Injector(.adc_btn),
+    );
+
+    // ── middleware: gesture recognizer ──
+
+    const gesture_mw = MyBus.Processor(.adc_btn, .gesture, Gesture).init(allocator) catch {
+        log.err("gesture middleware init failed");
         return;
     };
-    defer adc_btn.deinit();
+    defer gesture_mw.deinit();
+    bus.use(gesture_mw);
 
-    var gesture = GestureType.init(time, .{
-        .multi_click_window_ms = 300,
-        .long_press_ms = 800,
-    });
+    // ── middleware: logger ──
 
-    // ── flux runtime ──
-
-    var selector = SelectorType.init(allocator) catch {
-        log.err("selector init failed");
+    const log_mw = MyBus.Logger(Board.log).init(allocator) catch {
+        log.err("logger middleware init failed");
         return;
     };
-    defer selector.deinit();
-
-    var rt = AppRt.init(allocator, &selector, .{
-        .poll_timeout_ms = 50,
-    });
-    defer rt.deinit();
-
-    rt.register(adc_btn.channel) catch {
-        log.err("register adc button failed");
-        return;
-    };
-    rt.use(gesture.middleware());
-    rt.use(.{ .ctx = null, .processFn = gestureLogger, .tickFn = null });
+    defer log_mw.deinit();
+    bus.use(log_mw);
 
     // ── start audio_system ──
 
@@ -134,6 +124,8 @@ pub fn run(comptime hw: type, env: anytype) void {
     };
 
     // ── spawn tasks ──
+
+    var task_running = std.atomic.Value(bool).init(true);
 
     const MicCtx = struct {
         audio_dev: *AudioSystem,
@@ -148,8 +140,6 @@ pub fn run(comptime hw: type, env: anytype) void {
         frame_size: u32,
     };
 
-    var task_running = std.atomic.Value(bool).init(true);
-
     var mic_ctx = MicCtx{
         .audio_dev = &board.hal_board.audio_system_dev,
         .engine = &eng,
@@ -161,6 +151,22 @@ pub fn run(comptime hw: type, env: anytype) void {
         .engine = &eng,
         .running = &task_running,
         .frame_size = 160,
+    };
+
+    const Runners = struct {
+        fn runBtn(ctx: ?*anyopaque) void {
+            const self: *AdcBtnType = @ptrCast(@alignCast(ctx orelse return));
+            self.run();
+        }
+        fn runBus(ctx: ?*anyopaque) void {
+            const b: *MyBus = @ptrCast(@alignCast(ctx orelse return));
+            b.run();
+        }
+        fn runTick(ctx: ?*anyopaque) void {
+            const b: *MyBus = @ptrCast(@alignCast(ctx orelse return));
+            const t: Time = .{};
+            b.tick(t, 50);
+        }
     };
 
     var mic_thread = Thread.spawn(
@@ -181,8 +187,30 @@ pub fn run(comptime hw: type, env: anytype) void {
         return;
     };
 
-    adc_btn.start() catch {
-        log.err("adc button start failed");
+    var btn_thread = Thread.spawn(
+        Board.thread.user,
+        Runners.runBtn,
+        @ptrCast(&adc_btn),
+    ) catch {
+        log.err("adc button thread start failed");
+        return;
+    };
+
+    var bus_thread = Thread.spawn(
+        Board.thread.system,
+        Runners.runBus,
+        @ptrCast(&bus),
+    ) catch {
+        log.err("bus run thread start failed");
+        return;
+    };
+
+    var tick_thread = Thread.spawn(
+        Board.thread.system,
+        Runners.runTick,
+        @ptrCast(&bus),
+    ) catch {
+        log.err("tick thread start failed");
         return;
     };
 
@@ -198,94 +226,99 @@ pub fn run(comptime hw: type, env: anytype) void {
     const sample_rate = AudioSystem.config.sample_rate;
     const src_fmt = Format{ .rate = sample_rate, .channels = .mono };
 
+    var state = App.State{};
+    var prev = state;
+
     // ── main loop ──
 
     while (Board.isRunning()) {
-        rt.tick();
+        const r = bus.recv() catch break;
+        if (!r.ok) break;
 
-        if (rt.isDirty()) {
-            const state = rt.getState();
-            const prev = rt.getPrev();
-
-            // ── gain ──
-            if (state.spk_gain_db != prev.spk_gain_db) {
-                board.hal_board.audio_system_dev.setSpkGain(state.spk_gain_db) catch {};
-                log.info("spk gain = {d} dB");
-            }
-
-            if (state.mic_gain_db != prev.mic_gain_db) {
-                var ch: u8 = 0;
-                while (ch < AudioSystem.config.mic_count) : (ch += 1) {
-                    board.hal_board.audio_system_dev.setMicGain(ch, state.mic_gain_db) catch {};
-                }
-            }
-
-            // ── mute ──
-            if (state.muted != prev.muted) {
-                board.hal_board.audio_system_dev.setSpkGain(if (state.muted) -127 else state.spk_gain_db) catch {};
-                log.info(if (state.muted) "muted" else "unmuted");
-            }
-
-            // ── song switch (set button) ──
-            if (state.song_gen != last_song_gen) {
-                current_melody_h = null;
-                current_bass_h = null;
-                freePcm(&melody_pcm, allocator);
-                freePcm(&bass_pcm, allocator);
-                last_song_gen = state.song_gen;
-            }
-
-            // ── play / pause ──
-            if (state.playing and !prev.playing) {
-                if (current_melody_h == null) {
-                    const song = songs.get(state.song_index);
-                    log.info("playing song");
-
-                    melody_pcm = songs.renderVoiceMono(allocator, song.bpm, song.melody, 0.55, sample_rate) catch null;
-                    bass_pcm = songs.renderVoiceMono(allocator, song.bpm, song.bass, 0.45, sample_rate) catch null;
-
-                    if (melody_pcm != null) {
-                        current_melody_h = eng.createTrack(.{ .label = "melody", .gain = 1.0 }) catch null;
-                        if (current_melody_h) |h| {
-                            h.track.write(src_fmt, melody_pcm.?) catch {};
-                            h.ctrl.closeWrite();
-                        }
-                    }
-                    if (bass_pcm != null) {
-                        current_bass_h = eng.createTrack(.{ .label = "bass", .gain = 1.0 }) catch null;
-                        if (current_bass_h) |h| {
-                            h.track.write(src_fmt, bass_pcm.?) catch {};
-                            h.ctrl.closeWrite();
-                        }
-                    }
-                }
-            } else if (!state.playing and prev.playing) {
-                current_melody_h = null;
-                current_bass_h = null;
-                freePcm(&melody_pcm, allocator);
-                freePcm(&bass_pcm, allocator);
-                log.info("paused");
-            }
-
-            // ── audio system on/off ──
-            if (state.running != prev.running) {
-                if (state.running) {
-                    board.hal_board.audio_system_dev.start() catch {};
-                    log.info("audio resumed");
-                } else {
-                    board.hal_board.audio_system_dev.stop() catch {};
-                    log.info("audio paused");
-                }
-            }
-
-            rt.commitFrame();
+        switch (r.value) {
+            .gesture => |g| App.handleGesture(&state, g.id, g.gesture),
+            .input => {},
         }
+
+        // ── gain ──
+        if (state.spk_gain_db != prev.spk_gain_db) {
+            board.hal_board.audio_system_dev.setSpkGain(state.spk_gain_db) catch {};
+            log.info("spk gain = {d} dB");
+        }
+
+        if (state.mic_gain_db != prev.mic_gain_db) {
+            var ch: u8 = 0;
+            while (ch < AudioSystem.config.mic_count) : (ch += 1) {
+                board.hal_board.audio_system_dev.setMicGain(ch, state.mic_gain_db) catch {};
+            }
+        }
+
+        // ── mute ──
+        if (state.muted != prev.muted) {
+            board.hal_board.audio_system_dev.setSpkGain(if (state.muted) -127 else state.spk_gain_db) catch {};
+            log.info(if (state.muted) "muted" else "unmuted");
+        }
+
+        // ── song switch (set button) ──
+        if (state.song_gen != last_song_gen) {
+            current_melody_h = null;
+            current_bass_h = null;
+            freePcm(&melody_pcm, allocator);
+            freePcm(&bass_pcm, allocator);
+            last_song_gen = state.song_gen;
+        }
+
+        // ── play / pause ──
+        if (state.playing and !prev.playing) {
+            if (current_melody_h == null) {
+                const song = songs.get(state.song_index);
+                log.info("playing song");
+
+                melody_pcm = songs.renderVoiceMono(allocator, song.bpm, song.melody, 0.55, sample_rate) catch null;
+                bass_pcm = songs.renderVoiceMono(allocator, song.bpm, song.bass, 0.45, sample_rate) catch null;
+
+                if (melody_pcm != null) {
+                    current_melody_h = eng.createTrack(.{ .label = "melody", .gain = 1.0 }) catch null;
+                    if (current_melody_h) |h| {
+                        h.track.write(src_fmt, melody_pcm.?) catch {};
+                        h.ctrl.closeWrite();
+                    }
+                }
+                if (bass_pcm != null) {
+                    current_bass_h = eng.createTrack(.{ .label = "bass", .gain = 1.0 }) catch null;
+                    if (current_bass_h) |h| {
+                        h.track.write(src_fmt, bass_pcm.?) catch {};
+                        h.ctrl.closeWrite();
+                    }
+                }
+            }
+        } else if (!state.playing and prev.playing) {
+            current_melody_h = null;
+            current_bass_h = null;
+            freePcm(&melody_pcm, allocator);
+            freePcm(&bass_pcm, allocator);
+            log.info("paused");
+        }
+
+        // ── audio system on/off ──
+        if (state.running != prev.running) {
+            if (state.running) {
+                board.hal_board.audio_system_dev.start() catch {};
+                log.info("audio resumed");
+            } else {
+                board.hal_board.audio_system_dev.stop() catch {};
+                log.info("audio paused");
+            }
+        }
+
+        prev = state;
     }
 
     // ── shutdown ──
 
     task_running.store(false, .release);
     adc_btn.stop();
+    bus.stop();
     current_melody_h = null;
     current_bass_h = null;
     freePcm(&melody_pcm, allocator);
@@ -294,6 +327,9 @@ pub fn run(comptime hw: type, env: anytype) void {
 
     mic_thread.join();
     spk_thread.join();
+    btn_thread.join();
+    bus_thread.join();
+    tick_thread.join();
 
     board.hal_board.audio_system_dev.stop() catch {};
 

@@ -1,236 +1,209 @@
 const std = @import("std");
-const embed = @import("embed");
-const module = embed.pkg.event.bus;
-const fd_t = module.fd_t;
-const Periph = module.Periph;
-const Bus = module.Bus;
-const types = embed.pkg.event.types;
-const mw_mod = module.mw_mod;
-// ---------------------------------------------------------------------------
-// Tests — real runtime.std.Selector, user-defined TestEvent
-// ---------------------------------------------------------------------------
-
 const testing = std.testing;
-const TestEvent = union(enum) {
-    button: types.PeriphEvent,
-    system: types.SystemEvent,
+const embed = @import("embed");
+const bus_mod = embed.pkg.event.bus;
+const Bus = bus_mod.Bus;
+const StdChannel = embed.runtime.std.ChannelFactory;
+
+const TestPayload = struct { value: u32 };
+
+const TestBus = Bus(.{
+    .src_a = TestPayload,
+    .src_b = TestPayload,
+}, .{
+    .transformed = TestPayload,
+}, StdChannel);
+
+test "init and deinit" {
+    var bus = try TestBus.init(testing.allocator, 16);
+    defer bus.deinit();
+}
+
+test "inject and recv pass through without middleware" {
+    var bus = try TestBus.init(testing.allocator, 16);
+    defer bus.deinit();
+
+    const t = try std.Thread.spawn(.{}, TestBus.run, .{&bus});
+
+    _ = try bus.inject(.src_a, .{ .value = 42 });
+
+    const r = try bus.recv();
+    try testing.expect(r.ok);
+    try testing.expectEqual(TestBus.BusEvent{ .input = .{ .src_a = .{ .value = 42 } } }, r.value);
+
+    bus.stop();
+    t.join();
+}
+
+test "multiple inject and recv" {
+    var bus = try TestBus.init(testing.allocator, 16);
+    defer bus.deinit();
+
+    const t = try std.Thread.spawn(.{}, TestBus.run, .{&bus});
+
+    _ = try bus.inject(.src_a, .{ .value = 1 });
+    _ = try bus.inject(.src_b, .{ .value = 2 });
+
+    const r1 = try bus.recv();
+    try testing.expect(r1.ok);
+    try testing.expectEqual(TestBus.BusEvent{ .input = .{ .src_a = .{ .value = 1 } } }, r1.value);
+
+    const r2 = try bus.recv();
+    try testing.expect(r2.ok);
+    try testing.expectEqual(TestBus.BusEvent{ .input = .{ .src_b = .{ .value = 2 } } }, r2.value);
+
+    bus.stop();
+    t.join();
+}
+
+test "Injector produces typed callback for peripherals" {
+    var bus = try TestBus.init(testing.allocator, 16);
+    defer bus.deinit();
+
+    const t = try std.Thread.spawn(.{}, TestBus.run, .{&bus});
+
+    const injector = bus.Injector(.src_a);
+    injector.invoke(.{ .value = 99 });
+
+    const r = try bus.recv();
+    try testing.expect(r.ok);
+    try testing.expectEqual(TestBus.BusEvent{ .input = .{ .src_a = .{ .value = 99 } } }, r.value);
+
+    bus.stop();
+    t.join();
+}
+
+const DoubleImpl = struct {
+    pub fn init() @This() {
+        return .{};
+    }
+
+    pub fn deinit(_: *@This()) void {}
+
+    pub fn process(_: *@This(), payload: TestPayload, yield_ctx: ?*anyopaque, yield: *const fn (?*anyopaque, TestPayload) void) void {
+        yield(yield_ctx, .{ .value = payload.value * 2 });
+    }
+
+    pub fn tick(_: *@This(), _: ?*anyopaque, _: *const fn (?*anyopaque, TestPayload) void) void {}
 };
 
-const StdIO = embed.runtime.std.Selector(TestEvent);
-const TestBus = Bus(StdIO, TestEvent);
-const TestPeriphType = Periph(TestEvent);
+test "Processor middleware transforms events" {
+    var bus = try TestBus.init(testing.allocator, 16);
+    defer bus.deinit();
 
-const WireCode = extern struct { code: u16 };
+    const mw = try TestBus.Processor(.src_a, .transformed, DoubleImpl).init(testing.allocator);
+    defer mw.deinit();
+    bus.use(mw);
 
-const PipePeripheral = struct {
-    pipe_r: fd_t,
-    pipe_w: fd_t,
-    id: []const u8,
-    periph: TestPeriphType,
+    const t = try std.Thread.spawn(.{}, TestBus.run, .{&bus});
 
-    fn open(id: []const u8) !PipePeripheral {
-        const fds = try std.posix.pipe();
-        try setNonBlocking(fds[0]);
-        try setNonBlocking(fds[1]);
-        return .{
-            .pipe_r = fds[0],
-            .pipe_w = fds[1],
-            .id = id,
-            .periph = undefined,
-        };
+    _ = try bus.inject(.src_a, .{ .value = 5 });
+
+    const r = try bus.recv();
+    try testing.expect(r.ok);
+    try testing.expectEqual(TestBus.BusEvent{ .transformed = .{ .value = 10 } }, r.value);
+
+    bus.stop();
+    t.join();
+}
+
+test "Processor bypasses non-matching input tags" {
+    var bus = try TestBus.init(testing.allocator, 16);
+    defer bus.deinit();
+
+    const mw = try TestBus.Processor(.src_a, .transformed, DoubleImpl).init(testing.allocator);
+    defer mw.deinit();
+    bus.use(mw);
+
+    const t = try std.Thread.spawn(.{}, TestBus.run, .{&bus});
+
+    _ = try bus.inject(.src_b, .{ .value = 7 });
+
+    const r = try bus.recv();
+    try testing.expect(r.ok);
+    try testing.expectEqual(TestBus.BusEvent{ .input = .{ .src_b = .{ .value = 7 } } }, r.value);
+
+    bus.stop();
+    t.join();
+}
+
+const DropAllImpl = struct {
+    pub fn init() @This() {
+        return .{};
     }
 
-    fn bind(self: *PipePeripheral) void {
-        self.periph = .{ .ctx = self, .fd = self.pipe_r, .onReady = onReady };
-    }
+    pub fn deinit(_: *@This()) void {}
 
-    fn close(self: *PipePeripheral) void {
-        std.posix.close(self.pipe_r);
-        std.posix.close(self.pipe_w);
-    }
+    pub fn process(_: *@This(), _: TestBus.BusEvent, _: ?*anyopaque, _: *const fn (?*anyopaque, TestBus.BusEvent) void) void {}
 
-    fn send(self: *PipePeripheral, code: u16) void {
-        const wire = WireCode{ .code = code };
-        _ = std.posix.write(self.pipe_w, std.mem.asBytes(&wire)) catch {};
-    }
-
-    fn onReady(ctx: ?*anyopaque, _: fd_t, buf: *std.ArrayList(TestEvent), alloc: std.mem.Allocator) void {
-        const self: *PipePeripheral = @ptrCast(@alignCast(ctx orelse return));
-        var wire: WireCode = undefined;
-        const wire_bytes = std.mem.asBytes(&wire);
-        while (true) {
-            const n = std.posix.read(self.pipe_r, wire_bytes) catch break;
-            if (n < wire_bytes.len) break;
-            buf.append(alloc, .{
-                .button = .{ .id = self.id, .code = wire.code, .data = 0 },
-            }) catch {};
-        }
-    }
-
-    fn setNonBlocking(fd: fd_t) !void {
-        var fl = try std.posix.fcntl(fd, std.posix.F.GETFL, 0);
-        const mask: usize = @as(usize, 1) << @bitOffsetOf(std.posix.O, "NONBLOCK");
-        fl |= mask;
-        _ = try std.posix.fcntl(fd, std.posix.F.SETFL, fl);
-    }
+    pub fn tick(_: *@This(), _: ?*anyopaque, _: *const fn (?*anyopaque, TestBus.BusEvent) void) void {}
 };
 
-test "register peripheral and collect events via poll" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
+test "Middleware can swallow events" {
+    var bus = try TestBus.init(testing.allocator, 16);
     defer bus.deinit();
 
-    var p = try PipePeripheral.open("btn.a");
-    defer p.close();
-    p.bind();
-    try bus.register(&p.periph);
+    const mw = try TestBus.Middleware(DropAllImpl).init(testing.allocator);
+    defer mw.deinit();
+    bus.use(mw);
 
-    p.send(10);
-    p.send(11);
+    const t = try std.Thread.spawn(.{}, TestBus.run, .{&bus});
 
-    var out: [8]TestEvent = undefined;
-    const got = bus.poll(&out, 200);
-    try testing.expectEqual(@as(usize, 2), got.len);
-    try testing.expectEqualStrings("btn.a", got[0].button.id);
-    try testing.expectEqual(@as(u16, 10), got[0].button.code);
-    try testing.expectEqual(@as(u16, 11), got[1].button.code);
-}
+    _ = try bus.inject(.src_a, .{ .value = 1 });
+    _ = try bus.inject(.src_b, .{ .value = 2 });
 
-test "multiple peripherals on same bus" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
-    defer bus.deinit();
+    std.Thread.sleep(50 * std.time.ns_per_ms);
 
-    var btn = try PipePeripheral.open("btn.a");
-    defer btn.close();
-    btn.bind();
-    var sensor = try PipePeripheral.open("sensor.0");
-    defer sensor.close();
-    sensor.bind();
+    bus.stop();
+    t.join();
 
-    try bus.register(&btn.periph);
-    try bus.register(&sensor.periph);
-
-    btn.send(1);
-    sensor.send(2);
-
-    var out: [8]TestEvent = undefined;
-    const got = bus.poll(&out, 200);
-    try testing.expectEqual(@as(usize, 2), got.len);
-}
-
-test "unregister removes peripheral from poll" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
-    defer bus.deinit();
-
-    var p = try PipePeripheral.open("btn.x");
-    defer p.close();
-    p.bind();
-    try bus.register(&p.periph);
-
-    bus.unregister(p.pipe_r);
-
-    p.send(99);
-    io.wake();
-
-    var out: [4]TestEvent = undefined;
-    const got = bus.poll(&out, 50);
-    try testing.expectEqual(@as(usize, 0), got.len);
-}
-
-test "poll with no ready events returns empty" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
-    defer bus.deinit();
-
-    var out: [4]TestEvent = undefined;
-    const got = bus.poll(&out, 0);
-    try testing.expectEqual(@as(usize, 0), got.len);
-}
-
-test "middleware transforms events" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
-    defer bus.deinit();
-
-    const DoubleCode = struct {
-        fn process(_: ?*anyopaque, ev: TestEvent, emit_ctx: *anyopaque, emit: mw_mod.EmitFn(TestEvent)) void {
-            switch (ev) {
-                .button => |b| emit(emit_ctx, .{
-                    .button = .{ .id = b.id, .code = b.code * 2, .data = b.data },
-                }),
-                else => emit(emit_ctx, ev),
-            }
-        }
+    const r = bus.recv() catch |e| switch (e) {
+        else => return,
     };
-
-    bus.use(.{ .ctx = null, .processFn = DoubleCode.process, .tickFn = null });
-
-    var p = try PipePeripheral.open("btn.m");
-    defer p.close();
-    p.bind();
-    try bus.register(&p.periph);
-
-    p.send(5);
-
-    var out: [4]TestEvent = undefined;
-    const got = bus.poll(&out, 200);
-    try testing.expectEqual(@as(usize, 1), got.len);
-    try testing.expectEqual(@as(u16, 10), got[0].button.code);
+    try testing.expect(!r.ok);
 }
 
-test "middleware can swallow events" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
+const PassThroughImpl = struct {
+    pub fn init() @This() {
+        return .{};
+    }
+
+    pub fn deinit(_: *@This()) void {}
+
+    pub fn process(_: *@This(), ev: TestBus.BusEvent, yield_ctx: ?*anyopaque, yield: *const fn (?*anyopaque, TestBus.BusEvent) void) void {
+        yield(yield_ctx, ev);
+    }
+
+    pub fn tick(_: *@This(), _: ?*anyopaque, _: *const fn (?*anyopaque, TestBus.BusEvent) void) void {}
+};
+
+test "Middleware passes events through unchanged" {
+    var bus = try TestBus.init(testing.allocator, 16);
     defer bus.deinit();
 
-    const DropAll = struct {
-        fn process(_: ?*anyopaque, _: TestEvent, _: *anyopaque, _: mw_mod.EmitFn(TestEvent)) void {}
-    };
+    const mw = try TestBus.Middleware(PassThroughImpl).init(testing.allocator);
+    defer mw.deinit();
+    bus.use(mw);
 
-    bus.use(.{ .ctx = null, .processFn = DropAll.process, .tickFn = null });
+    const t = try std.Thread.spawn(.{}, TestBus.run, .{&bus});
 
-    var p = try PipePeripheral.open("btn.d");
-    defer p.close();
-    p.bind();
-    try bus.register(&p.periph);
+    _ = try bus.inject(.src_a, .{ .value = 42 });
 
-    p.send(1);
-    io.wake();
+    const r = try bus.recv();
+    try testing.expect(r.ok);
+    try testing.expectEqual(TestBus.BusEvent{ .input = .{ .src_a = .{ .value = 42 } } }, r.value);
 
-    var out: [4]TestEvent = undefined;
-    const got = bus.poll(&out, 100);
-    try testing.expectEqual(@as(usize, 0), got.len);
+    bus.stop();
+    t.join();
 }
 
-test "non-button events pass through middleware" {
-    var io = try StdIO.init(testing.allocator);
-    defer io.deinit();
-    var bus = TestBus.init(testing.allocator, &io);
+test "stop signals run loop to exit" {
+    var bus = try TestBus.init(testing.allocator, 16);
     defer bus.deinit();
 
-    const ButtonOnly = struct {
-        fn process(_: ?*anyopaque, ev: TestEvent, emit_ctx: *anyopaque, emit: mw_mod.EmitFn(TestEvent)) void {
-            switch (ev) {
-                .button => {},
-                else => emit(emit_ctx, ev),
-            }
-        }
-    };
+    const t = try std.Thread.spawn(.{}, TestBus.run, .{&bus});
 
-    bus.use(.{ .ctx = null, .processFn = ButtonOnly.process, .tickFn = null });
-
-    bus.ready.append(testing.allocator, .{ .system = .ready }) catch {};
-
-    var out: [4]TestEvent = undefined;
-    const got = bus.poll(&out, 0);
-    try testing.expectEqual(@as(usize, 1), got.len);
-    try testing.expectEqual(TestEvent{ .system = .ready }, got[0]);
+    std.Thread.sleep(10 * std.time.ns_per_ms);
+    bus.stop();
+    t.join();
 }

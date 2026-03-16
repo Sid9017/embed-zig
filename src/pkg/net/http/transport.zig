@@ -19,8 +19,8 @@ const runtime = struct {
 };
 const conn_mod = @import("../conn.zig");
 const tls_mod = struct {
-    pub fn Client(comptime Conn: type, comptime Crypto: type, comptime Mutex: type) type {
-        return @import("../tls/client.zig").Client(Conn, Crypto, Mutex);
+    pub fn Client(comptime Conn: type, comptime Crypto: type, comptime Rng: type, comptime Mutex: type) type {
+        return @import("../tls/client.zig").Client(Conn, Crypto, Rng, Mutex);
     }
 };
 const dns_mod = @import("../dns/dns.zig");
@@ -122,21 +122,23 @@ pub fn RoundTripper(comptime Impl: type) type {
 /// Type parameters:
 ///   - `Socket`: must satisfy `runtime.socket.from` contract
 ///   - `Crypto`: crypto primitives for TLS (pass `void` for HTTP-only)
-///   - `Mutex`: mutex type for TLS thread safety (pass `void` for HTTP-only)
+///   - `Rng`:    random number generator for TLS (pass `void` for HTTP-only)
+///   - `Mutex`:  mutex type for TLS thread safety (pass `void` for HTTP-only)
 ///   - `DomainResolver`: custom DNS resolver (pass `void` to disable)
 pub fn Transport(
     comptime Socket: type,
     comptime Crypto: type,
+    comptime Rng: type,
     comptime Mutex: type,
     comptime DomainResolver: type,
 ) type {
     comptime _ = runtime.socket.from(Socket);
 
-    const has_tls = Crypto != void and Mutex != void;
+    const has_tls = Crypto != void and Rng != void and Mutex != void;
     const has_custom_resolver = DomainResolver != void;
 
     const SConn = conn_mod.SocketConn(Socket);
-    const TlsClient = if (has_tls) tls_mod.Client(SConn, Crypto, Mutex) else void;
+    const TlsClient = if (has_tls) tls_mod.Client(SConn, Crypto, Rng, Mutex) else void;
     const DnsResolver = dns_mod.Resolver(Socket, DomainResolver);
 
     const CaStore = if (Crypto != void and @hasDecl(Crypto, "x509") and @hasDecl(Crypto.x509, "CaStore"))

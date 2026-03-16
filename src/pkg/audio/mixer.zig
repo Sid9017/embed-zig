@@ -10,7 +10,12 @@
 const std = @import("std");
 pub const resampler_mod = @import("resampler.zig");
 pub const runtime = struct {
-    pub const sync = @import("../../runtime/sync.zig");
+    pub const sync = struct {
+        pub const mutex = @import("../../runtime/sync/mutex.zig");
+        pub const condition = @import("../../runtime/sync/condition.zig");
+        pub const isMutex = mutex.is;
+        pub const isCondition = condition.is;
+    };
     pub const std = @import("../../runtime/std.zig");
 };
 
@@ -20,9 +25,9 @@ pub const Resampler = resampler_mod.Resampler;
 /// Bounded sample buffer for mixer tracks.
 /// Write blocks when the buffer is at capacity (backpressure).
 /// Read is non-blocking — returns however many samples are available.
-pub fn Buffer(comptime MutexImpl: type, comptime CondImpl: type) type {
-    comptime _ = runtime.sync.Mutex(MutexImpl);
-    comptime _ = runtime.sync.ConditionWithMutex(CondImpl, MutexImpl);
+pub fn Buffer(comptime Mutex: type, comptime Cond: type) type {
+    comptime _ = runtime.sync.isMutex(Mutex);
+    comptime _ = runtime.sync.isCondition(Cond);
 
     return struct {
         const Self = @This();
@@ -32,8 +37,8 @@ pub fn Buffer(comptime MutexImpl: type, comptime CondImpl: type) type {
         len: usize,
         capacity: usize,
         closed: bool,
-        mutex: MutexImpl,
-        not_full: CondImpl,
+        mutex: Mutex,
+        not_full: Cond,
 
         pub fn init(allocator: Allocator, capacity: usize) Allocator.Error!Self {
             const items = try allocator.alloc(i16, capacity);
@@ -43,8 +48,8 @@ pub fn Buffer(comptime MutexImpl: type, comptime CondImpl: type) type {
                 .len = 0,
                 .capacity = capacity,
                 .closed = false,
-                .mutex = MutexImpl.init(),
-                .not_full = CondImpl.init(),
+                .mutex = Mutex.init(),
+                .not_full = Cond.init(),
             };
         }
 
@@ -152,11 +157,11 @@ pub fn Buffer(comptime MutexImpl: type, comptime CondImpl: type) type {
     };
 }
 
-pub fn Mixer(comptime MutexImpl: type, comptime CondImpl: type) type {
-    comptime _ = runtime.sync.Mutex(MutexImpl);
-    comptime _ = runtime.sync.ConditionWithMutex(CondImpl, MutexImpl);
+pub fn Mixer(comptime Mutex: type, comptime Cond: type) type {
+    comptime _ = runtime.sync.isMutex(Mutex);
+    comptime _ = runtime.sync.isCondition(Cond);
 
-    const BufferType = Buffer(MutexImpl, CondImpl);
+    const BufferType = Buffer(Mutex, Cond);
 
     return struct {
         const Self = @This();
@@ -183,12 +188,12 @@ pub fn Mixer(comptime MutexImpl: type, comptime CondImpl: type) type {
 
         allocator: Allocator,
         config: Config,
-        mutex: MutexImpl,
+        mutex: Mutex,
         close_write: bool = false,
         close_err: bool = false,
         tracks: std.ArrayList(*TrackCtrl),
 
-        pub fn init(allocator: Allocator, config: Config, mutex: MutexImpl) Self {
+        pub fn init(allocator: Allocator, config: Config, mutex: Mutex) Self {
             return .{
                 .allocator = allocator,
                 .config = config,

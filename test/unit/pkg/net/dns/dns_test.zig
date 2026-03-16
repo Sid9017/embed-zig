@@ -433,8 +433,9 @@ test "DoH resolve dns.alidns.com via AliDNS" {
     try requireLiveDnsTests();
     const Socket = runtime.std.Socket;
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
-    const R = ResolverWithTls(Socket, Crypto, Mutex, void);
+    const R = ResolverWithTls(Socket, Crypto, Rng, Mutex, void);
     const resolver = R{
         .server = Servers.alidns,
         .protocol = .https,
@@ -455,8 +456,9 @@ test "DoH resolve www.baidu.com via AliDNS" {
     try requireLiveDnsTests();
     const Socket = runtime.std.Socket;
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
-    const R = ResolverWithTls(Socket, Crypto, Mutex, void);
+    const R = ResolverWithTls(Socket, Crypto, Rng, Mutex, void);
     const resolver = R{
         .server = Servers.alidns,
         .protocol = .https,
@@ -477,8 +479,9 @@ test "DoH resolve via Cloudflare" {
     try requireLiveDnsTests();
     const Socket = runtime.std.Socket;
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
-    const R = ResolverWithTls(Socket, Crypto, Mutex, void);
+    const R = ResolverWithTls(Socket, Crypto, Rng, Mutex, void);
     const resolver = R{
         .server = Servers.cloudflare,
         .protocol = .https,
@@ -499,8 +502,9 @@ test "DoH resolve via Google" {
     try requireLiveDnsTests();
     const Socket = runtime.std.Socket;
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
-    const R = ResolverWithTls(Socket, Crypto, Mutex, void);
+    const R = ResolverWithTls(Socket, Crypto, Rng, Mutex, void);
     const resolver = R{
         .server = Servers.google,
         .protocol = .https,
@@ -521,8 +525,9 @@ test "DoH nonexistent domain returns error" {
     try requireLiveDnsTests();
     const Socket = runtime.std.Socket;
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
-    const R = ResolverWithTls(Socket, Crypto, Mutex, void);
+    const R = ResolverWithTls(Socket, Crypto, Rng, Mutex, void);
     const resolver = R{
         .server = Servers.alidns,
         .protocol = .https,
@@ -544,8 +549,9 @@ test "concurrent DoH resolves from multiple threads" {
     try requireLiveDnsTests();
     const Socket = runtime.std.Socket;
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
-    const R = ResolverWithTls(Socket, Crypto, Mutex, void);
+    const R = ResolverWithTls(Socket, Crypto, Rng, Mutex, void);
 
     const Worker = struct {
         fn run(domain: []const u8) void {

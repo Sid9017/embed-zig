@@ -205,6 +205,7 @@ pub fn Tls12Prf(comptime Crypto: type) type {
 
 /// Client handshake state machine.
 /// Generic over `Conn` (transport) and `Crypto` (cryptographic primitives).
+/// `rng_fill` is passed at runtime via `init`.
 pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
     const CaStore = if (@hasDecl(Crypto, "x509") and @hasDecl(Crypto.x509, "CaStore"))
         Crypto.x509.CaStore
@@ -242,6 +243,8 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
         hostname: []const u8,
         allocator: std.mem.Allocator,
 
+        rng_fill: *const fn ([]u8) void,
+
         ca_store: if (CaStore != void) ?CaStore else void,
 
         const Self = @This();
@@ -253,6 +256,7 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
             hostname: []const u8,
             allocator: std.mem.Allocator,
             ca_store: if (CaStore != void) ?CaStore else void,
+            rng_fill: *const fn ([]u8) void,
         ) Self {
             var self = Self{
                 .state = .initial,
@@ -276,10 +280,11 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
                 .records = record.RecordLayer(Conn, Crypto).init(conn),
                 .hostname = hostname,
                 .allocator = allocator,
+                .rng_fill = rng_fill,
                 .ca_store = ca_store,
             };
 
-            Crypto.Rng.fill(&self.client_random);
+            rng_fill(&self.client_random);
 
             return self;
         }
@@ -349,7 +354,7 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
             };
             try ext_builder.addSignatureAlgorithms(&sig_algs);
 
-            self.key_exchange = try KeyExchange(Crypto).generate(.x25519, &Crypto.Rng.fill);
+            self.key_exchange = try KeyExchange(Crypto).generate(.x25519, self.rng_fill);
             const key_share_entries = [_]extensions.KeyShareEntry{
                 .{ .group = .x25519, .key_exchange = self.key_exchange.?.publicKey() },
             };
@@ -642,7 +647,7 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
 
             try verifySignature(sig_scheme, signed_data[0..total_len], signature, parsed);
 
-            self.key_exchange = try KeyExchange(Crypto).generate(named_group, &Crypto.Rng.fill);
+            self.key_exchange = try KeyExchange(Crypto).generate(named_group, self.rng_fill);
 
             if (pubkey_len > self.tls12_server_pubkey.len) return error.InvalidPublicKey;
 

@@ -22,7 +22,6 @@ test {
     _ = @import("hal/uart_test.zig");
     _ = @import("hal/wifi_test.zig");
     _ = @import("pkg/app/app_runtime_test.zig");
-    _ = @import("pkg/async/wait_group_test.zig");
     _ = @import("pkg/audio/engine_test.zig");
     _ = @import("pkg/audio/mixer_test.zig");
     _ = @import("pkg/audio/override_buffer_test.zig");
@@ -95,7 +94,6 @@ test {
     _ = @import("runtime/crypto/hkdf_test.zig");
     _ = @import("runtime/crypto/hmac_test.zig");
     _ = @import("runtime/fs_test.zig");
-    _ = @import("runtime/netif_test.zig");
     _ = @import("runtime/socket_test.zig");
     _ = @import("runtime/std/crypto/aead_test.zig");
     _ = @import("runtime/std/crypto/hash_test.zig");

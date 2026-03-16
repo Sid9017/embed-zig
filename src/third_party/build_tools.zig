@@ -73,9 +73,12 @@ pub fn downloadSource(b: *std.Build, config: RepoSrc) Repo {
             "-c",
             b.fmt(
                 "set -eu; " ++
-                    "git -C '{s}' fetch --depth 1 origin '{s}'; " ++
-                    "git -C '{s}' checkout --detach FETCH_HEAD",
-                .{ source_root_path, commit, source_root_path },
+                    "current=$(git -C '{s}' rev-parse HEAD 2>/dev/null || echo none); " ++
+                    "if [ \"$current\" != '{s}' ]; then " ++
+                    "  git -C '{s}' fetch --depth 1 origin '{s}'; " ++
+                    "  git -C '{s}' checkout --detach FETCH_HEAD; " ++
+                    "fi",
+                .{ source_root_path, commit, source_root_path, commit, source_root_path },
             ),
         });
         checkout.step.dependOn(ensure_step);

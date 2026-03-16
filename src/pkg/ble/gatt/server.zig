@@ -144,7 +144,7 @@ pub const ResponseWriter = struct {
 /// unblocked. Without `enableAsync()`, handlers run synchronously (useful for tests).
 pub fn GattServer(comptime Thread: type, comptime services: []const ServiceDef) type {
     comptime {
-        _ = runtime.thread.from(Thread);
+        _ = runtime.thread.is(Thread);
     }
     const total_chars = comptime blk: {
         var n: usize = 0;

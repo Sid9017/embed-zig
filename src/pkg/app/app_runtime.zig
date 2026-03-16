@@ -1,75 +1,62 @@
 //! AppRuntime — Unified event → state orchestrator.
 //!
-//! Combines event.Bus (selector-driven event collection + middleware) with
-//! flux.Store (reducer-based state management) into a single tick()-driven
-//! loop. Output (LED, display, speaker, etc.) is the caller's responsibility.
+//! Combines event.Bus (channel + middleware + background task) with
+//! flux.Store (reducer-based state management) into a single loop.
+//! Output (LED, display, speaker, etc.) is the caller's responsibility.
 //!
 //! The user defines an App type with:
 //!   pub const State: type
-//!   pub const Event: type          (union(enum), shared with Bus)
-//!   pub fn reduce(*State, Event) void
+//!   pub const InputSpec: comptime struct   (bus input spec)
+//!   pub const OutputSpec: comptime struct  (bus output spec)
+//!   pub fn reduce(*State, BusEvent) void
 //!
 //! Usage:
-//!   var rt = AppRuntime(MyApp, Selector).init(allocator, &selector, .{});
-//!   try rt.register(button.channel);
-//!   rt.use(gesture.middleware());
-//!   while (running) {
-//!       try rt.tick();
-//!       if (rt.isDirty()) {
-//!           // read rt.getState() / rt.getPrev(), drive any outputs
-//!           rt.commitFrame();
-//!       }
+//!   var rt = try AppRuntime(MyApp, ChannelFactory).init(alloc, 64, .{});
+//!   bus.use(gesture_mw);
+//!   // spawn rt.bus.run() in a thread
+//!   while (true) {
+//!       const r = try rt.recv();
+//!       if (!r.ok) break;
+//!       rt.dispatch(r.value);
+//!       if (rt.isDirty()) { ... render ...; rt.commitFrame(); }
 //!   }
 
 const std = @import("std");
-const flux = struct {
-    pub fn Store(comptime State: type, comptime EventType: type) type {
-        return @import("../flux/store.zig").Store(State, EventType);
-    }
-};
-const event_pkg = struct {
-    pub const types = @import("../event/types.zig");
+const bus_mod = @import("../event/bus.zig");
+const flux_store = @import("../flux/store.zig");
 
-    pub fn Bus(comptime Selector: type, comptime EventType: type) type {
-        return @import("../event/bus.zig").Bus(Selector, EventType);
-    }
+pub fn AppRuntime(
+    comptime App: type,
+    comptime ChannelFactory: type,
+) type {
+    const BusType = bus_mod.Bus(App.InputSpec, App.OutputSpec, ChannelFactory);
+    const StoreType = flux_store.Store(App.State, BusType.BusEvent);
 
-    pub fn Middleware(comptime EventType: type) type {
-        return @import("../event/middleware.zig").Middleware(EventType);
-    }
-};
-
-pub fn AppRuntime(comptime App: type, comptime Selector: type) type {
     comptime {
         _ = @as(type, App.State);
-        _ = @as(type, App.Event);
-        _ = @as(*const fn (*App.State, App.Event) void, &App.reduce);
+        _ = @as(*const fn (*App.State, BusType.BusEvent) void, &App.reduce);
     }
-
-    const EventType = App.Event;
-    const StoreType = flux.Store(App.State, EventType);
-    const BusType = event_pkg.Bus(Selector, EventType);
-    const MiddlewareType = event_pkg.Middleware(EventType);
 
     return struct {
         const Self = @This();
 
+        pub const BusEvent = BusType.BusEvent;
+        pub const InputEvent = BusType.InputEvent;
+        pub const InputEventTag = BusType.InputEventTag;
+        pub const RecvResult = BusType.RecvResult;
+        pub const SendResult = BusType.SendResult;
+
         pub const Config = struct {
             initial_state: App.State = .{},
-            poll_timeout_ms: ?u32 = 50,
         };
 
         store: StoreType,
         bus: BusType,
-        poll_timeout_ms: ?u32,
 
-        event_buf: [32]EventType = undefined,
-
-        pub fn init(allocator: std.mem.Allocator, selector: *Selector, config: Config) Self {
+        pub fn init(allocator: std.mem.Allocator, capacity: usize, config: Config) !Self {
             return .{
                 .store = StoreType.init(config.initial_state, App.reduce),
-                .bus = BusType.init(allocator, selector),
-                .poll_timeout_ms = config.poll_timeout_ms,
+                .bus = try BusType.init(allocator, capacity),
             };
         }
 
@@ -77,26 +64,19 @@ pub fn AppRuntime(comptime App: type, comptime Selector: type) type {
             self.bus.deinit();
         }
 
-        pub fn register(self: *Self, channel: BusType.Channel) !void {
-            try self.bus.register(channel);
+        pub fn inject(self: *Self, comptime tag: InputEventTag, payload: std.meta.TagPayload(InputEvent, tag)) !SendResult {
+            return try self.bus.inject(tag, payload);
         }
 
-        pub fn use(self: *Self, mw: MiddlewareType) void {
+        pub fn use(self: *Self, mw: anytype) void {
             self.bus.use(mw);
         }
 
-        /// Single iteration: poll events → reduce.
-        /// Check isDirty() afterwards to decide whether to update outputs.
-        pub fn tick(self: *Self) !void {
-            const events = try self.bus.poll(&self.event_buf, self.poll_timeout_ms);
-
-            for (events) |ev| {
-                self.store.dispatch(ev);
-            }
+        pub fn recv(self: *Self) !RecvResult {
+            return try self.bus.recv();
         }
 
-        /// Inject an event directly (bypasses IO/peripherals, goes straight to reducer).
-        pub fn inject(self: *Self, ev: EventType) void {
+        pub fn dispatch(self: *Self, ev: BusEvent) void {
             self.store.dispatch(ev);
         }
 
@@ -112,7 +92,6 @@ pub fn AppRuntime(comptime App: type, comptime Selector: type) type {
             return self.store.isDirty();
         }
 
-        /// Mark the current state as consumed. Call after you've driven outputs.
         pub fn commitFrame(self: *Self) void {
             self.store.commitFrame();
         }

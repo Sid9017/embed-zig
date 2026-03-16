@@ -1,22 +1,30 @@
 pub const runtime = struct {
     pub const errors = @import("runtime/errors.zig");
-    pub const sync = @import("runtime/sync.zig");
+    pub const sync = struct {
+        pub const mutex = @import("runtime/sync/mutex.zig");
+        pub const condition = @import("runtime/sync/condition.zig");
+        pub const notify = @import("runtime/sync/notify.zig");
+
+        pub const Mutex = mutex.Mutex;
+        pub const isMutex = mutex.is;
+        pub const Condition = condition.Condition;
+        pub const isCondition = condition.is;
+        pub const Notify = notify.Notify;
+        pub const isNotify = notify.is;
+    };
     pub const time = @import("runtime/time.zig");
     pub const thread = @import("runtime/thread.zig");
     pub const system = @import("runtime/system.zig");
-    pub const channel = @import("runtime/channel.zig");
-    pub const select = @import("runtime/select.zig");
+    pub const channel_factory = @import("runtime/channel_factory.zig");
     pub const socket = @import("runtime/socket.zig");
     pub const fs = @import("runtime/fs.zig");
     pub const log = @import("runtime/log.zig");
     pub const rng = @import("runtime/rng.zig");
-    pub const netif = @import("runtime/netif.zig");
     pub const ota_backend = @import("runtime/ota_backend.zig");
     pub const std = @import("runtime/std.zig");
 
     pub const test_runners = struct {
         pub const channel = @import("runtime/channel_test_runner.zig");
-        pub const select = @import("runtime/select_test_runner.zig");
     };
 
     pub const crypto = struct {
@@ -54,12 +62,6 @@ pub const hal = struct {
 };
 
 pub const pkg = struct {
-    pub const async = struct {
-        pub const waitgroup = @import("pkg/async/wait_group.zig");
-
-        pub const WaitGroup = waitgroup.WaitGroup;
-    };
-
     pub const audio = struct {
         pub const engine = @import("pkg/audio/engine.zig");
         pub const mixer = @import("pkg/audio/mixer.zig");
@@ -120,8 +122,6 @@ pub const pkg = struct {
     pub const event = struct {
         pub const types = @import("pkg/event/types.zig");
         pub const bus = @import("pkg/event/bus.zig");
-        pub const middleware = @import("pkg/event/middleware.zig");
-        pub const logger = @import("pkg/event/logger.zig");
         pub const ring_buffer = @import("pkg/event/ring_buffer.zig");
 
         pub const PeriphEvent = types.PeriphEvent;
@@ -129,16 +129,18 @@ pub const pkg = struct {
         pub const TimerEvent = types.TimerEvent;
         pub const SystemEvent = types.SystemEvent;
         pub const Bus = bus.Bus;
-        pub const Periph = bus.Periph;
-        pub const Middleware = middleware.Middleware;
-        pub const EmitFn = middleware.EmitFn;
-        pub const Logger = logger.Logger;
+        pub const EventInjector = bus.EventInjector;
         pub const RingBuffer = ring_buffer.RingBuffer;
 
         pub const button = struct {
+            pub const events = @import("pkg/event/button/event.zig");
             pub const gesture = @import("pkg/event/button/gesture.zig");
-            pub const GestureCode = gesture.GestureCode;
+
+            pub const RawEvent = events.RawEvent;
+            pub const RawEventCode = events.RawEventCode;
+            pub const GestureEvent = events.GestureEvent;
             pub const ButtonGesture = gesture.ButtonGesture;
+            pub const GestureConfig = gesture.GestureConfig;
 
             pub const gpio = struct {
                 const button_mod = @import("pkg/event/button/gpio/button.zig");
@@ -146,7 +148,7 @@ pub const pkg = struct {
             };
 
             pub const adc = struct {
-                const adc_button_mod = @import("pkg/event/button/adc/adc_button.zig");
+                const adc_button_mod = @import("pkg/event/button/adc/button.zig");
                 pub const AdcButtonSet = adc_button_mod.AdcButtonSet;
                 pub const AdcButtonConfig = adc_button_mod.Config;
             };
@@ -168,13 +170,6 @@ pub const pkg = struct {
             pub const MotionAction = motion_mod.MotionAction;
             pub const Detector = detector_mod.Detector;
             pub const MotionPeripheral = peripheral_mod.MotionPeripheral;
-        };
-
-        pub const timer = struct {
-            pub const timer = @import("pkg/event/timer/timer.zig");
-            const timer_mod = @import("pkg/event/timer/timer.zig");
-            pub const TimerPayload = timer_mod.TimerPayload;
-            pub const TimerSource = timer_mod.TimerSource;
         };
     };
 

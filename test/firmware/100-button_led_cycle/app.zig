@@ -1,7 +1,7 @@
-//! 100-button_led_cycle — Button-driven LED color cycling via AppRuntime.
+//! 100-button_led_cycle — Button-driven LED color cycling via Bus.
 //!
-//! Demonstrates the full flux pipeline:
-//!   event.Bus → gesture middleware → Animator → output
+//! Demonstrates the full event pipeline:
+//!   GpioButton → Bus(in_ch) → GestureProcessor → Logger → out_ch → reduce
 //!
 //! Behavior:
 //!   - 1 click:  → red (fade)
@@ -13,9 +13,9 @@
 const embed = @import("embed");
 const runtime = embed.runtime;
 const event = embed.pkg.event;
-const app_mod = embed.pkg.app;
+const button = event.button;
 
-pub const App = @import("state.zig");
+const App = @import("state.zig");
 
 pub fn run(comptime hw: type, env: anytype) void {
     _ = env;
@@ -23,18 +23,23 @@ pub fn run(comptime hw: type, env: anytype) void {
     const board_spec = @import("board_spec.zig");
     const Board = board_spec.Board(hw);
 
-    const ChannelType = hw.Channel(App.Event);
-    const SelectorType = hw.Selector(App.Event);
-    const Thread = Board.thread.Type;
     const Gpio = Board.gpio;
+    const Time = Board.time;
+    const Thread = Board.thread.Type;
 
-    const ButtonType = event.button.GpioButton(Gpio, Board.time, ChannelType, App.Event, "button");
-    const GestureType = event.button.ButtonGesture(App.Event, "button", Board.time);
-    const EventLog = event.Logger(App.Event, Board.log, "button");
-    const AppRt = app_mod.AppRuntime(App, SelectorType);
+    const EventBus = event.Bus(.{
+        .btn_boot = button.RawEvent,
+    }, .{
+        .gesture = button.GestureEvent,
+    }, Board.channel);
+
+    const GpioButton = event.button.GpioButton(Gpio, Time, "btn_boot");
+    const Gesture = button.ButtonGesture(Time, .{
+        .long_press_ms = 500,
+        .multi_click_window_ms = 300,
+    });
 
     const log: Board.log = .{};
-    const time: Board.time = .{};
     const allocator = Board.allocator.system;
 
     var board: Board = undefined;
@@ -44,70 +49,89 @@ pub fn run(comptime hw: type, env: anytype) void {
     };
     defer board.deinit();
 
-    var btn = ButtonType.init(allocator, &board.gpio_dev, time, .{
-        .id = "btn.boot",
+    var bus = EventBus.init(allocator, 16) catch {
+        log.err("bus init failed");
+        return;
+    };
+    defer bus.deinit();
+
+    var btn = GpioButton.init(&board.gpio_dev, Time{}, .{
         .pin = hw.button_pin,
         .active_level = .low,
-    }) catch {
-        log.err("button init failed");
+    }, bus.Injector(.btn_boot));
+    _ = &btn;
+
+    const gesture_mw = EventBus.Processor(.btn_boot, .gesture, Gesture).init(allocator) catch {
+        log.err("gesture middleware init failed");
         return;
     };
-    defer btn.deinit();
+    defer gesture_mw.deinit();
+    bus.use(gesture_mw);
 
-    var gesture = GestureType.init(time, .{
-        .multi_click_window_ms = 300,
-        .long_press_ms = 500,
-    });
-
-    var selector = SelectorType.init(allocator) catch {
-        log.err("selector init failed");
+    const log_mw = EventBus.Logger(Board.log).init(allocator) catch {
+        log.err("logger middleware init failed");
         return;
     };
-    defer selector.deinit();
+    defer log_mw.deinit();
+    bus.use(log_mw);
 
-    var rt = AppRt.init(allocator, &selector, .{
-        .poll_timeout_ms = 50,
-    });
-    defer rt.deinit();
-
-    rt.register(btn.channel) catch {
-        log.err("register button failed");
-        return;
+    const Runners = struct {
+        fn runBtn(ctx: ?*anyopaque) void {
+            const b: *@TypeOf(btn) = @ptrCast(@alignCast(ctx orelse return));
+            b.run();
+        }
+        fn runBus(ctx: ?*anyopaque) void {
+            const b: *EventBus = @ptrCast(@alignCast(ctx orelse return));
+            b.run();
+        }
+        fn runTick(ctx: ?*anyopaque) void {
+            const b: *EventBus = @ptrCast(@alignCast(ctx orelse return));
+            const t: Time = .{};
+            b.tick(t, 20);
+        }
     };
-    rt.use(EventLog.middleware("raw"));
-    rt.use(gesture.middleware());
-    rt.use(EventLog.middleware("gesture"));
-    rt.use(.{ .ctx = null, .tickFn = App.tickMiddleware });
 
-    var btn_thread = Thread.spawn(
-        Board.thread.user,
-        ButtonType.runFromCtx,
-        @ptrCast(&btn),
-    ) catch {
+    var btn_thread = Thread.spawn(Board.thread.user, Runners.runBtn, @ptrCast(&btn)) catch {
         log.err("button worker start failed");
         return;
     };
-    defer {
-        btn.requestStop();
-        btn_thread.join();
-    }
+
+    var bus_thread = Thread.spawn(Board.thread.system, Runners.runBus, @ptrCast(&bus)) catch {
+        log.err("bus run thread start failed");
+        return;
+    };
+
+    var tick_thread = Thread.spawn(Board.thread.system, Runners.runTick, @ptrCast(&bus)) catch {
+        log.err("tick thread start failed");
+        return;
+    };
 
     log.info("100-button_led_cycle started");
 
+    var state = App.State{};
+
     while (Board.isRunning()) {
-        rt.tick();
+        const r = bus.recv() catch break;
+        if (!r.ok) break;
 
-        if (rt.isDirty()) {
-            const state = rt.getState();
-            const prev = rt.getPrev();
-
-            if (!state.led.current.eql(prev.led.current)) {
-                board.led_strip_dev.setPixels(&state.led.current.pixels);
-            }
-
-            rt.commitFrame();
+        switch (r.value) {
+            .gesture => |gesture_ev| App.reduce(&state, gesture_ev),
+            .input => |input_ev| {
+                switch (input_ev) {
+                    .tick => _ = state.led.tick(),
+                    else => {},
+                }
+            },
         }
+
+        board.led_strip_dev.setPixels(&state.led.current.pixels);
     }
+
+    bus.stop();
+    btn.stop();
+    btn_thread.join();
+    bus_thread.join();
+    tick_thread.join();
 
     log.info("100-button_led_cycle stopped");
 }

@@ -1,5 +1,4 @@
-//! GPIO button — polls a pin, writes press/release events to a channel
-//! that the event bus can multiplex.
+//! GPIO button — polls a pin, fires callback on press/release.
 //!
 //! The caller is responsible for running the polling loop. Call `run()`
 //! from a dedicated thread/task; call `requestStop()` to exit the loop.
@@ -8,22 +7,16 @@ const std = @import("std");
 const hal = struct {
     pub const gpio = @import("../../../../hal/gpio.zig");
 };
-const event_pkg = struct {
-    pub const types = @import("../../types.zig");
-};
-const runtime_pkg = struct {
-    pub const channel = @import("../../../../runtime/channel.zig");
-};
+const bus_mod = @import("../../bus.zig");
+const button_event = @import("../event.zig");
 
-pub const BusButtonCode = enum(u16) {
-    press = 1,
-    release = 2,
-};
+pub const Event = button_event.RawEvent;
+pub const Code = button_event.RawEventCode;
+pub const Injector = bus_mod.EventInjector(Event);
 
 pub const Level = hal.gpio.Level;
 
 pub const Config = struct {
-    id: []const u8 = "button",
     pin: u8,
     active_level: Level = .high,
     debounce_ms: u32 = 20,
@@ -33,23 +26,19 @@ pub const Config = struct {
 pub fn Button(
     comptime Gpio: type,
     comptime Time: type,
-    comptime ChannelType: type,
-    comptime EventType: type,
-    comptime tag: []const u8,
+    comptime id: []const u8,
 ) type {
     comptime {
         if (!hal.gpio.is(Gpio)) @compileError("Gpio must be a hal.gpio type");
-        _ = runtime_pkg.channel.from(EventType, ChannelType);
-        event_pkg.types.assertTaggedUnion(EventType);
     }
 
     return struct {
         const Self = @This();
 
-        channel: ChannelType,
         gpio: *Gpio,
         time: Time,
         config: Config,
+        injector: Injector,
         running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
         state: State = .idle,
@@ -59,24 +48,15 @@ pub fn Button(
 
         const State = enum { idle, debouncing };
 
-        pub fn init(allocator: std.mem.Allocator, gpio: *Gpio, time: Time, config: Config) !Self {
-            const ch = try ChannelType.init(allocator, 16);
-
+        pub fn init(gpio: *Gpio, time: Time, config: Config, injector: Injector) Self {
             return .{
-                .channel = ch,
                 .gpio = gpio,
                 .time = time,
                 .config = config,
+                .injector = injector,
             };
         }
 
-        pub fn deinit(self: *Self) void {
-            self.requestStop();
-            self.channel.deinit();
-        }
-
-        /// Blocking polling loop. Call from a dedicated thread/task.
-        /// Returns when `requestStop()` is called.
         pub fn run(self: *Self) void {
             self.running.store(true, .release);
             defer self.running.store(false, .release);
@@ -87,13 +67,12 @@ pub fn Button(
             }
         }
 
-        /// Convenience: `run` as a `fn(?*anyopaque) void` for Thread.spawn.
         pub fn runFromCtx(ctx: ?*anyopaque) void {
             const self: *Self = @ptrCast(@alignCast(ctx orelse return));
             self.run();
         }
 
-        pub fn requestStop(self: *Self) void {
+        pub fn stop(self: *Self) void {
             self.running.store(false, .release);
         }
 
@@ -116,7 +95,8 @@ pub fn Button(
                     if (now_ms >= self.debounce_start_ms + self.config.debounce_ms) {
                         if (raw != self.pressed) {
                             self.pressed = raw;
-                            self.sendEvent(if (raw) .press else .release);
+                            const code: Code = if (raw) .press else .release;
+                            self.injector.invoke(.{ .id = id, .code = code });
                         }
                         self.state = .idle;
                     }
@@ -129,15 +109,6 @@ pub fn Button(
         fn readRawPressed(self: *Self) bool {
             const lv = self.gpio.getLevel(self.config.pin) catch return self.pressed;
             return lv == self.config.active_level;
-        }
-
-        fn sendEvent(self: *Self, code: BusButtonCode) void {
-            const event = @unionInit(EventType, tag, .{
-                .id = self.config.id,
-                .code = @intFromEnum(code),
-                .data = 0,
-            });
-            _ = self.channel.send(event) catch {};
         }
     };
 }

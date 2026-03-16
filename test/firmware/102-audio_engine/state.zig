@@ -1,4 +1,4 @@
-//! 102-audio_engine — Flux state definition.
+//! 102-audio_engine — State + reducer.
 //!
 //! Buttons (names match board_spec.adc_buttons fields):
 //!   play     click → toggle playing
@@ -10,10 +10,8 @@
 
 const std = @import("std");
 const embed = @import("embed");
-const event = embed.pkg.event;
+const button = embed.pkg.event.button;
 const songs = @import("songs.zig");
-
-const GestureCode = event.button.GestureCode;
 
 pub const State = struct {
     spk_gain_db: i8 = 0,
@@ -25,33 +23,39 @@ pub const State = struct {
     running: bool = true,
 };
 
-pub const Event = union(enum) {
-    button: event.PeriphEvent,
+pub const InputSpec = .{
+    .adc_btn = button.RawEvent,
 };
 
-pub fn reduce(state: *State, ev: Event) void {
-    switch (ev) {
-        .button => |b| {
-            const code: u16 = b.code;
-            if (code == @intFromEnum(GestureCode.click)) {
-                if (std.mem.eql(u8, b.id, "play")) {
-                    state.playing = !state.playing;
-                } else if (std.mem.eql(u8, b.id, "set")) {
-                    state.song_index = @intCast((@as(u16, state.song_index) + 1) % songs.catalog.len);
-                    state.song_gen +%= 1;
-                    state.playing = true;
-                } else if (std.mem.eql(u8, b.id, "vol_up")) {
-                    state.spk_gain_db = @min(24, state.spk_gain_db +| 3);
-                } else if (std.mem.eql(u8, b.id, "vol_down")) {
-                    state.spk_gain_db = @max(-12, state.spk_gain_db -| 3);
-                } else if (std.mem.eql(u8, b.id, "mute")) {
-                    state.muted = !state.muted;
-                }
-            } else if (code == @intFromEnum(GestureCode.long_press)) {
-                if (std.mem.eql(u8, b.id, "vol_down")) {
-                    state.running = !state.running;
-                }
+pub const OutputSpec = .{
+    .gesture = button.GestureEvent,
+};
+
+/// Handle a gesture event identified by button id.
+pub fn handleGesture(state: *State, id: []const u8, g: button.GestureEvent) void {
+    switch (g) {
+        .click => |count| handleClick(state, id, count),
+        .long_press => |_| {
+            if (std.mem.eql(u8, id, "vol_down")) {
+                state.running = !state.running;
             }
         },
+    }
+}
+
+fn handleClick(state: *State, id: []const u8, count: u16) void {
+    _ = count;
+    if (std.mem.eql(u8, id, "play")) {
+        state.playing = !state.playing;
+    } else if (std.mem.eql(u8, id, "set")) {
+        state.song_index = @intCast((@as(u16, state.song_index) + 1) % songs.catalog.len);
+        state.song_gen +%= 1;
+        state.playing = true;
+    } else if (std.mem.eql(u8, id, "vol_up")) {
+        state.spk_gain_db = @min(24, state.spk_gain_db +| 3);
+    } else if (std.mem.eql(u8, id, "vol_down")) {
+        state.spk_gain_db = @max(-12, state.spk_gain_db -| 3);
+    } else if (std.mem.eql(u8, id, "mute")) {
+        state.muted = !state.muted;
     }
 }

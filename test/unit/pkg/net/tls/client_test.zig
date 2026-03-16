@@ -32,10 +32,11 @@ test "Config defaults" {
 
 test "Client init and deinit" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var conn = TestMockConn{};
-    const TestClient = Client(TestMockConn, Crypto, Mutex);
+    const TestClient = Client(TestMockConn, Crypto, Rng, Mutex);
 
     var c = try TestClient.init(&conn, .{
         .allocator = std.testing.allocator,
@@ -48,10 +49,11 @@ test "Client init and deinit" {
 
 test "Client send before connect returns NotConnected" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Mutex).init(&conn, .{
+    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -62,10 +64,11 @@ test "Client send before connect returns NotConnected" {
 
 test "Client recv before connect returns NotConnected" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Mutex).init(&conn, .{
+    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -77,10 +80,11 @@ test "Client recv before connect returns NotConnected" {
 
 test "Client isConnected reflects state" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Mutex).init(&conn, .{
+    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -97,10 +101,11 @@ test "Client isConnected reflects state" {
 
 test "Client close on not-connected is safe" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Mutex).init(&conn, .{
+    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -112,10 +117,11 @@ test "Client close on not-connected is safe" {
 
 test "Client getVersion and getCipherSuite defaults" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Mutex).init(&conn, .{
+    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -145,12 +151,13 @@ test "Config custom values" {
 
 test "Client multiple init/deinit cycles" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var conn = TestMockConn{};
 
     for (0..5) |_| {
-        var c = try Client(TestMockConn, Crypto, Mutex).init(&conn, .{
+        var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
             .allocator = std.testing.allocator,
             .hostname = "test.com",
         });
@@ -160,10 +167,11 @@ test "Client multiple init/deinit cycles" {
 
 test "Client close sets connected to false" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Mutex).init(&conn, .{
+    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -178,10 +186,11 @@ test "Client close sets connected to false" {
 
 test "concurrent send does not deadlock" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var pipe = ConcurrentPipeConn{};
-    var c = try Client(ConcurrentPipeConn, Crypto, Mutex).init(&pipe, .{
+    var c = try Client(ConcurrentPipeConn, Crypto, Rng, Mutex).init(&pipe, .{
         .allocator = std.testing.allocator,
         .hostname = "concurrent.test",
     });
@@ -207,7 +216,7 @@ test "concurrent send does not deadlock" {
     var send_errors: [2]bool = .{ false, false };
     const threads: [2]std.Thread = .{
         try std.Thread.spawn(.{}, struct {
-            fn run(client: *Client(ConcurrentPipeConn, Crypto, Mutex), err_flag: *bool) void {
+            fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex), err_flag: *bool) void {
                 for (0..50) |_| {
                     _ = client.send("hello from thread A") catch {
                         err_flag.* = true;
@@ -217,7 +226,7 @@ test "concurrent send does not deadlock" {
             }
         }.run, .{ &c, &send_errors[0] }),
         try std.Thread.spawn(.{}, struct {
-            fn run(client: *Client(ConcurrentPipeConn, Crypto, Mutex), err_flag: *bool) void {
+            fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex), err_flag: *bool) void {
                 for (0..50) |_| {
                     _ = client.send("hello from thread B") catch {
                         err_flag.* = true;
@@ -236,10 +245,11 @@ test "concurrent send does not deadlock" {
 
 test "concurrent recv does not deadlock" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var pipe = ConcurrentPipeConn{};
-    var c = try Client(ConcurrentPipeConn, Crypto, Mutex).init(&pipe, .{
+    var c = try Client(ConcurrentPipeConn, Crypto, Rng, Mutex).init(&pipe, .{
         .allocator = std.testing.allocator,
         .hostname = "concurrent.test",
     });
@@ -255,7 +265,7 @@ test "concurrent recv does not deadlock" {
     c.hs.records.version = .tls_1_3;
 
     const feed_thread = try std.Thread.spawn(.{}, struct {
-        fn run(client: *Client(ConcurrentPipeConn, Crypto, Mutex)) void {
+        fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex)) void {
             for (0..20) |_| {
                 _ = client.send("feed data for recv") catch break;
             }
@@ -277,10 +287,11 @@ test "concurrent recv does not deadlock" {
 
 test "concurrent send and recv do not deadlock" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var pipe = ConcurrentPipeConn{};
-    var c = try Client(ConcurrentPipeConn, Crypto, Mutex).init(&pipe, .{
+    var c = try Client(ConcurrentPipeConn, Crypto, Rng, Mutex).init(&pipe, .{
         .allocator = std.testing.allocator,
         .hostname = "concurrent.test",
     });
@@ -300,7 +311,7 @@ test "concurrent send and recv do not deadlock" {
     var recv_done = std.atomic.Value(bool).init(false);
 
     const send_thread = try std.Thread.spawn(.{}, struct {
-        fn run(client: *Client(ConcurrentPipeConn, Crypto, Mutex), done: *std.atomic.Value(bool)) void {
+        fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex), done: *std.atomic.Value(bool)) void {
             defer done.store(true, .release);
             for (0..10) |_| {
                 _ = client.send("concurrent data") catch return;
@@ -309,7 +320,7 @@ test "concurrent send and recv do not deadlock" {
     }.run, .{ &c, &send_done });
 
     const recv_thread = try std.Thread.spawn(.{}, struct {
-        fn run(client: *Client(ConcurrentPipeConn, Crypto, Mutex), done: *std.atomic.Value(bool)) void {
+        fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex), done: *std.atomic.Value(bool)) void {
             defer done.store(true, .release);
             var buf: [256]u8 = undefined;
             for (0..10) |_| {
@@ -327,10 +338,11 @@ test "concurrent send and recv do not deadlock" {
 
 test "concurrent close while send does not deadlock" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var pipe = ConcurrentPipeConn{};
-    var c = try Client(ConcurrentPipeConn, Crypto, Mutex).init(&pipe, .{
+    var c = try Client(ConcurrentPipeConn, Crypto, Rng, Mutex).init(&pipe, .{
         .allocator = std.testing.allocator,
         .hostname = "concurrent.test",
     });
@@ -354,7 +366,7 @@ test "concurrent close while send does not deadlock" {
     }.run, .{&pipe});
 
     const send_thread = try std.Thread.spawn(.{}, struct {
-        fn run(client: *Client(ConcurrentPipeConn, Crypto, Mutex)) void {
+        fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex)) void {
             for (0..20) |_| {
                 _ = client.send("data") catch return;
             }
@@ -375,10 +387,11 @@ test "concurrent close while send does not deadlock" {
 
 test "concurrent close_notify sets received flag" {
     const Crypto = runtime.std.Crypto;
+    const Rng = runtime.std.Rng;
     const Mutex = runtime.std.Mutex;
 
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Mutex).init(&conn, .{
+    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });

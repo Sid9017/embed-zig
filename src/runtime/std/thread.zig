@@ -8,7 +8,7 @@ const SpawnConfig = runtime.thread.SpawnConfig;
 pub const Thread = struct {
     handle: ?std.Thread = null,
 
-    pub fn spawn(config: SpawnConfig, task: runtime.thread.types.TaskFn, ctx: ?*anyopaque) anyerror!@This() {
+    pub fn spawn(config: SpawnConfig, task: runtime.thread.TaskFn, ctx: ?*anyopaque) anyerror!@This() {
         const handle = try std.Thread.spawn(.{ .stack_size = config.stack_size }, runTask, .{ task, ctx });
         return .{ .handle = handle };
     }
@@ -27,7 +27,7 @@ pub const Thread = struct {
         }
     }
 
-    fn runTask(task: runtime.thread.types.TaskFn, ctx: ?*anyopaque) void {
+    fn runTask(task: runtime.thread.TaskFn, ctx: ?*anyopaque) void {
         task(ctx);
     }
 };

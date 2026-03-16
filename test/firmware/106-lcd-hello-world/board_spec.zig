@@ -15,8 +15,8 @@ pub fn Board(comptime hw: type) type {
     const spec = struct {
         pub const meta = .{ .id = hw.name };
 
-        pub const log = runtime.log.from(hw.log);
-        pub const time = runtime.time.from(hw.time);
+        pub const log = runtime.log.Log(hw.log);
+        pub const time = runtime.time.Time(hw.time);
         pub const allocator = if (@hasDecl(hw, "allocator")) hw.allocator else void;
         pub const fs = if (@hasDecl(hw, "fs")) runtime.fs.from(hw.fs) else void;
 

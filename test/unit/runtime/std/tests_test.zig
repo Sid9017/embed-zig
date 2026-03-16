@@ -7,8 +7,6 @@ test {
     _ = @import("system_test.zig");
     _ = @import("fs_test.zig");
     _ = @import("socket_test.zig");
-    _ = @import("netif_test.zig");
     _ = @import("ota_backend_test.zig");
     _ = @import("channel_test.zig");
-    _ = @import("select_test.zig");
 }

@@ -2,7 +2,6 @@
 
 const std = @import("std");
 
-/// Log level used by sinks/backends.
 pub const Level = enum {
     debug,
     info,
@@ -10,32 +9,15 @@ pub const Level = enum {
     err,
 };
 
-/// Log contract:
-/// - `debug(self, msg: []const u8) -> void`
-/// - `info(self, msg: []const u8) -> void`
-/// - `warn(self, msg: []const u8) -> void`
-/// - `err(self, msg: []const u8) -> void`
-///
-/// Also provides fmt convenience methods via the returned wrapper:
-/// - `debugFmt(self, comptime fmt, args) -> void`
-/// - `infoFmt(self, comptime fmt, args) -> void`
-/// - `warnFmt(self, comptime fmt, args) -> void`
-/// - `errFmt(self, comptime fmt, args) -> void`
-pub fn from(comptime Impl: type) type {
-    comptime {
-        const BaseType = switch (@typeInfo(Impl)) {
-            .pointer => |p| p.child,
-            else => Impl,
-        };
+pub const Seal = struct {};
 
-        _ = @as(*const fn (BaseType, []const u8) void, &BaseType.debug);
-        _ = @as(*const fn (BaseType, []const u8) void, &BaseType.info);
-        _ = @as(*const fn (BaseType, []const u8) void, &BaseType.warn);
-        _ = @as(*const fn (BaseType, []const u8) void, &BaseType.err);
-    }
-
-    return struct {
+/// Construct a Log wrapper from an Impl type.
+/// Impl must provide: debug, info, warn, err — all `fn(Impl, []const u8) void`.
+/// The returned type also provides debugFmt/infoFmt/warnFmt/errFmt convenience methods.
+pub fn Log(comptime Impl: type) type {
+    const LogType = struct {
         const impl: Impl = .{};
+        pub const seal: Seal = .{};
 
         pub fn debug(_: @This(), msg: []const u8) void {
             impl.debug(msg);
@@ -80,4 +62,16 @@ pub fn from(comptime Impl: type) type {
             }
         }
     };
+    return from(LogType);
+}
+
+/// Validate that Impl satisfies the Log contract and return it.
+pub fn from(comptime Impl: type) type {
+    comptime {
+        if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
+            @compileError("Impl must have pub const seal: log.Seal — use log.Log(Backend) to construct");
+        }
+    }
+
+    return Impl;
 }
