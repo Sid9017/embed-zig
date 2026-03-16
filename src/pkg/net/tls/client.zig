@@ -1,6 +1,9 @@
 const std = @import("std");
 pub const runtime = struct {
-    pub const sync = @import("../../../runtime/sync.zig");
+    pub const sync = struct {
+        pub const mutex = @import("../../../runtime/sync/mutex.zig");
+        pub const isMutex = mutex.is;
+    };
     pub const std = @import("../../../runtime/std.zig");
 };
 pub const conn_mod = @import("../conn.zig");

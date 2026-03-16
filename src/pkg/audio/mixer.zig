@@ -10,7 +10,12 @@
 const std = @import("std");
 pub const resampler_mod = @import("resampler.zig");
 pub const runtime = struct {
-    pub const sync = @import("../../runtime/sync.zig");
+    pub const sync = struct {
+        pub const mutex = @import("../../runtime/sync/mutex.zig");
+        pub const condition = @import("../../runtime/sync/condition.zig");
+        pub const isMutex = mutex.is;
+        pub const isCondition = condition.is;
+    };
     pub const std = @import("../../runtime/std.zig");
 };
 

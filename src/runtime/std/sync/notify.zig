@@ -1,61 +1,11 @@
 const std = @import("std");
-const runtime = struct {
-    pub const sync = @import("../sync.zig");
-};
+const Mutex = @import("mutex.zig").Mutex;
+const Condition = @import("condition.zig").Condition;
 
 fn nowNs() u64 {
     const ts = std.time.nanoTimestamp();
     return if (ts <= 0) 0 else @intCast(ts);
 }
-
-pub const Mutex = struct {
-    raw: std.Thread.Mutex = .{},
-
-    pub fn init() @This() {
-        return .{};
-    }
-
-    pub fn deinit(_: *@This()) void {}
-
-    pub fn lock(self: *@This()) void {
-        self.raw.lock();
-    }
-
-    pub fn unlock(self: *@This()) void {
-        self.raw.unlock();
-    }
-};
-
-pub const Condition = struct {
-    raw: std.Thread.Condition = .{},
-
-    pub const MutexType = Mutex;
-
-    pub fn init() @This() {
-        return .{};
-    }
-
-    pub fn deinit(_: *@This()) void {}
-
-    pub fn wait(self: *@This(), mutex: *Mutex) void {
-        self.raw.wait(&mutex.raw);
-    }
-
-    pub fn signal(self: *@This()) void {
-        self.raw.signal();
-    }
-
-    pub fn broadcast(self: *@This()) void {
-        self.raw.broadcast();
-    }
-
-    pub fn timedWait(self: *@This(), mutex: *Mutex, timeout_ns: u64) runtime.sync.types.TimedWaitResult {
-        self.raw.timedWait(&mutex.raw, timeout_ns) catch {
-            return .timed_out;
-        };
-        return .signaled;
-    }
-};
 
 pub const Notify = struct {
     mutex: Mutex = Mutex.init(),

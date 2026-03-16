@@ -23,7 +23,9 @@
 const std = @import("std");
 const runtime = struct {
     pub const socket = @import("../../../runtime/socket.zig");
-    pub const sync = @import("../../../runtime/sync.zig");
+    pub const sync = struct {
+        pub const mutex = @import("../../../runtime/sync/mutex.zig");
+    };
     pub const std = @import("../../../runtime/std.zig");
 };
 const conn_mod = @import("../conn.zig");

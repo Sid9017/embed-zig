@@ -1,6 +1,17 @@
 pub const runtime = struct {
     pub const errors = @import("runtime/errors.zig");
-    pub const sync = @import("runtime/sync.zig");
+    pub const sync = struct {
+        pub const mutex = @import("runtime/sync/mutex.zig");
+        pub const condition = @import("runtime/sync/condition.zig");
+        pub const notify = @import("runtime/sync/notify.zig");
+
+        pub const Mutex = mutex.Mutex;
+        pub const isMutex = mutex.is;
+        pub const Condition = condition.Condition;
+        pub const isCondition = condition.is;
+        pub const Notify = notify.Notify;
+        pub const isNotify = notify.is;
+    };
     pub const time = @import("runtime/time.zig");
     pub const thread = @import("runtime/thread.zig");
     pub const system = @import("runtime/system.zig");
