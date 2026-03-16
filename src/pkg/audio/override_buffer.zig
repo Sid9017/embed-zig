@@ -24,8 +24,8 @@ pub fn OverrideBuffer(
     comptime Mutex: type,
     comptime Cond: type,
 ) type {
-    comptime _ = runtime.sync.isMutex(Mutex);
-    comptime _ = runtime.sync.isCondition(Cond);
+    comptime _ = runtime.sync.mutex.is(Mutex);
+    comptime _ = runtime.sync.condition.is(Cond);
 
     return struct {
         const Self = @This();

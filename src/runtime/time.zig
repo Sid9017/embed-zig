@@ -6,7 +6,7 @@ const Seal = struct {};
 /// Impl must provide:
 ///   pub fn nowMs(Impl) u64
 ///   pub fn sleepMs(Impl, u32) void
-pub fn Time(comptime Impl: type) type {
+pub fn Make(comptime Impl: type) type {
     comptime {
         _ = @as(*const fn (Impl) u64, &Impl.nowMs);
         _ = @as(*const fn (Impl, u32) void, &Impl.sleepMs);
@@ -30,7 +30,7 @@ pub fn Time(comptime Impl: type) type {
 pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: time.Seal — use time.Time(Backend) to construct");
+            @compileError("Impl must have pub const seal: time.Seal — use time.Make(Backend) to construct");
         }
     }
 

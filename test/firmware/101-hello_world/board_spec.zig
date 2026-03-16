@@ -20,8 +20,8 @@ pub fn Board(comptime hw: type) type {
         pub const meta = .{ .id = hw.name };
 
         // --- runtime primitives ---
-        pub const log = runtime.log.Log(hw.log);
-        pub const time = runtime.time.Time(hw.time);
+        pub const log = runtime.log.Make(hw.log);
+        pub const time = runtime.time.Make(hw.time);
 
         // --- HAL peripherals ---
         pub const rtc = hal.rtc.reader.from(hw.rtc_spec);

@@ -52,7 +52,7 @@ const Seal = struct {};
 
 /// Construct a sealed FileSystem wrapper from a backend Impl type.
 /// Impl must provide: open(self: *Impl, path: []const u8, mode: OpenMode) ?File
-pub fn Fs(comptime Impl: type) type {
+pub fn Make(comptime Impl: type) type {
     comptime {
         _ = @as(*const fn (*Impl, []const u8, OpenMode) ?File, &Impl.open);
     }
@@ -77,7 +77,7 @@ pub fn Fs(comptime Impl: type) type {
 pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: fs.Seal — use fs.Fs(Backend) to construct");
+            @compileError("Impl must have pub const seal: fs.Seal — use fs.Make(Backend) to construct");
         }
     }
     return Impl;

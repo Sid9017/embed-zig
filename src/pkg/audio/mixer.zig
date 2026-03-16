@@ -26,8 +26,8 @@ pub const Resampler = resampler_mod.Resampler;
 /// Write blocks when the buffer is at capacity (backpressure).
 /// Read is non-blocking — returns however many samples are available.
 pub fn Buffer(comptime Mutex: type, comptime Cond: type) type {
-    comptime _ = runtime.sync.isMutex(Mutex);
-    comptime _ = runtime.sync.isCondition(Cond);
+    comptime _ = runtime.sync.mutex.is(Mutex);
+    comptime _ = runtime.sync.condition.is(Cond);
 
     return struct {
         const Self = @This();
@@ -158,8 +158,8 @@ pub fn Buffer(comptime Mutex: type, comptime Cond: type) type {
 }
 
 pub fn Mixer(comptime Mutex: type, comptime Cond: type) type {
-    comptime _ = runtime.sync.isMutex(Mutex);
-    comptime _ = runtime.sync.isCondition(Cond);
+    comptime _ = runtime.sync.mutex.is(Mutex);
+    comptime _ = runtime.sync.condition.is(Cond);
 
     const BufferType = Buffer(Mutex, Cond);
 

@@ -42,11 +42,11 @@ pub fn Config(comptime Crypto: type) type {
 ///   - `Conn`:   underlying transport (must satisfy `net.conn.from` contract)
 ///   - `Crypto`: crypto primitives (must satisfy `runtime.crypto.suite` contract)
 ///   - `Rng`:    random number generator (must satisfy `runtime.rng` contract)
-///   - `Mutex`:  mutex type (must satisfy `runtime.sync.Mutex` contract)
+///   - `Mutex`:  mutex type (must satisfy `runtime.sync.mutex` contract)
 pub fn Client(comptime Conn: type, comptime Crypto: type, comptime Rng: type, comptime Mutex: type) type {
     comptime {
         _ = conn_mod.from(Conn);
-        _ = runtime.sync.isMutex(Mutex);
+        _ = runtime.sync.mutex.is(Mutex);
         _ = runtime.rng.is(Rng);
     }
 

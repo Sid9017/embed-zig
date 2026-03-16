@@ -19,7 +19,7 @@ pub const Seal = struct {};
 /// - PKI:  `Ed25519`, `EcdsaP256Sha256`, `EcdsaP384Sha384`
 /// - KEX:  `X25519`, `P256`
 /// - Other: `rsa`, `x509`
-pub fn CryptoSuite(comptime Impl: type) type {
+pub fn Make(comptime Impl: type) type {
     comptime {
         _ = hash.Sha256(Impl.Sha256);
         _ = hash.Sha384(Impl.Sha384);
@@ -68,7 +68,7 @@ pub fn CryptoSuite(comptime Impl: type) type {
 pub fn from(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: suite.Seal — use suite.CryptoSuite(Backend) to construct");
+            @compileError("Impl must have pub const seal: suite.Seal — use suite.Make(Backend) to construct");
         }
     }
 

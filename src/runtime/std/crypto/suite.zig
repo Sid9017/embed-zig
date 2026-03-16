@@ -37,4 +37,4 @@ pub const P256 = kex_mod.P256;
 pub const x509 = @import("x509.zig");
 
 const runtime_crypto_suite = @import("../../crypto/suite.zig");
-pub const Crypto = runtime_crypto_suite.CryptoSuite(@This());
+pub const Crypto = runtime_crypto_suite.Make(@This());

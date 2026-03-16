@@ -102,8 +102,8 @@ pub const Processor = struct {
 // ---------------------------------------------------------------------------
 
 pub fn Engine(comptime Mutex: type, comptime Cond: type, comptime Thread: type, comptime Time: type) type {
-    comptime _ = runtime.sync.isMutex(Mutex);
-    comptime _ = runtime.sync.isCondition(Cond);
+    comptime _ = runtime.sync.mutex.is(Mutex);
+    comptime _ = runtime.sync.condition.is(Cond);
     comptime _ = runtime.thread.is(Thread);
     comptime _ = runtime.time.is(Time);
 

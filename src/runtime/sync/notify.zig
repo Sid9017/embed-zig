@@ -4,7 +4,7 @@ const Seal = struct {};
 
 /// Construct a sealed Notify wrapper from a backend Impl type.
 /// Impl must provide: init, deinit, signal, wait, timedWait.
-pub fn Notify(comptime Impl: type) type {
+pub fn Make(comptime Impl: type) type {
     comptime {
         _ = @as(*const fn () Impl, &Impl.init);
         _ = @as(*const fn (*Impl) void, &Impl.deinit);
@@ -45,7 +45,7 @@ pub fn Notify(comptime Impl: type) type {
 pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: sync.NotifySeal — use sync.Notify(Backend) to construct");
+            @compileError("Impl must have pub const seal: notify.Seal — use notify.Make(Backend) to construct");
         }
     }
     return Impl;

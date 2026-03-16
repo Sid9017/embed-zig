@@ -134,7 +134,7 @@ pub fn Resolver(comptime Socket: type, comptime DomainResolver: type) type {
 ///   - `Socket`: must satisfy `runtime.socket.from` contract
 ///   - `Crypto`: crypto primitives (must satisfy `runtime.crypto.suite` contract)
 ///   - `Rng`:    random number generator (must provide `fill([]u8) void`)
-///   - `Mutex`:  mutex type (must satisfy `runtime.sync.Mutex` contract)
+///   - `Mutex`:  mutex type (must satisfy `runtime.sync.mutex` contract)
 ///   - `DomainResolver`: custom resolver consulted before upstream DNS.
 ///     Pass `void` to disable (zero overhead).
 pub fn ResolverWithTls(comptime Socket: type, comptime Crypto: type, comptime Rng: type, comptime Mutex: type, comptime DomainResolver: type) type {
@@ -612,7 +612,7 @@ pub fn formatIpv4(addr: Ipv4Address, buf: []u8) []const u8 {
 // DomainResolver Tests
 // ============================================================================
 
-pub const TestMockSocket = runtime.socket.Socket(struct {
+pub const TestMockSocket = runtime.socket.Make(struct {
     pub fn udp() runtime.socket.Error!@This() {
         return .{};
     }

@@ -1,53 +1,67 @@
 //! std runtime — validates all std implementations against runtime contracts.
 
-const std = @import("std");
-const runtime_thread = @import("thread.zig");
-const runtime_time = @import("time.zig");
-const runtime_log = @import("log.zig");
-const runtime_mutex = @import("sync/mutex.zig");
-const runtime_condition = @import("sync/condition.zig");
-const runtime_notify = @import("sync/notify.zig");
-const runtime_rng = @import("rng.zig");
-const runtime_system = @import("system.zig");
-const runtime_fs = @import("fs.zig");
-const runtime_ota_backend = @import("ota_backend.zig");
-const runtime_socket = @import("socket.zig");
-const runtime_channel_factory = @import("channel_factory.zig");
-
-pub const std_time = @import("std/time.zig");
-pub const std_log = @import("std/log.zig");
-pub const std_rng = @import("std/rng.zig");
-pub const std_sync = struct {
-    pub const Mutex = @import("std/sync/mutex.zig").Mutex;
-    pub const Condition = @import("std/sync/condition.zig").Condition;
-    pub const Notify = @import("std/sync/notify.zig").Notify;
+// const std = @import("std");
+const runtime = struct {
+    pub const channel_factory = @import("channel_factory.zig");
+    pub const condition = @import("sync/condition.zig");
+    pub const fs = @import("fs.zig");
+    pub const log = @import("log.zig");
+    pub const mutex = @import("sync/mutex.zig");
+    pub const notify = @import("sync/notify.zig");
+    pub const ota_backend = @import("ota_backend.zig");
+    pub const rng = @import("rng.zig");
+    pub const socket = @import("socket.zig");
+    pub const system = @import("system.zig");
+    pub const thread = @import("thread.zig");
+    pub const time = @import("time.zig");
+    pub const sync = struct {
+        pub const condition = @import("sync/condition.zig");
+        pub const mutex = @import("sync/mutex.zig");
+        pub const notify = @import("sync/notify.zig");
+    };
+    pub const crypto = struct {
+        pub const hash = @import("crypto/hash.zig");
+        pub const hmac = @import("crypto/hmac.zig");
+        pub const hkdf = @import("crypto/hkdf.zig");
+        pub const aead = @import("crypto/aead.zig");
+        pub const pki = @import("crypto/pki.zig");
+        pub const suite = @import("crypto/suite.zig");
+    };
 };
-pub const std_thread = @import("std/thread.zig");
-pub const std_system = @import("std/system.zig");
-pub const std_fs = @import("std/fs.zig");
-pub const std_channel_factory = @import("std/channel_factory.zig");
-pub const std_socket = @import("std/socket.zig");
-pub const std_ota_backend = @import("std/ota_backend.zig");
-pub const std_crypto_suite = @import("std/crypto/suite.zig");
-pub const std_crypto_hash = @import("std/crypto/hash.zig");
-pub const std_crypto_hmac = @import("std/crypto/hmac.zig");
-pub const std_crypto_hkdf = @import("std/crypto/hkdf.zig");
-pub const std_crypto_aead = @import("std/crypto/aead.zig");
-pub const std_crypto_pki = @import("std/crypto/pki.zig");
-pub const std_crypto_rsa = @import("std/crypto/rsa.zig");
-pub const std_crypto_kex = @import("std/crypto/kex.zig");
-pub const std_crypto_x509 = @import("std/crypto/x509.zig");
 
-pub const Time = runtime_time.Time(std_time.Time);
-pub const Log = runtime_log.Log(std_log.Log);
-pub const Rng = runtime_rng.Rng(std_rng.Rng);
-pub const Mutex = runtime_mutex.Mutex(std_sync.Mutex);
-pub const Condition = runtime_condition.Condition(std_sync.Condition, std_sync.Mutex);
-pub const Notify = runtime_notify.Notify(std_sync.Notify);
-pub const Thread = runtime_thread.Thread(std_thread.Thread);
-pub const System = runtime_system.System(std_system.System);
-pub const Fs = runtime_fs.Fs(std_fs.Fs);
-pub const ChannelFactory = runtime_channel_factory.ChannelFactory(std_channel_factory.ChannelFactory);
-pub const Socket = runtime_socket.Socket(std_socket.Socket);
-pub const OtaBackend = runtime_ota_backend.OtaBackend(std_ota_backend.OtaBackend);
-pub const Crypto = std_crypto_suite.Crypto;
+const std = struct {
+    pub const channel_factory = @import("std/channel_factory.zig");
+    pub const condition = @import("std/sync/condition.zig");
+    pub const fs = @import("std/fs.zig");
+    pub const log = @import("std/log.zig");
+    pub const mutex = @import("std/sync/mutex.zig");
+    pub const notify = @import("std/sync/notify.zig");
+    pub const ota_backend = @import("std/ota_backend.zig");
+    pub const rng = @import("std/rng.zig");
+    pub const socket = @import("std/socket.zig");
+    pub const system = @import("std/system.zig");
+    pub const thread = @import("std/thread.zig");
+    pub const time = @import("std/time.zig");
+    pub const sync = struct {
+        pub const condition = @import("std/sync/condition.zig");
+        pub const mutex = @import("std/sync/mutex.zig");
+        pub const notify = @import("std/sync/notify.zig");
+    };
+    pub const crypto = struct {
+        pub const suite = @import("std/crypto/suite.zig");
+    };
+};
+
+pub const Time = runtime.time.Make(std.time.Time);
+pub const Log = runtime.log.Make(std.log.Log);
+pub const Rng = runtime.rng.Make(std.rng.Rng);
+pub const Mutex = runtime.sync.mutex.Make(std.sync.mutex.Mutex);
+pub const Condition = runtime.sync.condition.Make(std.sync.condition.Condition, std.sync.mutex.Mutex);
+pub const Notify = runtime.sync.notify.Make(std.sync.notify.Notify);
+pub const Thread = runtime.thread.Make(std.thread.Thread);
+pub const System = runtime.system.Make(std.system.System);
+pub const Fs = runtime.fs.Make(std.fs.Fs);
+pub const ChannelFactory = runtime.channel_factory.Make(std.channel_factory.ChannelFactory);
+pub const Socket = runtime.socket.Make(std.socket.Socket);
+pub const OtaBackend = runtime.ota_backend.Make(std.ota_backend.OtaBackend);
+pub const Crypto = runtime.crypto.suite.Make(std.crypto.suite.Crypto);

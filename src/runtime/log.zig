@@ -14,7 +14,7 @@ pub const Seal = struct {};
 /// Construct a Log wrapper from an Impl type.
 /// Impl must provide: debug, info, warn, err — all `fn(Impl, []const u8) void`.
 /// The returned type also provides debugFmt/infoFmt/warnFmt/errFmt convenience methods.
-pub fn Log(comptime Impl: type) type {
+pub fn Make(comptime Impl: type) type {
     const LogType = struct {
         const impl: Impl = .{};
         pub const seal: Seal = .{};
@@ -69,7 +69,7 @@ pub fn Log(comptime Impl: type) type {
 pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: log.Seal — use log.Log(Backend) to construct");
+            @compileError("Impl must have pub const seal: log.Seal — use log.Make(Backend) to construct");
         }
     }
 

@@ -10,7 +10,7 @@ const Seal = struct {};
 
 /// Construct a sealed System wrapper from a backend Impl type.
 /// Impl must provide: getCpuCount(self: Impl) Error!usize
-pub fn System(comptime Impl: type) type {
+pub fn Make(comptime Impl: type) type {
     comptime {
         _ = @as(*const fn (Impl) Error!usize, &Impl.getCpuCount);
     }
@@ -31,7 +31,7 @@ pub fn System(comptime Impl: type) type {
 pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: system.Seal — use system.System(Backend) to construct");
+            @compileError("Impl must have pub const seal: system.Seal — use system.Make(Backend) to construct");
         }
     }
     return Impl;

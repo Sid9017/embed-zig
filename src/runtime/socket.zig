@@ -28,7 +28,7 @@ pub const RecvFromResult = struct {
 const Seal = struct {};
 
 /// Construct a sealed Socket wrapper from a backend Impl type.
-pub fn Socket(comptime Impl: type) type {
+pub fn Make(comptime Impl: type) type {
     comptime {
         // Factory methods
         _ = @as(*const fn () Error!Impl, &Impl.tcp);
@@ -146,7 +146,7 @@ pub fn Socket(comptime Impl: type) type {
 pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: socket.Seal — use socket.Socket(Backend) to construct");
+            @compileError("Impl must have pub const seal: socket.Seal — use socket.Make(Backend) to construct");
         }
     }
     return Impl;

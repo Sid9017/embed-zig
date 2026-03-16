@@ -13,10 +13,10 @@ pub fn SendResult() type {
 /// Bind a backend factory to produce sealed Channel types.
 ///
 /// Usage:
-///   const f = channel_factory.ChannelFactory(std_channel_factory.ChannelFactory);
+///   const f = channel_factory.Make(std_channel_factory.ChannelFactory);
 ///   const EventCh = f.Channel(MyEvent);
 ///   var ch = try EventCh.init(allocator, 16);
-pub fn ChannelFactory(comptime impl: fn (type) type) type {
+pub fn Make(comptime impl: fn (type) type) type {
     return struct {
         pub const seal: FactorySeal = .{};
 
@@ -68,7 +68,7 @@ pub fn ChannelFactory(comptime impl: fn (type) type) type {
 pub fn is(comptime T: type) type {
     comptime {
         if (!@hasDecl(T, "seal") or @TypeOf(T.seal) != FactorySeal) {
-            @compileError("expected a ChannelFactory — use channel_factory.ChannelFactory(backend) to construct");
+            @compileError("expected a ChannelFactory — use channel_factory.Make(backend) to construct");
         }
     }
     return T;

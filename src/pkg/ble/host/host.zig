@@ -179,8 +179,8 @@ pub fn Host(
     comptime service_table: []const gatt_server.ServiceDef,
 ) type {
     comptime {
-        _ = runtime.sync.isMutex(Mutex);
-        _ = runtime.sync.isCondition(Cond);
+        _ = runtime.sync.mutex.is(Mutex);
+        _ = runtime.sync.condition.is(Cond);
         _ = runtime.thread.is(Thread);
     }
 

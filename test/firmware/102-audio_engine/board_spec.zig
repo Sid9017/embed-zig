@@ -33,12 +33,12 @@ pub fn Board(comptime hw: type) type {
 
     const spec = struct {
         pub const meta = .{ .id = hw.name };
-        pub const log = runtime.log.Log(hw.log);
-        pub const time = runtime.time.Time(hw.time);
+        pub const log = runtime.log.Make(hw.log);
+        pub const time = runtime.time.Make(hw.time);
         pub const channel = hw.channel;
 
         pub const thread = struct {
-            pub const Type = runtime.thread.Thread(hw.thread.Thread);
+            pub const Type = runtime.thread.Make(hw.thread.Thread);
             pub const user = hw.thread.user_defaults;
             pub const system = hw.thread.system_defaults;
             pub const default = hw.thread.default_defaults;
