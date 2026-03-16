@@ -33,7 +33,7 @@ pub fn run(comptime hw: type, env: anytype) void {
         .gesture = button.GestureEvent,
     }, Board.channel);
 
-    const GpioButton = event.button.GpioButton(Gpio, Time, Board.channel);
+    const GpioButton = event.button.GpioButton(Gpio, Time, "btn_boot");
     const Gesture = button.ButtonGesture(Time, .{
         .long_press_ms = 500,
         .multi_click_window_ms = 300,
@@ -55,15 +55,11 @@ pub fn run(comptime hw: type, env: anytype) void {
     };
     defer bus.deinit();
 
-    var btn = GpioButton.init(allocator, &board.gpio_dev, .{}, .{
-        .id = "btn.boot",
+    var btn = GpioButton.init(&board.gpio_dev, Time{}, .{
         .pin = hw.button_pin,
         .active_level = .low,
-    }, bus.Injector(.btn_boot)) catch {
-        log.err("button init failed");
-        return;
-    };
-    defer btn.deinit();
+    }, bus.Injector(.btn_boot));
+    _ = &btn;
 
     const gesture_mw = EventBus.Processor(.btn_boot, .gesture, Gesture).init(allocator) catch {
         log.err("gesture middleware init failed");

@@ -1,6 +1,6 @@
 //! Event bus — comptime-generated event union with middleware chain.
 //!
-//! Bus(input_spec, output_spec, ChannelImpl) generates:
+//! Bus(input_spec, output_spec, ChannelFactory) generates:
 //!
 //!   - `InputEvent`: tagged union from input_spec
 //!   - `BusEvent`:   tagged union = `{ .input: InputEvent } ∪ output_spec`
@@ -52,6 +52,7 @@
 const std = @import("std");
 const log_mod = @import("../../runtime/log.zig");
 const time_mod = @import("../../runtime/time.zig");
+const channel_factory_mod = @import("../../runtime/channel_factory.zig");
 
 /// Type-erased callback for injecting a single event type into the bus.
 /// Peripherals receive an EventInjector from `bus.Injector(.tag)` and call
@@ -72,14 +73,14 @@ pub fn EventInjector(comptime T: type) type {
 /// `input` spec defines peripheral input events (e.g. `.btn = RawEvent`).
 /// `.tick = u64` is automatically appended to the input union.
 /// `output` spec defines middleware output events (e.g. `.gesture = GestureEvent`).
-/// `ChannelImpl` is the runtime channel backend.
+/// `ChannelFactory` is the runtime channel factory (sealed by channel_factory.ChannelFactory).
 ///
 /// The bus generates `InputEvent` (from input) and `BusEvent` (`{ .input } ∪ output`),
 /// then drives events through a registered middleware chain: in_ch → middlewares → out_ch.
 pub fn Bus(
     comptime input: anytype,
     comptime output: anytype,
-    comptime ChannelImpl: type,
+    comptime ChannelFactory: type,
 ) type {
     const input_info = @typeInfo(@TypeOf(input)).@"struct";
     const output_info = @typeInfo(@TypeOf(output)).@"struct";
@@ -87,6 +88,7 @@ pub fn Bus(
     if (output_info.fields.len == 0) @compileError("Bus output spec must have at least one field");
 
     comptime {
+        _ = channel_factory_mod.is(ChannelFactory);
         for (input_info.fields) |f| {
             if (std.mem.eql(u8, f.name, "tick")) {
                 @compileError("Bus input spec must not contain .tick — it is added automatically");
@@ -422,9 +424,9 @@ pub fn Bus(
 
         // --- private types ---
 
-        const InputChannel = ChannelImpl.Channel(InputEvent);
-        const BusChannel = ChannelImpl.Channel(BusEvent);
-        const DoneChannel = ChannelImpl.Channel(void);
+        const InputChannel = ChannelFactory.Channel(InputEvent);
+        const BusChannel = ChannelFactory.Channel(BusEvent);
+        const DoneChannel = ChannelFactory.Channel(void);
         const YieldFn = *const fn (ctx: ?*anyopaque, ev: BusEvent) void;
         const ProcessFn = *const fn (ctx: ?*anyopaque, ev: BusEvent, yield_ctx: ?*anyopaque, yield: YieldFn) void;
         const MiddlewareSeal = struct {};

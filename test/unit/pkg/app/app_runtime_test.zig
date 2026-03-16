@@ -4,7 +4,7 @@ const module = embed.pkg.app;
 const AppRuntime = module.AppRuntime;
 
 const testing = std.testing;
-const StdChannel = embed.runtime.std.std_channel;
+const StdChannel = embed.runtime.std.ChannelFactory;
 
 const TestApp = struct {
     pub const State = struct {

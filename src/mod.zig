@@ -4,7 +4,7 @@ pub const runtime = struct {
     pub const time = @import("runtime/time.zig");
     pub const thread = @import("runtime/thread.zig");
     pub const system = @import("runtime/system.zig");
-    pub const channel = @import("runtime/channel.zig");
+    pub const channel_factory = @import("runtime/channel_factory.zig");
     pub const socket = @import("runtime/socket.zig");
     pub const fs = @import("runtime/fs.zig");
     pub const log = @import("runtime/log.zig");
@@ -159,13 +159,6 @@ pub const pkg = struct {
             pub const MotionAction = motion_mod.MotionAction;
             pub const Detector = detector_mod.Detector;
             pub const MotionPeripheral = peripheral_mod.MotionPeripheral;
-        };
-
-        pub const timer = struct {
-            pub const timer = @import("pkg/event/timer/timer.zig");
-            const timer_mod = @import("pkg/event/timer/timer.zig");
-            pub const TimerPayload = timer_mod.TimerPayload;
-            pub const TimerSource = timer_mod.TimerSource;
         };
     };
 

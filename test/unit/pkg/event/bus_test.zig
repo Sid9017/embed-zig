@@ -3,7 +3,7 @@ const testing = std.testing;
 const embed = @import("embed");
 const bus_mod = embed.pkg.event.bus;
 const Bus = bus_mod.Bus;
-const StdChannel = embed.runtime.std.std_channel;
+const StdChannel = embed.runtime.std.ChannelFactory;
 
 const TestPayload = struct { value: u32 };
 

@@ -22,14 +22,15 @@
 //!   write_pipe —— receiver 写 token 通知 sender "数据已取走，你可以返回了"
 
 const std = @import("std");
+const channel_factory = @import("../channel_factory.zig");
 
-pub fn Channel(comptime Event: type) type {
+pub fn ChannelFactory(comptime Event: type) type {
     return struct {
         inner: *Inner,
 
         pub const event_t = Event;
-        pub const RecvResult = struct { value: Event, ok: bool };
-        pub const SendResult = struct { ok: bool };
+        pub const RecvResult = channel_factory.RecvResult(Event);
+        pub const SendResult = channel_factory.SendResult();
 
         const Inner = struct {
             allocator: std.mem.Allocator,

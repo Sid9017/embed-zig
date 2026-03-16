@@ -11,7 +11,7 @@
 //!   pub fn reduce(*State, BusEvent) void
 //!
 //! Usage:
-//!   var rt = try AppRuntime(MyApp, std_channel).init(alloc, 64, .{});
+//!   var rt = try AppRuntime(MyApp, ChannelFactory).init(alloc, 64, .{});
 //!   bus.use(gesture_mw);
 //!   // spawn rt.bus.run() in a thread
 //!   while (true) {
@@ -27,9 +27,9 @@ const flux_store = @import("../flux/store.zig");
 
 pub fn AppRuntime(
     comptime App: type,
-    comptime ChannelImpl: type,
+    comptime ChannelFactory: type,
 ) type {
-    const BusType = bus_mod.Bus(App.InputSpec, App.OutputSpec, ChannelImpl);
+    const BusType = bus_mod.Bus(App.InputSpec, App.OutputSpec, ChannelFactory);
     const StoreType = flux_store.Store(App.State, BusType.BusEvent);
 
     comptime {

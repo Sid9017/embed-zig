@@ -14,7 +14,7 @@ const embed = @import("embed");
 const bus_mod = embed.pkg.event.bus;
 const Bus = bus_mod.Bus;
 const button = embed.pkg.event.button;
-const StdChannel = embed.runtime.std.std_channel;
+const StdChannel = embed.runtime.std.ChannelFactory;
 
 const RawEvent = button.RawEvent;
 const GestureEvent = button.GestureEvent;
