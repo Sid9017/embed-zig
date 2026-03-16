@@ -132,7 +132,7 @@ pub fn Transport(
     comptime Mutex: type,
     comptime DomainResolver: type,
 ) type {
-    comptime _ = runtime.socket.from(Socket);
+    comptime _ = runtime.socket.is(Socket);
 
     const has_tls = Crypto != void and Rng != void and Mutex != void;
     const has_custom_resolver = DomainResolver != void;

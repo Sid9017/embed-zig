@@ -53,7 +53,7 @@ test "std implementations satisfy all runtime contracts" {
     _ = notify_mod.is(Notify);
     _ = thread_mod.is(Thread);
     _ = system_mod.is(System);
-    _ = socket_mod.from(Socket);
+    _ = socket_mod.is(Socket);
     _ = fs_mod.is(Fs);
     _ = ota_backend_mod.is(OtaBackend);
     _ = crypto_mod.from(Crypto);

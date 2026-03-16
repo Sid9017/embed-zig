@@ -169,7 +169,7 @@ pub fn validateDomainResolver(comptime Impl: type) type {
 }
 
 pub fn ResolverImpl(comptime Socket: type, comptime TlsClient: type, comptime Crypto: type, comptime DomainResolver: type) type {
-    comptime _ = runtime.socket.from(Socket);
+    comptime _ = runtime.socket.is(Socket);
     const has_tls = TlsClient != void;
     const has_custom_resolver = DomainResolver != void;
 
@@ -612,7 +612,7 @@ pub fn formatIpv4(addr: Ipv4Address, buf: []u8) []const u8 {
 // DomainResolver Tests
 // ============================================================================
 
-pub const TestMockSocket = struct {
+pub const TestMockSocket = runtime.socket.Socket(struct {
     pub fn udp() runtime.socket.Error!@This() {
         return .{};
     }
@@ -648,7 +648,7 @@ pub const TestMockSocket = struct {
     pub fn accept(_: *@This()) runtime.socket.Error!@This() {
         return .{};
     }
-};
+});
 
 // ============================================================================
 // Real Network Tests (using runtime.std.Socket)

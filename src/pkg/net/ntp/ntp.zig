@@ -144,7 +144,7 @@ pub const ServerLists = struct {
 /// Type parameters:
 ///   - `Socket`: must satisfy `runtime.socket.from` contract
 pub fn Client(comptime Socket: type) type {
-    comptime _ = runtime.socket.from(Socket);
+    comptime _ = runtime.socket.is(Socket);
 
     return struct {
         const Self = @This();

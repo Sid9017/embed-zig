@@ -11,6 +11,7 @@ const runtime_rng = @import("rng.zig");
 const runtime_system = @import("system.zig");
 const runtime_fs = @import("fs.zig");
 const runtime_ota_backend = @import("ota_backend.zig");
+const runtime_socket = @import("socket.zig");
 const runtime_channel_factory = @import("channel_factory.zig");
 
 pub const std_time = @import("std/time.zig");
@@ -47,6 +48,6 @@ pub const Thread = runtime_thread.Thread(std_thread.Thread);
 pub const System = runtime_system.System(std_system.System);
 pub const Fs = runtime_fs.Fs(std_fs.Fs);
 pub const ChannelFactory = runtime_channel_factory.ChannelFactory(std_channel_factory.ChannelFactory);
-pub const Socket = std_socket.Socket;
+pub const Socket = runtime_socket.Socket(std_socket.Socket);
 pub const OtaBackend = runtime_ota_backend.OtaBackend(std_ota_backend.OtaBackend);
 pub const Crypto = std_crypto_suite.Crypto;
