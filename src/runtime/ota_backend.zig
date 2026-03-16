@@ -17,16 +17,11 @@ pub const State = enum {
     invalid,
 };
 
-/// OTA backend contract:
-/// - `init() -> Error!Impl`
-/// - `begin(self: *Impl, image_size: u32) -> Error!void`
-/// - `write(self: *Impl, chunk: []const u8) -> Error!void`
-/// - `finalize(self: *Impl) -> Error!void`
-/// - `abort(self: *Impl) -> void`
-/// - `confirm(self: *Impl) -> Error!void`
-/// - `rollback(self: *Impl) -> Error!void`
-/// - `getState(self: *Impl) -> State`
-pub fn from(comptime Impl: type) type {
+const Seal = struct {};
+
+/// Construct a sealed OtaBackend wrapper from a backend Impl type.
+/// Impl must provide: init, begin, write, finalize, abort, confirm, rollback, getState.
+pub fn OtaBackend(comptime Impl: type) type {
     comptime {
         _ = @as(*const fn () Error!Impl, &Impl.init);
         _ = @as(*const fn (*Impl, u32) Error!void, &Impl.begin);
@@ -36,6 +31,54 @@ pub fn from(comptime Impl: type) type {
         _ = @as(*const fn (*Impl) Error!void, &Impl.confirm);
         _ = @as(*const fn (*Impl) Error!void, &Impl.rollback);
         _ = @as(*const fn (*Impl) State, &Impl.getState);
+    }
+
+    const OtaType = struct {
+        impl: Impl,
+        pub const seal: Seal = .{};
+        pub const BackendType = Impl;
+
+        pub fn init() Error!@This() {
+            return .{ .impl = try Impl.init() };
+        }
+
+        pub fn begin(self: *@This(), image_size: u32) Error!void {
+            return self.impl.begin(image_size);
+        }
+
+        pub fn write(self: *@This(), chunk: []const u8) Error!void {
+            return self.impl.write(chunk);
+        }
+
+        pub fn finalize(self: *@This()) Error!void {
+            return self.impl.finalize();
+        }
+
+        pub fn abort(self: *@This()) void {
+            self.impl.abort();
+        }
+
+        pub fn confirm(self: *@This()) Error!void {
+            return self.impl.confirm();
+        }
+
+        pub fn rollback(self: *@This()) Error!void {
+            return self.impl.rollback();
+        }
+
+        pub fn getState(self: *@This()) State {
+            return self.impl.getState();
+        }
+    };
+    return is(OtaType);
+}
+
+/// Validate that Impl satisfies the sealed OtaBackend contract.
+pub fn is(comptime Impl: type) type {
+    comptime {
+        if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
+            @compileError("Impl must have pub const seal: ota_backend.Seal — use ota_backend.OtaBackend(Backend) to construct");
+        }
     }
     return Impl;
 }
