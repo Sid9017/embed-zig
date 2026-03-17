@@ -22,7 +22,6 @@ pub fn run(comptime hw: type, env: anytype) void {
     defer hw.deinit();
 
     log.info("cellular test ready");
-    time.sleepMs(3000); // modem power-up
 
     const uart_ptr = hw.uart_cellular();
     const UartType = @TypeOf(uart_ptr.*);
@@ -30,9 +29,13 @@ pub fn run(comptime hw: type, env: anytype) void {
 
     log.info("=== Step 2: Io interface test ===");
 
+    log.infoFmt("t={d}ms waiting 3s for modem power-up...", .{time.nowMs()});
+    time.sleepMs(3000);
+    log.infoFmt("t={d}ms power-up done", .{time.nowMs()});
+
     const cmd = "AT\r\n";
-    const n_write = io.write(cmd) catch {
-        log.err("Io.write failed");
+    const n_write = io.write(cmd) catch |e| {
+        log.errFmt("Io.write failed: {s}", .{@errorName(e)});
         return;
     };
     log.infoFmt("Io.write(\"AT\\r\\n\") sent {d} bytes", .{n_write});
@@ -43,20 +46,13 @@ pub fn run(comptime hw: type, env: anytype) void {
     const n_read = io.read(&buf) catch |e| {
         switch (e) {
             io_mod.IoError.WouldBlock => log.info("Io.read() got 0 bytes (WouldBlock)"),
-            else => log.err("Io.read failed"),
+            else => log.errFmt("Io.read error: {s}", .{@errorName(e)}),
         }
+        log.info("Step 2 Io test done");
         return;
     };
     const slice = buf[0..n_read];
     log.infoFmt("Io.read() got {d} bytes: {s}", .{ n_read, slice });
-    if (n_read > 0) {
-        var hex_buf: [512]u8 = undefined;
-        var i: usize = 0;
-        for (slice) |b| {
-            i += (std.fmt.bufPrint(hex_buf[i..], "{x:0>2} ", .{b}) catch break).len;
-        }
-        log.infoFmt("RX hex: {s}", .{hex_buf[0..i]});
-    }
 
     log.info("Step 2 Io test done");
 }
