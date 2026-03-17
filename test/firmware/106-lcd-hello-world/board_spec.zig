@@ -18,7 +18,7 @@ pub fn Board(comptime hw: type) type {
         pub const log = runtime.log.Log(hw.log);
         pub const time = runtime.time.Time(hw.time);
         pub const allocator = if (@hasDecl(hw, "allocator")) hw.allocator else void;
-        pub const fs = if (@hasDecl(hw, "fs")) runtime.fs.from(hw.fs) else void;
+        pub const fs = if (@hasDecl(hw, "fs")) runtime.fs.Fs(hw.fs) else void;
 
         pub const rtc = hal.rtc.reader.from(hw.rtc_spec);
         pub const display = hal.display.from(hw.display_spec);

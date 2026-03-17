@@ -48,16 +48,37 @@ pub const File = struct {
     }
 };
 
-/// FS contract:
-/// - `open(self: *Impl, path: []const u8, mode: OpenMode) -> ?File`
-pub fn from(comptime Impl: type) type {
-    comptime {
-        const BaseType = switch (@typeInfo(Impl)) {
-            .pointer => |p| p.child,
-            else => Impl,
-        };
+const Seal = struct {};
 
-        _ = @as(*const fn (*BaseType, []const u8, OpenMode) ?File, &BaseType.open);
+/// Construct a sealed FileSystem wrapper from a backend Impl type.
+/// Impl must provide: open(self: *Impl, path: []const u8, mode: OpenMode) ?File
+pub fn Fs(comptime Impl: type) type {
+    comptime {
+        _ = @as(*const fn (*Impl, []const u8, OpenMode) ?File, &Impl.open);
+    }
+
+    const FsType = struct {
+        impl: Impl,
+        pub const seal: Seal = .{};
+        pub const BackendType = Impl;
+
+        pub fn init() @This() {
+            return .{ .impl = .{} };
+        }
+
+        pub fn open(self: *@This(), path: []const u8, mode: OpenMode) ?File {
+            return self.impl.open(path, mode);
+        }
+    };
+    return is(FsType);
+}
+
+/// Validate that Impl satisfies the sealed FileSystem contract.
+pub fn is(comptime Impl: type) type {
+    comptime {
+        if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
+            @compileError("Impl must have pub const seal: fs.Seal — use fs.Fs(Backend) to construct");
+        }
     }
     return Impl;
 }

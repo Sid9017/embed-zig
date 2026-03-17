@@ -62,11 +62,11 @@ pub fn Log(comptime Impl: type) type {
             }
         }
     };
-    return from(LogType);
+    return is(LogType);
 }
 
 /// Validate that Impl satisfies the Log contract and return it.
-pub fn from(comptime Impl: type) type {
+pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
             @compileError("Impl must have pub const seal: log.Seal — use log.Log(Backend) to construct");

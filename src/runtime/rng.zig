@@ -4,16 +4,37 @@ pub const Error = error{
     RngFailed,
 };
 
-/// RNG contract:
-/// - `fill(self, buf: []u8) -> Error!void`
-pub fn from(comptime Impl: type) type {
-    comptime {
-        const BaseType = switch (@typeInfo(Impl)) {
-            .pointer => |p| p.child,
-            else => Impl,
-        };
+const Seal = struct {};
 
-        _ = @as(*const fn (BaseType, []u8) Error!void, &BaseType.fill);
+/// Construct a sealed Rng wrapper from a backend Impl type.
+/// Impl must provide: fill(self: Impl, buf: []u8) Error!void
+pub fn Rng(comptime Impl: type) type {
+    comptime {
+        _ = @as(*const fn (Impl, []u8) Error!void, &Impl.fill);
+    }
+
+    const RngType = struct {
+        impl: Impl,
+        pub const seal: Seal = .{};
+        pub const BackendType = Impl;
+
+        pub fn init() @This() {
+            return .{ .impl = .{} };
+        }
+
+        pub fn fill(self: @This(), buf: []u8) Error!void {
+            return self.impl.fill(buf);
+        }
+    };
+    return is(RngType);
+}
+
+/// Validate that Impl satisfies the sealed Rng contract.
+pub fn is(comptime Impl: type) type {
+    comptime {
+        if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
+            @compileError("Impl must have pub const seal: rng.Seal — use rng.Rng(Backend) to construct");
+        }
     }
     return Impl;
 }

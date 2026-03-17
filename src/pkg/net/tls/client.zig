@@ -4,6 +4,7 @@ pub const runtime = struct {
         pub const mutex = @import("../../../runtime/sync/mutex.zig");
         pub const isMutex = mutex.is;
     };
+    pub const rng = @import("../../../runtime/rng.zig");
     pub const std = @import("../../../runtime/std.zig");
 };
 pub const conn_mod = @import("../conn.zig");
@@ -46,6 +47,7 @@ pub fn Client(comptime Conn: type, comptime Crypto: type, comptime Rng: type, co
     comptime {
         _ = conn_mod.from(Conn);
         _ = runtime.sync.isMutex(Mutex);
+        _ = runtime.rng.is(Rng);
     }
 
     return struct {
@@ -70,7 +72,7 @@ pub fn Client(comptime Conn: type, comptime Crypto: type, comptime Rng: type, co
         pub const crypto = Crypto;
 
         fn rngFill(buf: []u8) void {
-            const rng: Rng = .{};
+            const rng = Rng.init();
             rng.fill(buf) catch {};
         }
 

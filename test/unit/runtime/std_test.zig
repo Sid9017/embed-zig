@@ -46,16 +46,16 @@ const crypto_mod = embed.runtime.crypto.suite;
 
 test "std implementations satisfy all runtime contracts" {
     _ = time_mod.is(Time);
-    _ = log_mod.from(Log);
-    _ = rng_mod.from(Rng);
+    _ = log_mod.is(Log);
+    _ = rng_mod.is(Rng);
     _ = mutex_mod.is(Mutex);
     _ = condition_mod.is(Condition);
     _ = notify_mod.is(Notify);
     _ = thread_mod.is(Thread);
-    _ = system_mod.from(System);
+    _ = system_mod.is(System);
     _ = socket_mod.from(Socket);
-    _ = fs_mod.from(Fs);
-    _ = ota_backend_mod.from(OtaBackend);
+    _ = fs_mod.is(Fs);
+    _ = ota_backend_mod.is(OtaBackend);
     _ = crypto_mod.from(Crypto);
 }
 

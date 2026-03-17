@@ -2,7 +2,6 @@ const module = @import("embed").runtime.fs;
 const OpenMode = module.OpenMode;
 const Error = module.Error;
 const File = module.File;
-const from = module.from;
 
 const std = @import("std");
 const testing = std.testing;

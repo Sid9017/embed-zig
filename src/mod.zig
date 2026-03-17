@@ -1,5 +1,4 @@
 pub const runtime = struct {
-    pub const errors = @import("runtime/errors.zig");
     pub const sync = struct {
         pub const mutex = @import("runtime/sync/mutex.zig");
         pub const condition = @import("runtime/sync/condition.zig");

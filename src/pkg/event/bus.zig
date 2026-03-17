@@ -246,7 +246,7 @@ pub fn Bus(
         /// Built-in logger middleware. Logs all BusEvents then yields unchanged.
         /// Log must satisfy the runtime.log contract.
         pub fn Logger(comptime Log: type) type {
-            const LogType = log_mod.from(Log);
+            const LogType = log_mod.is(Log);
 
             return Middleware(struct {
                 const log: LogType = .{};
