@@ -268,6 +268,33 @@ pub const pkg = struct {
         };
     };
 
+    pub const cellular = struct {
+        pub const types = @import("pkg/cellular/types.zig");
+        pub const cellular_mod = @import("pkg/cellular/cellular.zig");
+        pub const voice = @import("pkg/cellular/voice.zig");
+        pub const apn = @import("pkg/cellular/apn.zig");
+        pub const io = struct {
+            pub const io_mod = @import("pkg/cellular/io/io.zig");
+            pub const trace = @import("pkg/cellular/io/trace.zig");
+            pub const mock = @import("pkg/cellular/io/mock.zig");
+        };
+        pub const at = struct {
+            pub const engine = @import("pkg/cellular/at/engine.zig");
+            pub const commands = @import("pkg/cellular/at/commands.zig");
+            pub const parse = @import("pkg/cellular/at/parse.zig");
+            pub const cmux = @import("pkg/cellular/at/cmux.zig");
+            pub const urcs = @import("pkg/cellular/at/urcs.zig");
+        };
+        pub const modem = struct {
+            pub const modem_mod = @import("pkg/cellular/modem/modem.zig");
+            pub const sim = @import("pkg/cellular/modem/sim.zig");
+            pub const signal = @import("pkg/cellular/modem/signal.zig");
+            pub const quectel = @import("pkg/cellular/modem/quectel.zig");
+            pub const simcom = @import("pkg/cellular/modem/simcom.zig");
+            pub const quectel_stub = @import("pkg/cellular/modem/quectel_stub.zig");
+        };
+    };
+
     pub const app = @import("pkg/app/app_runtime.zig");
 };
 

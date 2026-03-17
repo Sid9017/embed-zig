@@ -51,6 +51,21 @@ test {
     _ = @import("pkg/event/motion/types_test.zig");
     _ = @import("pkg/event/ring_buffer_test.zig");
     _ = @import("pkg/event/types_test.zig");
+    _ = @import("pkg/cellular/types_test.zig");
+    _ = @import("pkg/cellular/cellular_test.zig");
+    _ = @import("pkg/cellular/io/io_test.zig");
+    _ = @import("pkg/cellular/io/trace_test.zig");
+    _ = @import("pkg/cellular/at/commands_test.zig");
+    _ = @import("pkg/cellular/at/parse_test.zig");
+    _ = @import("pkg/cellular/at/engine_test.zig");
+    _ = @import("pkg/cellular/at/cmux_test.zig");
+    _ = @import("pkg/cellular/at/urcs_test.zig");
+    _ = @import("pkg/cellular/modem/modem_test.zig");
+    _ = @import("pkg/cellular/modem/sim_test.zig");
+    _ = @import("pkg/cellular/modem/signal_test.zig");
+    _ = @import("pkg/cellular/modem/quectel_test.zig");
+    _ = @import("pkg/cellular/modem/simcom_test.zig");
+
     _ = @import("pkg/flux/app_state_manager_test.zig");
     _ = @import("pkg/flux/store_test.zig");
     _ = @import("pkg/net/conn_test.zig");

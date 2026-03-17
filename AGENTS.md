@@ -127,6 +127,12 @@ zig build run
 - `websim` logic lives under `src/websim/`
 - Keep algorithm tests close to their implementation files when practical
 
+### Documentation and comments (open-source style)
+
+- **All comments must be in English.** Treat the codebase as an open-source project: write clear, self-contained comments for anyone reading the code later.
+- Document all public APIs: every exported struct, function, enum, and field should have a brief comment explaining purpose, contract, and (where relevant) valid values or error conditions.
+- Prefer doc comments (`///` or `//`) above declarations; use inline comments for non-obvious logic only.
+
 ### Naming
 
 - File names: lowercase snake_case

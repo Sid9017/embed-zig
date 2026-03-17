@@ -313,13 +313,13 @@ No HAL changes. No runtime changes.
 All shared types. No logic, no dependencies.
 
 ```zig
-Phase = enum { off, starting, ready, sim_ready, registered, dialing, connected, error };
+CellularPhase = enum { off, starting, ready, sim_ready, registered, dialing, connected, error };
 SimStatus = enum { not_inserted, pin_required, puk_required, ready, error };
-NetworkType = enum { none, gsm, gprs, edge, umts, hsdpa, lte };
-RegistrationStatus = enum { not_registered, registered_home, searching, denied, registered_roaming, unknown };
-CallState = enum { idle, incoming, dialing, alerting, active };
+RAT = enum { none, gsm, gprs, edge, umts, hsdpa, lte };  // Radio Access Technology
+CellularRegStatus = enum { not_registered, registered_home, searching, denied, registered_roaming, unknown };
+VoiceCallState = enum { idle, incoming, dialing, alerting, active };
 
-SignalInfo = struct {
+CellularSignalInfo = struct {
     rssi: i8,
     ber: ?u8,
     rsrp: ?i16,
@@ -349,11 +349,11 @@ ModemError = enum {
 };
 
 ModemState = struct {
-    phase: Phase = .off,
+    phase: CellularPhase = .off,
     sim: SimStatus = .not_inserted,
-    registration: RegistrationStatus = .not_registered,
-    network_type: NetworkType = .none,
-    signal: ?SignalInfo = null,
+    registration: CellularRegStatus = .not_registered,
+    network_type: RAT = .none,
+    signal: ?CellularSignalInfo = null,
     modem_info: ?ModemInfo = null,
     sim_info: ?SimInfo = null,
     error_reason: ?ModemError = null,   // 仅 phase==error 时有意义；retry 时清空（见 6.1）
@@ -369,34 +369,34 @@ ModemEvent = union(enum) {
     sim_error: SimStatus,
     sim_removed: void,
     pin_required: void,
-    registered: RegistrationStatus,
-    registration_failed: RegistrationStatus,
+    registered: CellularRegStatus,
+    registration_failed: CellularRegStatus,
     dial_start: void,
     dial_connected: void,
     dial_failed: void,
     ip_obtained: void,
     ip_lost: void,
-    signal_updated: SignalInfo,
+    signal_updated: CellularSignalInfo,
     retry: void,
     stop: void,
 };
 
-ConnectConfig = struct {
+APNConfig = struct {
     apn: []const u8,
     username: []const u8 = "",
     password: []const u8 = "",
 };
 
-ChannelRole = enum { at, ppp };
+CmuxChannelRole = enum { at, ppp };
 
-ChannelConfig = struct {
+CmuxChannelConfig = struct {
     dlci: u8,
-    role: ChannelRole,
+    role: CmuxChannelRole,
 };
 
 ModemConfig = struct {
     -- CMUX settings (only used in single-channel mode). User-configurable: DLCI and role (at/ppp) per channel; init validates, enterCmux uses this (see 5.6.1).
-    cmux_channels: []const ChannelConfig = &.{
+    cmux_channels: []const CmuxChannelConfig = &.{
         .{ .dlci = 1, .role = .ppp },
         .{ .dlci = 2, .role = .at },
     },
@@ -500,9 +500,9 @@ pub fn isError(line: []const u8) bool;
 pub fn parseCmeError(line: []const u8) ?u16;
 pub fn parseCmsError(line: []const u8) ?u16;
 pub fn parsePrefix(line: []const u8, prefix: []const u8) ?[]const u8;
-pub fn parseCsq(value: []const u8) ?SignalInfo;
+pub fn parseCsq(value: []const u8) ?CellularSignalInfo;
 pub fn parseCpin(value: []const u8) ?SimStatus;
-pub fn parseCreg(value: []const u8) ?RegistrationStatus;
+pub fn parseCreg(value: []const u8) ?CellularRegStatus;
 pub fn rssiToDbm(csq: u8) i8;
 pub fn rssiToPercent(dbm: i8) u8;
 ```
@@ -516,7 +516,7 @@ and write/parse methods. Inspired by Rust's `atat` crate pattern.
 
 | Field/Method | Type | Description |
 |---|---|---|
-| `Response` | `type` (comptime) | The parsed response type (e.g. `SignalInfo`, `SimStatus`, `void`) |
+| `Response` | `type` (comptime) | The parsed response type (e.g. `CellularSignalInfo`, `SimStatus`, `void`) |
 | `prefix` | `[]const u8` (comptime) | Response line prefix for matching (e.g. `"+CSQ"`) |
 | `timeout_ms` | `u32` (comptime) | Command-specific timeout |
 | `write(buf)` or `write(self, buf)` | `fn -> usize` | Serialize command bytes into buffer |
@@ -721,7 +721,7 @@ pub const SetFunctionality = struct {
 // ============================================================================
 
 pub const GetSignalQuality = struct {
-    pub const Response = types.SignalInfo;
+    pub const Response = types.CellularSignalInfo;
     pub const prefix = "+CSQ";
     pub const timeout_ms: u32 = 5000;
     pub fn write(buf: []u8) usize {
@@ -736,7 +736,7 @@ pub const GetSignalQuality = struct {
 };
 
 pub const GetRegistration = struct {
-    pub const Response = types.RegistrationStatus;
+    pub const Response = types.CellularRegStatus;
     pub const prefix = "+CGREG";
     pub const timeout_ms: u32 = 5000;
     pub fn write(buf: []u8) usize {
@@ -913,7 +913,7 @@ pub const SetCmux = struct {
 ```
 
 **Benefits:**
-- Compile-time type safety: `engine.send(commands.GetSignalQuality, .{})` returns `?SignalInfo`
+- Compile-time type safety: `engine.send(commands.GetSignalQuality, .{})` returns `?CellularSignalInfo`
 - Typo-proof: misspelled command struct name → compile error
 - Self-documenting: each command struct is its own specification
 - Testable: write/parse methods are pure functions, independently testable
@@ -1036,7 +1036,7 @@ const signal = parse.parseCsq(value) orelse return error.ParseError;
 After (typed):
 ```zig
 const result = at.send(commands.GetSignalQuality, .{});
-if (result.value) |signal| { ... }  -- signal is SignalInfo, compile-time guaranteed
+if (result.value) |signal| { ... }  -- signal is CellularSignalInfo, compile-time guaranteed
 ```
 
 ### 5.6 at/cmux.zig
@@ -1128,7 +1128,7 @@ const types = @import("../types.zig");
 const parse = @import("parse.zig");
 
 pub const NetworkRegistrationUrc = struct {
-    pub const Payload = types.RegistrationStatus;
+    pub const Payload = types.CellularRegStatus;
     pub const prefix = "+CREG";
 
     pub fn parseUrc(line: []const u8) ?Payload {
@@ -1362,7 +1362,7 @@ pub fn Cellular(
         fn reduce(state: *ModemState, event: ModemEvent) void;
 
         -- Emit: 状态变化时通过 injector.invoke(payload) 推入 Bus（internal）
-        fn emitIfChanged(self: *Self, old_phase: Phase) void;
+        fn emitIfChanged(self: *Self, old_phase: CellularPhase) void;
     };
 }
 ```
@@ -1411,10 +1411,10 @@ fn tick(self) {
 -- 创建 Cellular 时传入 rt.bus.Injector(.cellular)，Cellular 内部仅调用 injector.invoke(payload)。
 
 pub const CellularPayload = union(enum) {
-    phase_changed: struct { from: Phase, to: Phase },
-    signal_updated: SignalInfo,
+    phase_changed: struct { from: CellularPhase, to: CellularPhase },
+    signal_updated: CellularSignalInfo,
     sim_status_changed: SimStatus,
-    registration_changed: RegistrationStatus,
+    registration_changed: CellularRegStatus,
     error: ModemError,
 };
 ```
@@ -1454,7 +1454,7 @@ pub const ControlRequest = union(ControlRequestTag) {
 
 // 响应：at_error 携带 AtStatus（方案 A）
 pub const ControlResponse = union(enum) {
-    signal_quality: SignalInfo,
+    signal_quality: CellularSignalInfo,
     at_ok: void,
     at_error: AtStatus,   // 失败时的 AT 状态（timeout/error/cme_error/cms_error/overflow）
     timeout: void,
@@ -1472,7 +1472,7 @@ pub const ControlResponse = union(enum) {
 
 | 方法 | 签名（示例） | 行为 |
 |------|---------------------|------|
-| `getSignalQuality` | `getSignalQuality(self: *CellularControl, timeout_ms: u32) !SignalInfo` | 若当前 phase 为 off 或未就绪，直接返回 `error.Uninitialized`（或先入队，worker 回 uninitialized）。否则 request_queue.send(.get_signal_quality)，再 response_channel.timedRecv(timeout_ms)；若收到 .signal_quality 则返回，若 .timeout/.at_error 则返回 error.Timeout / error.AtError，**不**调用 reduce。 |
+| `getSignalQuality` | `getSignalQuality(self: *CellularControl, timeout_ms: u32) !CellularSignalInfo` | 若当前 phase 为 off 或未就绪，直接返回 `error.Uninitialized`（或先入队，worker 回 uninitialized）。否则 request_queue.send(.get_signal_quality)，再 response_channel.timedRecv(timeout_ms)；若收到 .signal_quality 则返回，若 .timeout/.at_error 则返回 error.Timeout / error.AtError，**不**调用 reduce。 |
 | `send`（泛型 AT） | `send(self: *CellularControl, comptime Cmd: type, cmd: Cmd, timeout_ms: u32) !Cmd.Response` | 序列化 Cmd 到 SendAtPayload.buf；若 `serialized_len > SEND_AT_BUF_CAP` 则直接返回 **error.PayloadTooLong** 不入队。否则入队 .send_at(payload)，worker 用 payload.buf[0..payload.len] 调 sendRaw，结果写入 response；超时或 AT 错误仅作为该次调用的错误返回，不送 reducer。 |
 | `getState`（只读） | `getState(self: *const CellularControl) ModemState` 或返回 phase/signal 等只读视图 | **不**发请求，直接读 Cellular 内部 state 的当前快照（可加锁或原子读），无 timeout、无 reducer 交互。 |
 
@@ -1497,7 +1497,7 @@ pub const ControlResponse = union(enum) {
 
 - 单测：CT-01 生命周期路径连续 at_timeout 仍使 at_timeout_count 增至 3 并进入 error。
 - 单测：CT-02 Control.getSignalQuality() 超时多次（或故意让 worker 回 .timeout），state.phase 不变、at_timeout_count 不增加。
-- 单测：CT-03 phase == .ready 时 getSignalQuality() 返回有效 SignalInfo；phase == .off 时返回 Uninitialized。
+- 单测：CT-03 phase == .ready 时 getSignalQuality() 返回有效 CellularSignalInfo；phase == .off 时返回 Uninitialized。
 
 ### 5.9 modem/sim.zig
 
@@ -1526,9 +1526,9 @@ pub const Signal = struct {
     at: *AtEngine,
 
     pub fn init(at_engine: *AtEngine) Signal;
-    pub fn getStrength(self: *Signal) !SignalInfo;
-    pub fn getRegistration(self: *Signal) !RegistrationStatus;
-    pub fn getNetworkType(self: *Signal) !NetworkType;
+    pub fn getStrength(self: *Signal) !CellularSignalInfo;
+    pub fn getRegistration(self: *Signal) !CellularRegStatus;
+    pub fn getNetworkType(self: *Signal) !RAT;
 };
 ```
 
@@ -1606,7 +1606,7 @@ pub const Voice = struct {
     pub fn dial(self: *Voice, number: []const u8) !void;
     pub fn answer(self: *Voice) !void;
     pub fn hangup(self: *Voice) !void;
-    pub fn getCallState(self: *Voice) !CallState;
+    pub fn getCallState(self: *Voice) !VoiceCallState;
     pub fn registerUrcs(self: *Voice, dispatch_ctx: anytype) void;
 };
 ```
@@ -1950,7 +1950,7 @@ MockIo(capacity):
 | ID    | Test | Validates |
 |-------|------|-----------|
 | AC-01 | GetSignalQuality write | write() produces "AT+CSQ\r" |
-| AC-02 | GetSignalQuality parse | parseResponse("+CSQ: 20,0") -> SignalInfo{rssi=-73} |
+| AC-02 | GetSignalQuality parse | parseResponse("+CSQ: 20,0") -> CellularSignalInfo{rssi=-73} |
 | AC-03 | GetSimStatus write | write() produces "AT+CPIN?\r" |
 | AC-04 | GetSimStatus parse | parseResponse("+CPIN: READY") -> .ready |
 | AC-05 | EnterPin write | .{.pin="1234"}.write() produces "AT+CPIN=1234\r" |
@@ -2065,7 +2065,7 @@ MockIo(capacity):
 |-------|------|-----------|
 | CT-01 | lifecycle at_timeout → error | **仅**生命周期路径：Mock 使 tick() 连续得到 at_timeout，断言 at_timeout_count 增至 3 后 phase=error、error_reason=at_timeout |
 | CT-02 | control timeout 不干扰 reducer | 多次调用 control.getSignalQuality(timeout_ms) 且让 worker 回 .timeout 或调用方 timedRecv 超时；断言 state.phase、at_timeout_count 不变，无 injector.invoke(error) |
-| CT-03 | control 按需查询 | phase == .ready 时 getSignalQuality(5000) 返回有效 SignalInfo；phase == .off 时返回 error.Uninitialized；可选 send(Cmd) 返回 OK |
+| CT-03 | control 按需查询 | phase == .ready 时 getSignalQuality(5000) 返回有效 CellularSignalInfo；phase == .off 时返回 error.Uninitialized；可选 send(Cmd) 返回 OK |
 
 ### 8.11 modem/sim_test.zig (7 tests)
 
@@ -2268,12 +2268,12 @@ test/esp/110-cellular/
 | `src/pkg/cellular/modem/` | 创建目录 | modem 子包 |
 
 **实现内容：**
-- Phase 枚举（off/starting/ready/sim_ready/registered/dialing/connected/error）
-- SimStatus / NetworkType / RegistrationStatus / CallState 枚举
-- SignalInfo / ModemInfo / SimInfo 结构体（含 getter 方法）
+- CellularPhase 枚举（off/starting/ready/sim_ready/registered/dialing/connected/error）
+- SimStatus / RAT / CellularRegStatus / VoiceCallState 枚举
+- CellularSignalInfo / ModemInfo / SimInfo 结构体（含 getter 方法）
 - ModemState 结构体（含默认值）
 - ModemEvent tagged union（16 种事件）
-- ConnectConfig / ChannelRole / ChannelConfig / ModemConfig 结构体
+- APNConfig / CmuxChannelRole / CmuxChannelConfig / ModemConfig 结构体
 
 **测试命令：**
 
@@ -2376,9 +2376,9 @@ cd test/unit && zig build test
 - `parseCmeError(line)` — 解析 "+CME ERROR: N" → N
 - `parseCmsError(line)` — 解析 "+CMS ERROR: N" → N
 - `parsePrefix(line, prefix)` — 提取前缀后的值（如 "+CSQ: 20,0" → "20,0"）
-- `parseCsq(value)` — 解析 CSQ 值为 SignalInfo
+- `parseCsq(value)` — 解析 CSQ 值为 CellularSignalInfo
 - `parseCpin(value)` — 解析 CPIN 值为 SimStatus
-- `parseCreg(value)` — 解析 CREG/CGREG/CEREG 值为 RegistrationStatus
+- `parseCreg(value)` — 解析 CREG/CGREG/CEREG 值为 CellularRegStatus
 - `rssiToDbm(csq)` — CSQ 值转 dBm
 - `rssiToPercent(dbm)` — dBm 转百分比
 
@@ -2638,9 +2638,9 @@ cd test/unit && zig build test
 **实现内容：**
 - `Signal` 结构体：
   - `init(at_engine: *AtEngine) Signal`
-  - `getStrength() !SignalInfo` — 发送 AT+CSQ（及 AT+QCSQ）并解析
-  - `getRegistration() !RegistrationStatus` — 发送 AT+CGREG? / AT+CEREG? 并解析
-  - `getNetworkType() !NetworkType` — 发送 AT+QNWINFO 并解析
+  - `getStrength() !CellularSignalInfo` — 发送 AT+CSQ（及 AT+QCSQ）并解析
+  - `getRegistration() !CellularRegStatus` — 发送 AT+CGREG? / AT+CEREG? 并解析
+  - `getNetworkType() !RAT` — 发送 AT+QNWINFO 并解析
 
 **Mock 测试命令：**
 
@@ -3093,7 +3093,7 @@ Phase 8: 恢复直连 AT
 | CE-07 | error emits event | AT 超时达到阈值 → injector.invoke(error) |
 | **CT-01** | **lifecycle at_timeout → error** | **仅**生命周期路径：连续 3 次 at_timeout → at_timeout_count 增至 3 → phase=error、error_reason=at_timeout；reducer 行为与 6.1 一致 |
 | **CT-02** | **control timeout 不干扰 reducer** | Control.getSignalQuality(timeout_ms) 多次超时（或 worker 回 .timeout）；**断言** state.phase 不变、at_timeout_count 不增加、无 injector.invoke(error) 被误触发 |
-| **CT-03** | **control 按需查询** | phase == .ready 时 control.getSignalQuality(5000) 返回有效 SignalInfo；phase == .off 时返回 error.Uninitialized；可选：control.send(GetCsq, .{}, 5000) 返回 OK |
+| **CT-03** | **control 按需查询** | phase == .ready 时 control.getSignalQuality(5000) 返回有效 CellularSignalInfo；phase == .off 时返回 error.Uninitialized；可选：control.send(GetCsq, .{}, 5000) 返回 OK |
 
 **烧录验证逻辑（追加到 app.zig）：**
 
@@ -3581,7 +3581,7 @@ cd test/unit && zig build test     # 运行全部单元测试（含 cellular）
 4. 新增 `dial_start` 事件触发 registered → dialing 转换
 5. `dial_failed` 回退到 `registered`（而非 `error`），因为网络仍然注册，可以重试拨号
 6. `ip_lost` 也回退到 `registered`（而非原来的 `registering`），语义更准确
-7. Phase 枚举从 7 个变为 8 个，reducer 测试从 18 个变为 21 个
+7. CellularPhase 枚举从 7 个变为 8 个，reducer 测试从 18 个变为 21 个
 8. 总测试数从 98 变为 101
 
 ### R26 (2026-03-16)
@@ -4060,7 +4060,7 @@ Step 5: AT 引擎恢复到直连物理 Io，发 AT 验证模组正常
 
 **设计深度不足：**
 
-- [x] Q11: registering 阶段命名语义反转。**已解决（R27）**。拆分为两个阶段：`registered`（已注册网络）和 `dialing`（PPP 拨号中）。Phase 从 7 个变为 8 个。新增 `dial_start` 事件触发 registered → dialing 转换。`dial_failed` 回退到 `registered` 而非 `error`。
+- [x] Q11: registering 阶段命名语义反转。**已解决（R27）**。拆分为两个阶段：`registered`（已注册网络）和 `dialing`（PPP 拨号中）。CellularPhase 从 7 个变为 8 个。新增 `dial_start` 事件触发 registered → dialing 转换。`dial_failed` 回退到 `registered` 而非 `error`。
 - [x] Q12: AtResponse 缓冲区硬编码 [8][128]u8。**已解决（R40）**。改为单一平坦缓冲区 `[buf_size]u8`，大小由 `comptime buf_size` 控制。AtResponse.body 为 rx_buf 内切片 + lineIterator。溢出返回 `AtStatus.overflow`。参考 atat const generic + esp_modem dte_buffer_size 设计。
 - [x] Q13: 错误恢复策略缺失。**已解决（R30）**。采用方案 2：与其它包对齐，reducer 不做自动重试。移除 `error_count`。`error_recovery` 改名为 `retry`，由应用层在需要时 dispatch，reducer 仅做 error + retry → starting 转换。
 - [x] Q14: URC pump 调度策略未定义。**已解决**。见下「Q14 实施规格：轮询周期与调用频率」。
@@ -4072,7 +4072,7 @@ Step 5: AT 引擎恢复到直连物理 Io，发 AT 验证模组正常
 - [x] Q17: voice.zig 是否应从 Phase 2 移除？**保留**。voice 为业务层（基于 commands 层的 ATD/ATA/ATH 等封装 dial/answer/hangup），Phase 2 保留 voice.zig；后续视需求再决定是否拆分或迁到别处。
 - [x] Q18: fromSpi() 是否降级为按需添加？**不降级**。UART、SPI、USB 均在 Io 层做 comptime 抽象（fromUart/fromSpi 及多通道 USB 用法），接口与实现规划都保留；**真机/烧录验证 Phase 1 先只做 UART**，SPI/USB 真机测试后续按需补。
 - [x] Q19: Cmux comptime max_channels 泛型是否简化？**不简化**。由用户在实例化时配置：`Cmux(Thread, Notify, max_channels)`，传 2、3 或 4 等（常见 4G 模组上限为 4，esp_modem/Quectel 典型用 2）。不做成写死常量。
-- [x] Q20: ChannelConfig/ChannelRole 可配置性是否过度？**已解决（R41）**。保留可配置：CMUX 各通道的 DLCI 与用途（AT/PPP）由模组或用户约定，不同模组/固件可能不同，用户必须能配置。实现上：ModemConfig.cmux_channels 驱动 enterCmux 的 open(dlcis) 与 at/ppp 通道绑定；init 时校验「恰好一个 .at、一个 .ppp、dlci 不重复且合法」。详见 5.6.1 可配置通道实施规格。
+- [x] Q20: CmuxChannelConfig/CmuxChannelRole 可配置性是否过度？**已解决（R41）**。保留可配置：CMUX 各通道的 DLCI 与用途（AT/PPP）由模组或用户约定，不同模组/固件可能不同，用户必须能配置。实现上：ModemConfig.cmux_channels 驱动 enterCmux 的 open(dlcis) 与 at/ppp 通道绑定；init 时校验「恰好一个 .at、一个 .ppp、dlci 不重复且合法」。详见 5.6.1 可配置通道实施规格。
 
 **可行性风险：**
 

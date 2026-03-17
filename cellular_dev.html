@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>pkg/cellular 开发设计文档（cellular_dev）</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface-elevated: #243044;
+      --text: #e6edf3;
+      --text-muted: #8b9cb6;
+      --accent: #58a6ff;
+      --accent-dim: #388bfd66;
+      --green: #3fb950;
+      --purple: #a371f7;
+      --orange: #d29922;
+      --red: #f85149;
+      --border: #30363d;
+      --radius: 10px;
+      --radius-sm: 6px;
+      --shadow: 0 4px 24px rgba(0,0,0,.35);
+      --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+      --layer-runtime: #1e3a5f;
+      --layer-bridge: #2d1f4e;
+      --layer-pkg: #1a3329;
+      --layer-io: #3d3520;
+      --layer-plat: #3d2020;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .doc-header {
+      background: linear-gradient(135deg, var(--surface) 0%, var(--surface-elevated) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 2rem 2.5rem;
+      margin-bottom: 2rem;
+    }
+    .doc-header h1 {
+      margin: 0 0 .5rem;
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .doc-header .subtitle {
+      color: var(--text-muted);
+      font-size: .95rem;
+    }
+    .doc-header .subtitle strong { color: var(--accent); }
+
+    .container { max-width: 1000px; margin: 0 auto; padding: 0 2rem 3rem; }
+
+    nav.toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 2.5rem;
+      box-shadow: var(--shadow);
+    }
+    nav.toc ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; }
+    nav.toc a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: .9rem;
+    }
+    nav.toc a:hover { text-decoration: underline; }
+
+    section { margin-bottom: 2.5rem; }
+    section h2 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin: 0 0 1rem;
+      padding-bottom: .5rem;
+      border-bottom: 2px solid var(--border);
+      color: var(--text);
+    }
+    section h3 { font-size: 1.15rem; margin: 1.5rem 0 .75rem; color: var(--text); }
+    section h4 { font-size: 1rem; margin: 1.25rem 0 .5rem; color: var(--text-muted); }
+    p { margin: 0 0 .85rem; color: var(--text-muted); }
+    strong { color: var(--text); }
+    ul { margin: 0 0 1rem; padding-left: 1.5rem; color: var(--text-muted); }
+    li { margin-bottom: .35rem; }
+    code, .code {
+      font-family: var(--font-mono);
+      font-size: .88em;
+      background: var(--surface-elevated);
+      padding: .15em .45em;
+      border-radius: var(--radius-sm);
+      color: var(--accent);
+    }
+    pre {
+      font-family: var(--font-mono);
+      font-size: .85rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+      color: var(--text-muted);
+    }
+    pre code { background: none; padding: 0; color: inherit; }
+
+    /* ---------- 2.1 架构图 ---------- */
+    .arch-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      margin-bottom: 1.5rem;
+    }
+    .arch-wrap .arch-title {
+      text-align: center;
+      font-weight: 700;
+      font-size: 1rem;
+      padding: .75rem;
+      background: rgba(255,255,255,.06);
+      border-bottom: 1px solid var(--border);
+    }
+    .arch-layer {
+      display: flex;
+      align-items: stretch;
+      width: 100%;
+      min-height: 64px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .arch-layer:last-child { border-bottom: none; }
+    .arch-layer .layer-label {
+      width: 180px;
+      min-width: 180px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: .9rem;
+      padding: .6rem 1rem;
+      border-right: 1px solid rgba(255,255,255,.1);
+      flex-shrink: 0;
+    }
+    .arch-layer .layer-modules {
+      display: flex;
+      flex: 1;
+      flex-wrap: wrap;
+      gap: .5rem;
+      padding: .5rem 1rem;
+      align-items: center;
+      justify-content: space-evenly;
+    }
+    .arch-layer .mod {
+      background: rgba(0,0,0,.25);
+      border-radius: var(--radius-sm);
+      padding: .4rem .75rem;
+      font-size: .85rem;
+      text-align: center;
+      min-width: 80px;
+    }
+    .arch-layer .mod .desc {
+      display: block;
+      font-size: .7rem;
+      color: rgba(255,255,255,.7);
+      margin-top: .2rem;
+    }
+    .arch-layer.layer-runtime { background: var(--layer-runtime); }
+    .arch-layer.layer-bridge { background: var(--layer-bridge); }
+    .arch-layer.layer-pkg { background: var(--layer-pkg); }
+    .arch-layer.layer-io { background: var(--layer-io); }
+    .arch-layer.layer-plat { background: var(--layer-plat); }
+
+    /* ---------- 2.2 层级目录表 ---------- */
+    .layer-table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      margin-bottom: 1.5rem;
+    }
+    .layer-table-wrap .table-title {
+      font-weight: 700;
+      padding: .75rem 1rem;
+      background: rgba(255,255,255,.06);
+      border-bottom: 1px solid var(--border);
+    }
+    table.layer-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .9rem;
+    }
+    table.layer-table th,
+    table.layer-table td {
+      padding: .6rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    table.layer-table th {
+      background: var(--surface-elevated);
+      color: var(--accent);
+      font-weight: 600;
+      width: 140px;
+    }
+    table.layer-table tr:last-child td { border-bottom: none; }
+    table.layer-table tr:hover td { background: rgba(255,255,255,.03); }
+    table.layer-table td:nth-child(2) { font-family: var(--font-mono); font-size: .85rem; color: var(--text); }
+    table.layer-table td:nth-child(3) { color: var(--text-muted); }
+
+    /* ---------- 2.3 事件流（UML 时序图）---------- */
+    .flow-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      margin-bottom: 1.5rem;
+    }
+    .flow-wrap .flow-title {
+      font-weight: 700;
+      padding: .75rem 1rem;
+      background: rgba(255,255,255,.06);
+      border-bottom: 1px solid var(--border);
+    }
+    .uml-seq {
+      padding: 1.5rem 1.25rem;
+      font-size: 14px;
+    }
+    /* 三列等分，生命线在每列中心：16.67% / 50% / 83.33% */
+    .uml-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: auto repeat(8, 48px);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .uml-part {
+      padding: .5rem .6rem;
+      border: 2px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-weight: 700;
+      font-size: 13px;
+      text-align: center;
+      background: var(--surface-elevated);
+    }
+    .uml-part small { display: block; font-weight: 400; font-size: 11px; color: var(--text-muted); margin-top: .15rem; }
+    .uml-part.part-w { grid-column: 1; grid-row: 1; border-color: var(--purple); color: #c4b8e8; }
+    .uml-part.part-b { grid-column: 2; grid-row: 1; border-color: var(--green); color: #9ee79f; font-size: 12px; }
+    .uml-part.part-m { grid-column: 3; grid-row: 1; border-color: var(--accent); color: #9ec8e8; }
+    .uml-life {
+      border-left: 2px dashed var(--border);
+      grid-row: 2 / -1;
+      min-height: 0;
+      width: 0;
+      justify-self: center;
+    }
+    .uml-life.life-w { grid-column: 1; }
+    .uml-life.life-b { grid-column: 2; }
+    .uml-life.life-m { grid-column: 3; }
+    .uml-msg {
+      grid-column: 1 / -1;
+      grid-row: span 1;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+    /* 箭头线：始终从生命线到生命线。三列等分时中心在 1/6、3/6、5/6 */
+    .uml-msg .msg-line-wrap {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      margin-top: -1px;
+      height: 0;
+      pointer-events: none;
+    }
+    .uml-msg .msg-line {
+      height: 0;
+      border-top: 2px solid var(--purple);
+      border-top-style: dashed;
+    }
+    .uml-msg.msg-sync .msg-line { border-top-style: solid; border-top-color: var(--green); }
+    .uml-msg .msg-head {
+      position: absolute;
+      top: 50%;
+      margin-top: -6px;
+      width: 0;
+      height: 0;
+      border-top: 6px solid transparent;
+      border-bottom: 6px solid transparent;
+      border-left: 10px solid var(--purple);
+    }
+    .uml-msg.msg-sync .msg-head { border-left-color: var(--green); }
+    /* Worker 自调用：线从生命线 1/6 到 2/6，箭头右端在 2/6 */
+    .uml-msg.msg-w-self .msg-line { margin-left: 16.67%; width: 16.66%; }
+    .uml-msg.msg-w-self .msg-head { left: calc(33.33% - 10px); }
+    /* Main 自调用：线从 4/6 到生命线 5/6，箭头右端在 5/6 */
+    .uml-msg.msg-m-self .msg-line { margin-left: 66.67%; width: 16.66%; }
+    .uml-msg.msg-m-self .msg-head { left: calc(83.33% - 10px); }
+    /* Worker→Main：线从生命线 1/6 到 5/6，箭头右端在 5/6 */
+    .uml-msg.msg-sync .msg-line { margin-left: 16.67%; width: 66.66%; }
+    .uml-msg.msg-sync .msg-head { left: calc(83.33% - 10px); }
+    .uml-msg .msg-label {
+      position: absolute;
+      left: 50%;
+      top: 6px;
+      transform: translateX(-50%);
+      font-size: 12px;
+      font-family: var(--font-mono), monospace;
+      color: var(--text);
+      background: var(--surface);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .uml-msg.msg-sync .msg-label { color: var(--green); }
+    .uml-loop {
+      max-width: 600px;
+      margin: 1rem auto 0;
+      padding: .5rem .75rem;
+      text-align: center;
+      font-size: 12px;
+      color: var(--orange);
+      background: rgba(210, 153, 34, .15);
+      border: 1px dashed var(--orange);
+      border-radius: var(--radius-sm);
+    }
+    .flow-note {
+      font-size: .75rem;
+      color: var(--text-muted);
+      margin: 0;
+      padding: .75rem 1rem;
+      background: rgba(0,0,0,.2);
+      border-top: 1px solid var(--border);
+    }
+
+    /* 通用表格 */
+    table.doc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .9rem;
+      margin: 1rem 0;
+      background: var(--surface);
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    table.doc-table th,
+    table.doc-table td {
+      padding: .5rem .75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    table.doc-table th {
+      background: var(--surface-elevated);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    table.doc-table tr:last-child td { border-bottom: none; }
+    table.doc-table td { color: var(--text-muted); }
+
+    .footnote {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      font-size: .85rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <header class="doc-header">
+    <div class="container">
+      <h1>pkg/cellular 开发设计文档（cellular_dev）</h1>
+      <p class="subtitle">本文档是 <strong>pkg/cellular</strong> 模块的单一事实来源，供多工程师按目录树分层实现与验收。<br />来源：plan.md（设计规格 + 实施步骤）+ plan-review.md（拍板决策与实现细节回填）。</p>
+    </div>
+  </header>
+
+  <div class="container">
+    <nav class="toc" aria-label="目录">
+      <ul>
+        <li><a href="#s1">1. 文档说明与目标</a></li>
+        <li><a href="#s2">2. 架构总览</a></li>
+        <li><a href="#s3">3. 目录树与按层级的设计文档</a></li>
+        <li><a href="#s4">4. 实施顺序与通过标准</a></li>
+        <li><a href="#s-progress">开发进度</a></li>
+        <li><a href="#s5">5. 已拍板决策汇总</a></li>
+        <li><a href="#s6">6. 实现中若遇不明确处</a></li>
+        <li><a href="#s7">7. 用法示例</a></li>
+      </ul>
+    </nav>
+
+    <section id="s1">
+      <h2>1. 文档说明与目标</h2>
+      <ul>
+        <li><strong>读者</strong>：实现 cellular 的工程师（可能多人并行）。</li>
+        <li><strong>目标</strong>：按本文档可独立完成各层实现与单测/烧录验证，无需反复查阅 plan.md / plan-review.md。</li>
+        <li><strong>约定</strong>：所有「实现细节」来自 plan 的 Open Question 结论与 plan-review 的拍板项，已回填到对应模块小节。若在实现某模块时发现规格不清或冲突，<strong>先停下来在 6 中记录并询问</strong>，再继续。</li>
+      </ul>
+    </section>
+
+    <section id="s2">
+      <h2>2. 架构总览</h2>
+
+      <h3>2.1 架构图（分层框图）</h3>
+      <p>最外层一大框包住全部；自上而下为 Runtime 层、事件桥接层（Injector）、Cellular 包层（pkg）、Io 边界、平台层；每一层内模块横排平铺，层与层之间用不同底色区分。</p>
+      <div class="arch-wrap">
+        <div class="arch-title">Cellular 分层架构</div>
+        <div class="arch-layer layer-runtime">
+          <span class="layer-label">Runtime 层</span>
+          <div class="layer-modules">
+            <span class="mod">Thread <span class="desc">spawn/join/detach，worker 线程</span></span>
+            <span class="mod">Notify <span class="desc">signal/wait，CMUX 通道</span></span>
+            <span class="mod">Time <span class="desc">nowMs/sleepMs，超时与 tick</span></span>
+            <span class="mod">Channel <span class="desc">request_queue / response_channel</span></span>
+          </div>
+        </div>
+        <div class="arch-layer layer-bridge">
+          <span class="layer-label">事件桥接层 (Injector)</span>
+          <div class="layer-modules">
+            <span class="mod">EventInjector <span class="desc">bus.Injector，init 时传入</span></span>
+            <span class="mod">tick 内 invoke <span class="desc">状态变化时推 CellularPayload 入 Bus</span></span>
+          </div>
+        </div>
+        <div class="arch-layer layer-pkg">
+          <span class="layer-label">Cellular 包层 (pkg/cellular)</span>
+          <div class="layer-modules">
+            <span class="mod">cellular.zig <span class="desc">事件源 + 状态机</span></span>
+            <span class="mod">types.zig <span class="desc">共享类型</span></span>
+            <span class="mod">modem/ <span class="desc">驱动 / sim / signal / 模组</span></span>
+            <span class="mod">at/ <span class="desc">引擎 / 命令 / 解析 / CMUX / URC</span></span>
+            <span class="mod">io/ <span class="desc">Io 接口 / Trace / Mock</span></span>
+          </div>
+        </div>
+        <div class="arch-layer layer-io">
+          <span class="layer-label">Io 边界</span>
+          <div class="layer-modules">
+            <span class="mod">Io 契约 <span class="desc">read / write / poll，与平台分离</span></span>
+          </div>
+        </div>
+        <div class="arch-layer layer-plat">
+          <span class="layer-label">平台层</span>
+          <div class="layer-modules">
+            <span class="mod">ESP32/Beken <span class="desc">UART → Io</span></span>
+            <span class="mod">Linux/Mac <span class="desc">USB at_io + data_io</span></span>
+            <span class="mod">Test <span class="desc">MockIo</span></span>
+          </div>
+        </div>
+      </div>
+
+      <h3>2.2 层级与目录对应关系</h3>
+      <div class="layer-table-wrap">
+        <div class="table-title">层级与目录对应关系</div>
+        <table class="layer-table">
+          <thead>
+            <tr>
+              <th>层</th>
+              <th>目录/模块</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Runtime 层</td><td>runtime/thread.zig, sync/notify.zig, time.zig, channel_factory.zig</td><td>comptime 注入，Cellular 不实现</td></tr>
+            <tr><td>事件桥接层</td><td>应用侧 bus.Injector(.cellular)</td><td>Cellular.init 时传入，tick 内调用</td></tr>
+            <tr><td>Cellular 包层</td><td>src/pkg/cellular/</td><td>cellular.zig, types.zig, modem/, at/, io/</td></tr>
+            <tr><td>Io 边界</td><td>pkg/cellular/io/ 的 Io 接口</td><td>纯 Zig 类型擦除，平台实现该接口</td></tr>
+            <tr><td>平台层</td><td>HAL + 具体板级</td><td>ESP32/Beken UART，Linux/Mac USB，Test MockIo</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>2.3 事件流（Worker vs Main）</h3>
+      <div class="flow-wrap">
+        <div class="flow-title">事件流：UML 时序图</div>
+        <div class="uml-seq">
+          <div class="uml-grid">
+            <div class="uml-part part-w">Worker<br/><small>(Cellular.run)</small></div>
+            <div class="uml-part part-b">Bus</div>
+            <div class="uml-part part-m">Main<br/><small>(AppRuntime)</small></div>
+            <div class="uml-life life-w"></div>
+            <div class="uml-life life-b"></div>
+            <div class="uml-life life-m"></div>
+            <!-- Worker 循环：自调用 -->
+            <div class="uml-msg msg-w-self" style="grid-row: 2;"><span class="msg-label">pumpUrcs()</span><div class="msg-line-wrap"><span class="msg-line"></span></div><span class="msg-head"></span></div>
+            <div class="uml-msg msg-w-self" style="grid-row: 3;"><span class="msg-label">per-phase AT</span><div class="msg-line-wrap"><span class="msg-line"></span></div><span class="msg-head"></span></div>
+            <div class="uml-msg msg-w-self" style="grid-row: 4;"><span class="msg-label">reduce()</span><div class="msg-line-wrap"><span class="msg-line"></span></div><span class="msg-head"></span></div>
+            <!-- Worker→Main：推入 Bus -->
+            <div class="uml-msg msg-sync" style="grid-row: 5;"><span class="msg-label">injector.invoke(CellularPayload)</span><div class="msg-line-wrap"><span class="msg-line"></span></div><span class="msg-head"></span></div>
+            <!-- Main 循环：自调用 -->
+            <div class="uml-msg msg-m-self" style="grid-row: 6;"><span class="msg-label">rt.recv()</span><div class="msg-line-wrap"><span class="msg-line"></span></div><span class="msg-head"></span></div>
+            <div class="uml-msg msg-m-self" style="grid-row: 7;"><span class="msg-label">rt.dispatch() / render</span><div class="msg-line-wrap"><span class="msg-line"></span></div><span class="msg-head"></span></div>
+            <!-- Worker 继续 -->
+            <div class="uml-msg msg-w-self" style="grid-row: 8;"><span class="msg-label">tryRecv(request_queue)</span><div class="msg-line-wrap"><span class="msg-line"></span></div><span class="msg-head"></span></div>
+            <div class="uml-msg msg-w-self" style="grid-row: 9;"><span class="msg-label">sleepMs(poll_interval)</span><div class="msg-line-wrap"><span class="msg-line"></span></div><span class="msg-head"></span></div>
+          </div>
+          <div class="uml-loop">Worker：每个 poll_interval 执行 tick（pumpUrcs → AT → reduce → 若 phase 变化则 invoke → tryRecv → sleepMs）。Main：主循环 rt.recv() → dispatch() → 若 isDirty 则 render。</div>
+        </div>
+        <p class="flow-note">Worker 还处理 Control 请求：每次 tick 之后 tryRecv(request_queue)，执行后写 response，不送 reducer。</p>
+      </div>
+
+      <h3>2.4 运行模式（Modem）</h3>
+      <ul>
+        <li><strong>Single-channel</strong>：只提供 io，内部 CMUX 拆 AT + PPP。</li>
+        <li><strong>Multi-channel</strong>：提供 at_io + data_io，不用 CMUX。自动判定：data_io != null 即 multi。</li>
+      </ul>
+
+      <h3>2.5 Runtime 合约（Thread / Notify / Time）</h3>
+      <p>来自 runtime/thread.zig、runtime/sync/notify.zig、runtime/time.zig；comptime 注入。</p>
+      <ul>
+        <li><strong>Thread</strong>：spawn/join/detach。用途：Cellular worker 线程、CMUX pump 线程。</li>
+        <li><strong>Notify</strong>：init/deinit/signal/wait/timedWait。用途：CMUX 各虚拟通道的数据到达通知。</li>
+        <li><strong>Time</strong>：nowMs/sleepMs。用途：AtEngine 超时循环、tick 间隔；测试用 FakeTime。</li>
+        <li><strong>Channel</strong>（runtime/channel_factory.zig）：request_queue capacity=4，response_channel capacity=1。</li>
+      </ul>
+    </section>
+
+    <section id="s3">
+      <h2>3. 目录树与按层级的设计文档</h2>
+      <pre><code>src/pkg/cellular/
+├── types.zig              shared types + CellularEvent (no logic, no deps)
+├── cellular.zig           event source + Control — owns Modem, Injector, request_queue, response_channel
+├── io/
+│   ├── io.zig             generic Io interface + fromUart/fromSpi
+│   ├── trace.zig          TraceIo decorator (logs read/write bytes)
+│   └── mock.zig           MockIo (linear buffers, test only)
+├── at/
+│   ├── engine.zig         AT command engine (sendRaw/send/pumpUrcs)
+│   ├── commands.zig       typed AT command definitions (comptime structs)
+│   ├── parse.zig          AT response parsing (pure functions)
+│   ├── cmux.zig           GSM 07.10 CMUX framing
+│   └── urcs.zig           typed URC definitions (comptime structs)
+├── modem/
+│   ├── modem.zig          hardware driver — owns Io/CMUX/AtEngine, NO state machine
+│   ├── sim.zig            SIM card management (uses AtEngine)
+│   ├── signal.zig         signal quality monitoring (uses AtEngine)
+│   ├── quectel.zig        Quectel module profile
+│   ├── simcom.zig         SIMCom module profile
+│   └── quectel_stub.zig   Step 8 占位 Module
+├── voice.zig              voice call management (phase 2)
+└── apn.zig                APN auto-resolve (phase 2)</code></pre>
+      <p>各模块详细规格、测试用例与实现要点见原 <code>cellular_dev.md</code> 第 3 节各小节（3.1 types.zig 至 3.18 测试总计）。</p>
+    </section>
+
+    <section id="s4">
+      <h2>4. 实施顺序与通过标准</h2>
+      <h3>4.1 Step 间依赖图</h3>
+      <pre><code>Step 0  基础设施（UART 硬件通路）
+  │
+  ├─→ Step 1  types.zig  → Step 2  io.zig  → Step 3  parse.zig  → Step 4  engine.zig + commands.zig ★ 里程碑 #1
+  │                 ├─→ Step 5  sim.zig
+  │                 ├─→ Step 6  signal.zig
+  │                 └─→ Step 7  cellular.zig reducer
+  │                       └─→ Step 8  modem.zig 路由  → Step 9  cmux.zig ★ #2  → Step 10  modem.zig 完整 ★ #3
+  │                             └─→ Step 11  cellular.zig 事件源 + Control ★ 最终里程碑
+  │                                   └─→ Step 12  quectel.zig / simcom.zig  → Step 13  mod.zig 导出 + 收尾</code></pre>
+      <p><strong>关键路径：</strong> 0 → 2 → 3 → 4 → 8 → 9 → 10 → 11 → 13</p>
+      <table class="doc-table">
+        <thead><tr><th>#</th><th>Step</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Step 4</td><td>AT 引擎在真实 4G 模组上完成端到端指令交互</td></tr>
+          <tr><td>2</td><td>Step 9</td><td>CMUX 在真实模组上跑通，虚拟通道可用</td></tr>
+          <tr><td>3</td><td>Step 10</td><td>Modem 硬件驱动在 ESP32S3 + 真实 4G 模组上全链路跑通</td></tr>
+          <tr><td>4</td><td>Step 11</td><td>Cellular 事件源 + Control 在真机上自动驱动 Modem、推事件入 Bus</td></tr>
+        </tbody>
+      </table>
+      <h3>4.2 验证方式说明</h3>
+      <table class="doc-table">
+        <thead><tr><th>方式</th><th>说明</th><th>适用场景</th></tr></thead>
+        <tbody>
+          <tr><td><strong>烧录验证</strong></td><td>编译固件烧录到 ESP32S3，UART 连接真实 4G 模组，串口 log 输出结果</td><td>涉及 IO 交互的所有步骤</td></tr>
+          <tr><td><strong>Mock 验证</strong></td><td>开发机 <code>zig build test</code>，MockIo 模拟通道；测试位于 test/unit/pkg/cellular/</td><td>纯类型、纯函数、纯状态机逻辑</td></tr>
+        </tbody>
+      </table>
+      <p>原则：能烧录验证就烧录验证。只有完全没有硬件交互的纯计算逻辑才用 Mock。</p>
+      <h3>4.6 总览表</h3>
+      <table class="doc-table">
+        <thead><tr><th>Step</th><th>文件</th><th>验证方式</th><th>Mock 测试数</th><th>里程碑</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>基础设施</td><td><strong>烧录</strong></td><td>0</td><td>—</td></tr>
+          <tr><td>1</td><td>types.zig</td><td>Mock</td><td>3</td><td>—</td></tr>
+          <tr><td>2</td><td>io.zig</td><td><strong>烧录</strong></td><td>3</td><td>—</td></tr>
+          <tr><td>3</td><td>parse.zig</td><td>Mock + 可选烧录</td><td>11</td><td>—</td></tr>
+          <tr><td>4</td><td>engine.zig + commands.zig</td><td><strong>烧录</strong></td><td>19</td><td>★ 里程碑 #1</td></tr>
+          <tr><td>5</td><td>sim.zig</td><td><strong>烧录</strong></td><td>7</td><td>—</td></tr>
+          <tr><td>6</td><td>signal.zig</td><td><strong>烧录</strong></td><td>7</td><td>—</td></tr>
+          <tr><td>7</td><td>cellular reducer</td><td>Mock + 可选烧录</td><td>21</td><td>—</td></tr>
+          <tr><td>8</td><td>modem 路由</td><td><strong>烧录</strong></td><td>13</td><td>—</td></tr>
+          <tr><td>9</td><td>cmux.zig</td><td><strong>烧录</strong></td><td>10</td><td>★ 里程碑 #2</td></tr>
+          <tr><td>10</td><td>modem 完整</td><td><strong>烧录</strong></td><td>4</td><td>★ 里程碑 #3</td></tr>
+          <tr><td>11</td><td>cellular.zig</td><td><strong>烧录</strong></td><td>10</td><td>★ 最终里程碑</td></tr>
+          <tr><td>12</td><td>quectel/simcom</td><td>Mock</td><td>8</td><td>—</td></tr>
+          <tr><td>13</td><td>mod.zig 导出</td><td>Mock</td><td>0</td><td>—</td></tr>
+        </tbody>
+      </table>
+      <p><strong>总计：121 个 Mock 测试 + 8 次必须烧录验证 + 2 次可选烧录验证。</strong></p>
+    </section>
+
+    <section id="s-progress">
+      <h2>开发进度</h2>
+      <p>以下为当前实现状态，随开发更新。</p>
+      <h3>已完成</h3>
+      <ul>
+        <li><strong>Step 1：types.zig — 共享类型</strong>
+          <ul>
+            <li>类型定义完整：CellularPhase、SimStatus、RAT、CellularRegStatus、VoiceCallState、CellularSignalInfo、ModemInfo、SimInfo、ModemState、ModemEvent、APNConfig、CmuxChannelRole/Config、ModemConfig、CellularPayload 等。</li>
+            <li>类型命名已与文档统一：CellularPhase、RAT、CmuxChannelRole/Config、CellularSignalInfo、CellularRegStatus、VoiceCallState、APNConfig（原 Phase/NetworkType/ChannelRole/Config/ConnectConfig/RegistrationStatus/CallState 等已重命名）。</li>
+            <li>命名常量（避免魔数）：<code>BaudRate</code>（b9600～b921600）、<code>BufferLen</code>（imei/imsi/iccid/model/firmware）、<code>default_at_timeout_ms</code>；ModemConfig 使用 <code>BaudRate.b921600</code> 与 <code>default_at_timeout_ms</code>。</li>
+            <li>单元测试：<code>test/unit/pkg/cellular/types_test.zig</code> 覆盖各类型与常量，<code>cd test/unit && zig build test</code> 全部通过。</li>
+            <li>验证方式：仅 Mock 验证，<strong>无需上机</strong>（见 plan § Step 1）。</li>
+          </ul>
+        </li>
+      </ul>
+      <h3>未完成（占位 / 待实现）</h3>
+      <ul>
+        <li><strong>io/</strong>：Io 接口与 fromUart/fromSpi 为 stub；MockIo 有最少可用实现。</li>
+        <li><strong>at/</strong>：parse.zig、engine.zig、commands.zig、urcs.zig、cmux.zig 为签名 + stub，无真实解析/发送/CMUX 逻辑。</li>
+        <li><strong>modem/</strong>：modem.zig 路由框架 + 占位；quectel_stub.zig / quectel.zig / simcom.zig 为占位或未接全链路。</li>
+        <li><strong>cellular.zig</strong>：仅 <code>CellularStub = struct {}</code>，reducer / 事件源 / Control 未实现。</li>
+      </ul>
+      <p><em>最后更新：2026-03-17</em></p>
+    </section>
+
+    <section id="s5">
+      <h2>5. 已拍板决策汇总</h2>
+      <table class="doc-table">
+        <thead><tr><th>#</th><th>决策项</th><th>结论</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>类型命名</td><td>ModemInfo 统一；GetModuleInfo 的 Response=ModemInfo</td></tr>
+          <tr><td>2</td><td>Mock 传输</td><td>两段线性 buffer，无 RingBuffer，无 onSend</td></tr>
+          <tr><td>3</td><td>AtError</td><td>at_error 携带 AtStatus，API 返 error.AtError/Timeout</td></tr>
+          <tr><td>4</td><td>SendAtPayload</td><td>buf+len 256，超长 PayloadTooLong，Worker 用 buf[0..len]</td></tr>
+          <tr><td>5</td><td>request/response 通道</td><td>channel_factory；request_queue capacity=4；response_channel capacity=1</td></tr>
+          <tr><td>6</td><td>Step 8</td><td>占位 Module+gpio=null；完整 Module Step 12</td></tr>
+          <tr><td>7</td><td>Thread/Notify/Time</td><td>comptime 注入，见 §2.5</td></tr>
+          <tr><td>8</td><td>文档统一</td><td>parse.zig/engine.zig 标题；21 tests；parseResponse 合约</td></tr>
+          <tr><td>9</td><td>response_channel capacity</td><td><strong>1</strong>（单槽缓冲，worker 非阻塞 send）</td></tr>
+          <tr><td>10</td><td>request_queue capacity</td><td><strong>4</strong>（一发一收模式，4 槽足够）</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="s6">
+      <h2>6. 实现中若遇不明确处</h2>
+      <p>若某模块实现时发现规格缺失、与 plan/review 不一致或与现有代码对接不清，<strong>先在此记录并暂停该处实现</strong>，向维护者确认后再继续。</p>
+      <p><strong>当前状态：已全部拍板，无待决项。</strong></p>
+    </section>
+
+    <section id="s7">
+      <h2>7. 用法示例</h2>
+      <h3>7.1 ESP32 UART single-channel（含 Injector）</h3>
+      <pre><code>const cellular = @import("embed").pkg.cellular;
+const quectel = cellular.modem.quectel;
+const CellPeripheral = cellular.Cellular(EspThread, EspNotify, EspTime, quectel, EspGpio, 1024);
+const uart_io = io.fromUart(UartDriver, &uart_driver);
+const injector = rt.bus.Injector(.cellular);
+var cell = try CellPeripheral.init(allocator, .{ .io = uart_io, .time = board.time, .gpio = &gpio, ... }, injector, .{ .poll_interval_ms = 1000 });
+try cell.start();
+while (true) { const r = try rt.recv(); if (!r.ok) break; rt.dispatch(r.value); if (rt.isDirty()) { ... render ...; rt.commitFrame(); } }
+cell.stop();</code></pre>
+      <h3>7.2 Linux USB multi-channel</h3>
+      <p>提供 <code>at_io</code> + <code>data_io</code>，Modem 使用 multi-channel 模式，无需 CMUX。主循环同 7.1。</p>
+      <h3>7.3 Test mock</h3>
+      <p>方式 A：真实 Bus，主线程 rt.recv() 收事件后断言。方式 B：测试用 injector 将 payload 写入 test_channel，单测不依赖完整 Bus。</p>
+      <h3>7.4 Modem-only（无状态机/Bus）</h3>
+      <p>直接使用 <code>Modem.init(...)</code>，<code>modem.at().send(quectel.commands.GetModuleInfo, .{})</code> 等，无状态机、无 channel。</p>
+    </section>
+
+    <footer class="footnote">
+      基于 plan.md Round 42 + plan-review.md 2026-03-16 整理。完整模块规格与 Step 0–13 详细内容见 <code>cellular_dev.md</code>。
+    </footer>
+  </div>
+</body>
+</html>
