@@ -35,7 +35,8 @@ pub const Io = struct {
     }
 };
 
-// Placeholder: fromUart / fromSpi will wrap HAL drivers. Stub compiles; implement in Step 2.
+/// UART-like contract for fromUart: read(*self, buf), write(*self, buf), poll(*self, timeout_ms).
+/// Platform adapters (or MockIo in tests) must provide these; IoError and PollFlags are from this module.
 fn _readStub(_: *anyopaque, buf: []u8) IoError!usize {
     _ = buf;
     return error.WouldBlock;
@@ -47,16 +48,35 @@ fn _pollStub(_: *anyopaque, _: i32) PollFlags {
     return .{};
 }
 
-/// Wraps a UART HAL instance into Io. Implement in Step 2 with real HAL.
+/// Wraps a UART-like instance into Io. UartType must have:
+/// - read(self: *UartType, buf: []u8) IoError!usize
+/// - write(self: *UartType, buf: []const u8) IoError!usize
+/// - poll(self: *UartType, timeout_ms: i32) PollFlags
 pub fn fromUart(comptime UartType: type, ptr: *UartType) Io {
-    _ = ptr;
-    comptime _ = @sizeOf(UartType);
-    var dummy: u8 = 0;
+    comptime {
+        _ = @as(*const fn (*UartType, []u8) IoError!usize, &UartType.read);
+        _ = @as(*const fn (*UartType, []const u8) IoError!usize, &UartType.write);
+        _ = @as(*const fn (*UartType, i32) PollFlags, &UartType.poll);
+    }
+    const Wrap = struct {
+        fn read(ctx: *anyopaque, buf: []u8) IoError!usize {
+            const p: *UartType = @ptrCast(@alignCast(ctx));
+            return p.read(buf);
+        }
+        fn write(ctx: *anyopaque, buf: []const u8) IoError!usize {
+            const p: *UartType = @ptrCast(@alignCast(ctx));
+            return p.write(buf);
+        }
+        fn poll(ctx: *anyopaque, timeout_ms: i32) PollFlags {
+            const p: *UartType = @ptrCast(@alignCast(ctx));
+            return p.poll(timeout_ms);
+        }
+    };
     return .{
-        .ctx = @ptrCast(&dummy),
-        .readFn = _readStub,
-        .writeFn = _writeStub,
-        .pollFn = _pollStub,
+        .ctx = @ptrCast(ptr),
+        .readFn = Wrap.read,
+        .writeFn = Wrap.write,
+        .pollFn = Wrap.poll,
     };
 }
 

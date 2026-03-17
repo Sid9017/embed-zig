@@ -1,0 +1,19 @@
+.{
+    .name = .cellular_110,
+    .version = "0.1.0",
+    .fingerprint = 0xca49a5db3ea0b275,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        .esp = .{
+            .path = "../../../esp-zig",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "build_config.zig",
+        "bsp.zig",
+        "src",
+        "board",
+    },
+}

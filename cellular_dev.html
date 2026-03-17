@@ -427,7 +427,7 @@
             <span class="mod">Thread <span class="desc">spawn/join/detach，worker 线程</span></span>
             <span class="mod">Notify <span class="desc">signal/wait，CMUX 通道</span></span>
             <span class="mod">Time <span class="desc">nowMs/sleepMs，超时与 tick</span></span>
-            <span class="mod">Channel <span class="desc">request_queue / response_channel</span></span>
+            <span class="mod">ChannelFactory <span class="desc">request_queue / response_channel（ChannelFactory.Channel）</span></span>
           </div>
         </div>
         <div class="arch-layer layer-bridge">
@@ -625,6 +625,11 @@
           </ul>
         </li>
       </ul>
+      <h3>ESP32 烧录与运行（2026-03-17）</h3>
+      <ul>
+        <li><strong>构建与烧录</strong>：esp-zig <code>examples/cellular</code> 已可经 <code>zig build flash-monitor -Dbuild_config=board/esp32s3_devkit/... -Dbsp=... -Dport=... -Desp_idf="$ESP_IDF"</code> 完成编链、烧录并上电；需使用带 Xtensa 后端的 Zig（如 zig-esp）和 <code>source $ESP_IDF/export.sh</code>（或 .zshrc/.zprofile 中配置 <code>ESP_IDF</code>）。</li>
+        <li><strong>运行时崩溃</strong>：上电后进入 <code>app_main</code> → 首次 log 路径时发生 <strong>LoadProhibited（EXCVADDR 0x1）</strong>，backtrace 指向 <code>ets_printf</code> / <code>esp_rom.zig</code>，疑为传入 ROM printf 的指针为空或非法。esp-zig 侧 BSP（<code>board/esp32s3_devkit/bsp.zig</code>）已对 <code>printMsg</code> 做 <code>@intFromPtr(ptr) != 0</code> 空指针防护，<strong>根因待后续排查</strong>。</li>
+      </ul>
       <h3>未完成（占位 / 待实现）</h3>
       <ul>
         <li><strong>io/</strong>：Io 接口与 fromUart/fromSpi 为 stub；MockIo 有最少可用实现。</li>
@@ -677,7 +682,7 @@ cell.stop();</code></pre>
       <h3>7.3 Test mock</h3>
       <p>方式 A：真实 Bus，主线程 rt.recv() 收事件后断言。方式 B：测试用 injector 将 payload 写入 test_channel，单测不依赖完整 Bus。</p>
       <h3>7.4 Modem-only（无状态机/Bus）</h3>
-      <p>直接使用 <code>Modem.init(...)</code>，<code>modem.at().send(quectel.commands.GetModuleInfo, .{})</code> 等，无状态机、无 channel。</p>
+      <p>直接使用 <code>Modem.init(...)</code>，<code>modem.at().send(quectel.commands.GetModuleInfo, .{})</code> 等，无状态机、无 event channel。</p>
     </section>
 
     <footer class="footnote">

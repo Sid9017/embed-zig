@@ -104,4 +104,27 @@ pub fn build(b: *std.Build) void {
     }
 
     b.installArtifact(embed_link);
+
+    // 110-cellular firmware mock test (no esp-zig): run test "run with mock hw" in app.zig
+    const app_zig = b.path("test/firmware/110-cellular/app.zig");
+    const esp_mock_src = b.path("test/firmware/110-cellular/esp_mock.zig");
+    const esp_mock_mod = b.createModule(.{
+        .root_source_file = esp_mock_src,
+        .target = target,
+        .optimize = optimize,
+    });
+    esp_mock_mod.addImport("embed", embed_mod);
+
+    const app_root = b.createModule(.{
+        .root_source_file = app_zig,
+        .target = target,
+        .optimize = optimize,
+    });
+    app_root.addImport("esp", esp_mock_mod);
+
+    const firmware_test = b.addTest(.{
+        .root_module = app_root,
+    });
+    const run_firmware_test = b.addRunArtifact(firmware_test);
+    b.step("test-110-cellular-firmware", "Run 110-cellular firmware mock test (no esp-zig)").dependOn(&run_firmware_test.step);
 }

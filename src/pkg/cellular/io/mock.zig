@@ -42,7 +42,7 @@ pub const MockIo = struct {
         const n = @min(buf.len, self.tx_buf.len - self.tx_len);
         @memcpy(self.tx_buf[self.tx_len..][0..n], buf[0..n]);
         self.tx_len += n;
-        return buf.len;
+        return n;
     }
 
     fn pollFn(ctx: *anyopaque, _: i32) io_mod.PollFlags {
@@ -73,5 +73,30 @@ pub const MockIo = struct {
     /// Reset write buffer for next test.
     pub fn drain(self: *MockIo) void {
         self.tx_len = 0;
+    }
+
+    /// UART contract for fromUart(MockIo, self): read from rx buffer.
+    pub fn read(self: *MockIo, buf: []u8) io_mod.IoError!usize {
+        if (self.rx_pos >= self.rx_len) return error.WouldBlock;
+        const n = @min(buf.len, self.rx_len - self.rx_pos);
+        @memcpy(buf[0..n], self.rx_buf[self.rx_pos..][0..n]);
+        self.rx_pos += n;
+        return n;
+    }
+
+    /// UART contract for fromUart(MockIo, self): write to tx buffer.
+    pub fn write(self: *MockIo, buf: []const u8) io_mod.IoError!usize {
+        const n = @min(buf.len, self.tx_buf.len - self.tx_len);
+        @memcpy(self.tx_buf[self.tx_len..][0..n], buf[0..n]);
+        self.tx_len += n;
+        return n;
+    }
+
+    /// UART contract for fromUart(MockIo, self): poll flags (timeout_ms ignored in mock).
+    pub fn poll(self: *MockIo, _: i32) io_mod.PollFlags {
+        return .{
+            .readable = self.rx_pos < self.rx_len,
+            .writable = true,
+        };
     }
 };
