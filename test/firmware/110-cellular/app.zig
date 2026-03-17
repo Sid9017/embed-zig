@@ -1,12 +1,13 @@
-//! 110-cellular firmware — Step 2: Io interface (fromUart) verification.
+//! 110-cellular firmware — Step 2 + Step 3 verification.
 //!
-//! 1. Wrap UART via io.fromUart(), send "AT\r\n", wait 500 ms, read response, log.
-//! 2. Pass: Io.write() returns 4; read content contains "OK" (when modem connected).
+//! Step 2: Io interface — send AT, read response.
+//! Step 3: parse — send AT+CSQ/AT+CPIN?/AT+CREG?, parse real modem responses.
 
 const board_spec = @import("board_spec.zig");
 const esp = @import("esp");
 const embed = esp.embed;
 const io_mod = embed.pkg.cellular.io.io_mod;
+const parse = embed.pkg.cellular.at.parse;
 
 pub fn run(comptime hw: type, env: anytype) void {
     _ = env;
@@ -55,6 +56,96 @@ pub fn run(comptime hw: type, env: anytype) void {
     log.infoFmt("Io.read() got {d} bytes: {s}", .{ n_read, slice });
 
     log.info("Step 2 Io test done");
+
+    // === Step 3: parse real-device test ===
+    log.info("=== Step 3: parse real-device test ===");
+
+    testAtCommand(io, time, log, "AT+CSQ\r\n", "CSQ");
+    testAtCommand(io, time, log, "AT+CPIN?\r\n", "CPIN");
+    testAtCommand(io, time, log, "AT+CREG?\r\n", "CREG");
+    testAtCommand(io, time, log, "AT+CGREG?\r\n", "CGREG");
+
+    log.info("Step 3 parse test done");
+}
+
+fn testAtCommand(io: io_mod.Io, time: anytype, log: anytype, cmd: []const u8, comptime label: []const u8) void {
+    const t_start = time.nowMs();
+    const n_write = io.write(cmd) catch |e| {
+        log.errFmt("[" ++ label ++ "] write failed: {s}", .{@errorName(e)});
+        return;
+    };
+    _ = n_write;
+    time.sleepMs(500);
+
+    var buf: [512]u8 = undefined;
+    const n_read = io.read(&buf) catch |e| {
+        const elapsed = time.nowMs() -| t_start;
+        switch (e) {
+            io_mod.IoError.WouldBlock => log.infoFmt("[" ++ label ++ "] no response (WouldBlock) {d}ms", .{elapsed}),
+            else => log.errFmt("[" ++ label ++ "] read error: {s} {d}ms", .{ @errorName(e), elapsed }),
+        }
+        return;
+    };
+    const elapsed = time.nowMs() -| t_start;
+    const raw = buf[0..n_read];
+    log.infoFmt("[" ++ label ++ "] raw ({d} bytes, {d}ms): {s}", .{ n_read, elapsed, raw });
+
+    // Parse each line of the response
+    var line_iter = std.mem.splitScalar(u8, raw, '\n');
+    while (line_iter.next()) |line| {
+        if (line.len == 0) continue;
+
+        if (parse.isOk(line)) {
+            log.info("[" ++ label ++ "] -> OK");
+            continue;
+        }
+        if (parse.isError(line)) {
+            log.info("[" ++ label ++ "] -> ERROR");
+            continue;
+        }
+        if (parse.parseCmeError(line)) |code| {
+            log.infoFmt("[" ++ label ++ "] -> CME ERROR: {d}", .{code});
+            continue;
+        }
+
+        if (comptime std.mem.eql(u8, label, "CSQ")) {
+            if (parse.parsePrefix(line, "+CSQ:")) |val| {
+                log.infoFmt("[CSQ] parsePrefix -> \"{s}\"", .{val});
+                if (parse.parseCsq(val)) |sig| {
+                    log.infoFmt("[CSQ] rssi={d} dBm, ber={s}, percent={d}%", .{
+                        sig.rssi,
+                        if (sig.ber) |b| &[_]u8{'0' + b} else "n/a",
+                        parse.rssiToPercent(sig.rssi),
+                    });
+                } else {
+                    log.info("[CSQ] parseCsq returned null (no signal?)");
+                }
+            }
+        }
+
+        if (comptime std.mem.eql(u8, label, "CPIN")) {
+            if (parse.parsePrefix(line, "+CPIN:")) |val| {
+                log.infoFmt("[CPIN] parsePrefix -> \"{s}\"", .{val});
+                if (parse.parseCpin(val)) |status| {
+                    log.infoFmt("[CPIN] SimStatus -> {s}", .{@tagName(status)});
+                } else {
+                    log.infoFmt("[CPIN] parseCpin returned null for \"{s}\"", .{val});
+                }
+            }
+        }
+
+        if (comptime std.mem.eql(u8, label, "CREG") or std.mem.eql(u8, label, "CGREG")) {
+            const prefix = if (comptime std.mem.eql(u8, label, "CREG")) "+CREG:" else "+CGREG:";
+            if (parse.parsePrefix(line, prefix)) |val| {
+                log.infoFmt("[" ++ label ++ "] parsePrefix -> \"{s}\"", .{val});
+                if (parse.parseCreg(val)) |reg| {
+                    log.infoFmt("[" ++ label ++ "] RegStatus -> {s}", .{@tagName(reg)});
+                } else {
+                    log.infoFmt("[" ++ label ++ "] parseCreg returned null for \"{s}\"", .{val});
+                }
+            }
+        }
+    }
 }
 
 const std = @import("std");

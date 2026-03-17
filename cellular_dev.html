@@ -548,9 +548,10 @@
 │   ├── modem.zig          hardware driver — owns Io/CMUX/AtEngine, NO state machine
 │   ├── sim.zig            SIM card management (uses AtEngine)
 │   ├── signal.zig         signal quality monitoring (uses AtEngine)
-│   ├── quectel.zig        Quectel module profile
-│   ├── simcom.zig         SIMCom module profile
-│   └── quectel_stub.zig   Step 8 占位 Module
+│   └── profiles/
+│       ├── quectel.zig    Quectel module profile
+│       ├── simcom.zig     SIMCom module profile
+│       └── quectel_stub.zig  Step 8 占位 Module
 ├── voice.zig              voice call management (phase 2)
 └── apn.zig                APN auto-resolve (phase 2)</code></pre>
       <p>各模块详细规格、测试用例与实现要点见原 <code>cellular_dev.md</code> 第 3 节各小节（3.1 types.zig 至 3.18 测试总计）。</p>
@@ -567,7 +568,7 @@
   │                 └─→ Step 7  cellular.zig reducer
   │                       └─→ Step 8  modem.zig 路由  → Step 9  cmux.zig ★ #2  → Step 10  modem.zig 完整 ★ #3
   │                             └─→ Step 11  cellular.zig 事件源 + Control ★ 最终里程碑
-  │                                   └─→ Step 12  quectel.zig / simcom.zig  → Step 13  mod.zig 导出 + 收尾</code></pre>
+  │                                   └─→ Step 12  profiles/quectel.zig / profiles/simcom.zig  → Step 13  mod.zig 导出 + 收尾</code></pre>
       <p><strong>关键路径：</strong> 0 → 2 → 3 → 4 → 8 → 9 → 10 → 11 → 13</p>
       <table class="doc-table">
         <thead><tr><th>#</th><th>Step</th><th>内容</th></tr></thead>
@@ -603,7 +604,7 @@
           <tr><td>9</td><td>cmux.zig</td><td><strong>烧录</strong></td><td>10</td><td>★ 里程碑 #2</td></tr>
           <tr><td>10</td><td>modem 完整</td><td><strong>烧录</strong></td><td>4</td><td>★ 里程碑 #3</td></tr>
           <tr><td>11</td><td>cellular.zig</td><td><strong>烧录</strong></td><td>10</td><td>★ 最终里程碑</td></tr>
-          <tr><td>12</td><td>quectel/simcom</td><td>Mock</td><td>8</td><td>—</td></tr>
+          <tr><td>12</td><td>profiles/quectel, profiles/simcom</td><td>Mock</td><td>8</td><td>—</td></tr>
           <tr><td>13</td><td>mod.zig 导出</td><td>Mock</td><td>0</td><td>—</td></tr>
         </tbody>
       </table>
@@ -634,7 +635,7 @@
       <ul>
         <li><strong>io/</strong>：Io 接口与 fromUart/fromSpi 为 stub；MockIo 有最少可用实现。</li>
         <li><strong>at/</strong>：parse.zig、engine.zig、commands.zig、urcs.zig、cmux.zig 为签名 + stub，无真实解析/发送/CMUX 逻辑。</li>
-        <li><strong>modem/</strong>：modem.zig 路由框架 + 占位；quectel_stub.zig / quectel.zig / simcom.zig 为占位或未接全链路。</li>
+        <li><strong>modem/</strong>：modem.zig 路由框架 + 占位；profiles/quectel_stub.zig / profiles/quectel.zig / profiles/simcom.zig 为占位或未接全链路。</li>
         <li><strong>cellular.zig</strong>：仅 <code>CellularStub = struct {}</code>，reducer / 事件源 / Control 未实现。</li>
       </ul>
       <p><em>最后更新：2026-03-17</em></p>
@@ -669,7 +670,7 @@
       <h2>7. 用法示例</h2>
       <h3>7.1 ESP32 UART single-channel（含 Injector）</h3>
       <pre><code>const cellular = @import("embed").pkg.cellular;
-const quectel = cellular.modem.quectel;
+const quectel = cellular.modem.profiles.quectel;
 const CellPeripheral = cellular.Cellular(EspThread, EspNotify, EspTime, quectel, EspGpio, 1024);
 const uart_io = io.fromUart(UartDriver, &uart_driver);
 const injector = rt.bus.Injector(.cellular);

@@ -63,8 +63,8 @@ test {
     _ = @import("pkg/cellular/modem/modem_test.zig");
     _ = @import("pkg/cellular/modem/sim_test.zig");
     _ = @import("pkg/cellular/modem/signal_test.zig");
-    _ = @import("pkg/cellular/modem/quectel_test.zig");
-    _ = @import("pkg/cellular/modem/simcom_test.zig");
+    _ = @import("pkg/cellular/modem/profiles/quectel_test.zig");
+    _ = @import("pkg/cellular/modem/profiles/simcom_test.zig");
 
     _ = @import("pkg/flux/app_state_manager_test.zig");
     _ = @import("pkg/flux/store_test.zig");

@@ -35,7 +35,7 @@ Reference: `x/c/esp/components/quectel` (C, ESP-IDF).
 | R28 | AT command type abstraction: each AT command is a Zig struct with comptime Response type, prefix, timeout, write/parse methods. AtEngine gains generic `send(comptime Cmd, cmd)` returning typed result. Inspired by Rust atat crate. Commands defined in `at/commands.zig`. sim.zig/signal.zig simplified to call typed commands |
 | R29 | TraceIo Decorator in `io/trace.zig`: wraps any Io, logs all read/write bytes via user-provided log function. Zero-intrusion debugging (inspired by warthog618/modem trace package). URC type abstraction in `at/urcs.zig`: each URC is a struct with prefix + parse method, unified with R28 command type pattern (inspired by ublox-cellular-rs typed Urc enum) |
 | R30 | Q13: 错误恢复简化。移除 ModemState.error_count。error_recovery 改名为 retry，由应用层 dispatch；reducer 仅做 error + retry → starting。与 flux/app 等包一致，状态机不做自动重试 |
-| R31 | ResponseMatcher + ModuleProfile 简化：ResponseMatcher 合并为 Command struct 的可选 `match` 方法（`@hasDecl` 检测），不引入独立类型。ModuleProfile 用命名空间文件替代（`modem/quectel.zig`、`modem/simcom.zig`），每个文件导出该模块专属的 commands/urcs/init sequence，Modem 层通过 `comptime Module` 泛型参数选择 |
+| R31 | ResponseMatcher + ModuleProfile 简化：ResponseMatcher 合并为 Command struct 的可选 `match` 方法（`@hasDecl` 检测），不引入独立类型。ModuleProfile 用命名空间文件替代（`modem/profiles/quectel.zig`、`modem/profiles/simcom.zig`），每个文件导出该模块专属的 commands/urcs/init sequence，Modem 层通过 `comptime Module` 泛型参数选择 |
 | R32 | Q2: Modem 不做线程安全。依据：MotionPeripheral/Button 的 sensor/gpio 仅由 worker 线程访问，主线程只通过 Bus.recv() 收事件；BLE Host 的 HCI 仅由 readLoop/writeLoop 使用。Cellular 的 Modem 同理，仅 worker 访问，单线程使用即可 |
 | R33 | Q25: enterCmux 时机与失败处理。参考 quectel C 代码：在 sim_ready 之后进入 CMUX（WAIT_SIM → SIM ready → CMUX_INIT）。失败则 phase=error，无自动重试；由应用 retry。CMUX 内部可降级波特率或恢复 UART 后返回 |
 | R34 | commands.zig 按 3GPP 标准分 13 类注释：General, Control, SIM/DeviceLock, MobileControl, NetworkService, PDP/Packet, CallControl, SMS, CMUX, TCP/IP, HTTP/MQTT/FTP, GNSS, Power/Sleep。核心状态机用到的命令给出完整实现，其余类别只留注释和关键命令列表，由 module profile 或专用文件按需实现 |
@@ -157,8 +157,8 @@ Modem auto-detects mode based on what is provided:
 |      owns: Io(s), CMUX (optional), AtEngine                |
 |      exposes: .at(), .pppIo(), .enterCmux(), .exitCmux()   |
 |    sim.zig / signal.zig -- use modem.at() for AT commands  |
-|    quectel.zig / simcom.zig -- module profiles (commands,  |
-|      URCs, init sequence). Selected via comptime Module    |
+|    profiles/quectel.zig, profiles/simcom.zig -- module profiles
+|      (commands, URCs, init sequence). Selected via comptime Module |
 |                                                            |
 |  at/                                                       |
 |    engine.zig -- AT command engine (sendRaw/send/pumpUrcs) |
@@ -271,8 +271,10 @@ src/pkg/cellular/
 │   ├── modem.zig          hardware driver (Modem) — owns Io/CMUX/AtEngine, NO state machine
 │   ├── sim.zig            SIM card management (uses AtEngine)
 │   ├── signal.zig         signal quality monitoring (uses AtEngine)
-│   ├── quectel.zig        Quectel module profile: commands, URCs, init sequence
-│   └── simcom.zig         SIMCom module profile: commands, URCs, init sequence
+│   └── profiles/
+│       ├── quectel.zig    Quectel module profile: commands, URCs, init sequence
+│       ├── simcom.zig     SIMCom module profile: commands, URCs, init sequence
+│       └── quectel_stub.zig  Step 8 placeholder Module
 ├── voice.zig              voice call management (phase 2)
 └── apn.zig                APN auto-resolve (phase 2)
 
@@ -292,8 +294,9 @@ test/unit/pkg/cellular/
     ├── modem_test.zig     Modem routing tests (no reducer)
     ├── sim_test.zig       SIM management tests (uses MockIo)
     ├── signal_test.zig    signal quality tests (uses MockIo)
-    ├── quectel_test.zig   Quectel-specific command/URC tests
-    └── simcom_test.zig    SIMCom-specific command/URC tests
+    └── profiles/
+        ├── quectel_test.zig   Quectel-specific command/URC tests
+        └── simcom_test.zig    SIMCom-specific command/URC tests
 ```
 
 Changes to existing files:
@@ -878,7 +881,7 @@ pub const SetCmux = struct {
 //     SIMCom: +CIPSTART/+CIPSEND/+CIPCLOSE
 // ============================================================================
 
-// -- Not defined here. These belong in module profiles (quectel.zig, simcom.zig)
+// -- Not defined here. These belong in module profiles (profiles/quectel.zig, profiles/simcom.zig)
 // -- or a dedicated tcp.zig if using the modem's internal stack.
 // -- Our architecture prefers PPP + external lwIP, so these are rarely needed.
 
@@ -1532,7 +1535,7 @@ pub const Signal = struct {
 };
 ```
 
-### 5.11 modem/quectel.zig & modem/simcom.zig
+### 5.11 modem/profiles/quectel.zig & modem/profiles/simcom.zig
 
 Module-specific command/URC/init-sequence namespaces. Each file exports a
 standard set of declarations that `Modem(comptime Module)` consumes at comptime.
@@ -1546,7 +1549,7 @@ standard set of declarations that `Modem(comptime Module)` consumes at comptime.
 | `init_sequence` | `[]const type` | Ordered list of command types for module initialization |
 
 ```zig
--- modem/quectel.zig
+-- modem/profiles/quectel.zig
 const base_cmds = @import("../at/commands.zig");
 const types = @import("../types.zig");
 
@@ -1849,7 +1852,7 @@ const event = try test_channel.recv();  -- event == CellularPayload (e.g. .phase
 For low-level access or custom orchestration, Modem can be used directly:
 
 ```
-const quectel = @import("cellular/modem/quectel.zig");
+const quectel = @import("cellular/modem/profiles/quectel.zig");
 const MockGpio = hal.gpio.from(.{ .Driver = mock_gpio.Driver, .meta = .{ .id = "mock-gpio" } });
 const CellModem = cellular.Modem(StdThread, StdNotify, StdTime, quectel, MockGpio, 1024);
 
@@ -2091,7 +2094,7 @@ MockIo(capacity):
 | SG-06 | reg denied | "+CGREG: 0,3" -> denied |
 | SG-07 | network type | AT+QNWINFO -> .lte |
 
-### 8.13 modem/quectel_test.zig (4 tests, R31)
+### 8.13 modem/profiles/quectel_test.zig (4 tests, R31)
 
 | ID    | Test | Validates |
 |-------|------|-----------|
@@ -2100,7 +2103,7 @@ MockIo(capacity):
 | QC-03 | Quectel URC parse | PowerDown.parseUrc("POWERED DOWN") -> .{} |
 | QC-04 | init_sequence order | init_sequence contains expected command types in order |
 
-### 8.14 modem/simcom_test.zig (4 tests, R31)
+### 8.14 modem/profiles/simcom_test.zig (4 tests, R31)
 
 | ID    | Test | Validates |
 |-------|------|-----------|
@@ -2806,12 +2809,12 @@ tagged union 和结构体在 ESP32S3（Xtensa）上内存布局正常。
 | 文件 | 操作 | 说明 |
 |------|------|------|
 | `src/pkg/cellular/modem/modem.zig` | 新建 | init / at() / pppIo() 路由逻辑 |
-| `src/pkg/cellular/modem/quectel_stub.zig` | 新建 | 占位 Module（仅 Step 8 用；Step 12 由完整 quectel.zig 替代） |
+| `src/pkg/cellular/modem/profiles/quectel_stub.zig` | 新建 | 占位 Module（仅 Step 8 用；Step 12 由完整 quectel.zig 替代） |
 | `test/unit/pkg/cellular/modem/modem_test.zig` | 新建 | Modem 路由单元测试 |
 | `test/firmware/110-cellular/app.zig` | 修改 | 追加 Modem 路由验证逻辑 |
 
 **实现内容：**
-- **Step 8 最小可运行约定**：此步使用 **占位 Module**（如 `quectel_stub.zig`：仅含 Probe 等最少命令、满足 §5.7 Module 契约，init_sequence 可为空或仅 Probe）与 **gpio=null**。完整 Module（quectel.zig / simcom.zig 的 commands、urcs、init_sequence）在 **Step 12** 实现；Step 8 不实现完整模组适配，只验证 Modem 路由与 at()/pppIo() 透传。
+- **Step 8 最小可运行约定**：此步使用 **占位 Module**（如 `profiles/quectel_stub.zig`：仅含 Probe 等最少命令、满足 §5.7 Module 契约，init_sequence 可为空或仅 Probe）与 **gpio=null**。完整 Module（profiles/quectel.zig / profiles/simcom.zig 的 commands、urcs、init_sequence）在 **Step 12** 实现；Step 8 不实现完整模组适配，只验证 Modem 路由与 at()/pppIo() 透传。
 - `InitConfig` 结构体（io / at_io / data_io / config）
 - `Modem.init(cfg: InitConfig) Modem` — 根据参数自动选择 single/multi 模式
 - `Modem.deinit()`
@@ -2839,7 +2842,7 @@ tagged union 和结构体在 ESP32S3（Xtensa）上内存布局正常。
 **烧录验证逻辑（追加到 app.zig）：**
 
 ```
-1. 用占位 Module（quectel_stub）与 gpio=null 实例化 Modem，Modem.init(.{ .io = uart_io, .time = ..., .gpio = null }) 创建 Modem（single-channel 模式）
+1. 用占位 Module（profiles/quectel_stub）与 gpio=null 实例化 Modem，Modem.init(.{ .io = uart_io, .time = ..., .gpio = null }) 创建 Modem（single-channel 模式）
 2. 通过 modem.at() 获取 AtEngine
 3. 发送 AT 指令验证路由正确性：
 
@@ -3155,7 +3158,7 @@ Phase 6: 停止
 
 ---
 
-### Step 12: modem/quectel.zig & modem/simcom.zig — 模块适配层 (R31)
+### Step 12: modem/profiles/quectel.zig & modem/profiles/simcom.zig — 模块适配层 (R31)
 
 **目标：** 为 Quectel 和 SIMCom 模块创建命名空间文件，导出各自专属的 commands、URCs 和 init sequence。
 
@@ -3165,10 +3168,10 @@ Phase 6: 停止
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `src/pkg/cellular/modem/quectel.zig` | 新建 | Quectel 模块适配（commands, urcs, init_sequence） |
-| `src/pkg/cellular/modem/simcom.zig` | 新建 | SIMCom 模块适配（commands, urcs, init_sequence） |
-| `test/unit/pkg/cellular/modem/quectel_test.zig` | 新建 | Quectel 专属命令/URC 测试 |
-| `test/unit/pkg/cellular/modem/simcom_test.zig` | 新建 | SIMCom 专属命令/URC 测试 |
+| `src/pkg/cellular/modem/profiles/quectel.zig` | 新建 | Quectel 模块适配（commands, urcs, init_sequence） |
+| `src/pkg/cellular/modem/profiles/simcom.zig` | 新建 | SIMCom 模块适配（commands, urcs, init_sequence） |
+| `test/unit/pkg/cellular/modem/profiles/quectel_test.zig` | 新建 | Quectel 专属命令/URC 测试 |
+| `test/unit/pkg/cellular/modem/profiles/simcom_test.zig` | 新建 | SIMCom 专属命令/URC 测试 |
 
 **验证命令：**
 
@@ -3504,13 +3507,13 @@ cd test/unit && zig build test     # 运行全部单元测试（含 cellular）
    - `AtEngine.send` 在 comptime 通过 `@hasDecl(Cmd, "match")` 检测，有则使用 `sendRawWithMatcher`，无则走默认 `sendRaw`
    - 一个 Command struct = 发什么 + 怎么判断收完 + 怎么解析结果，三位一体
 3. **ModuleProfile 简化**：不引入独立的 `ModuleProfile` comptime 接口，而是用命名空间文件替代
-   - `modem/quectel.zig` 导出 Quectel 专属的 commands、URCs、init sequence
-   - `modem/simcom.zig` 导出 SIMCom 专属的 commands、URCs、init sequence
+   - `modem/profiles/quectel.zig` 导出 Quectel 专属的 commands、URCs、init sequence
+   - `modem/profiles/simcom.zig` 导出 SIMCom 专属的 commands、URCs、init sequence
    - 通用命令（`AT+CSQ`、`AT+CPIN?` 等）仍在 `at/commands.zig`
    - 模块专属命令（如 Quectel 的 `AT+QCFG`、SIMCom 的 `AT+CSCLK`）在各自文件中定义
    - `Modem` 层通过 `comptime Module: type` 泛型参数选择模块，`Module` 只需导出约定的 namespace（commands/urcs/init_sequence）
 4. 这种方式避免了引入新的抽象层，复用了 R28 的 Command as Type 模式
-5. 新增 `modem/quectel.zig`、`modem/simcom.zig` 及对应测试文件
+5. 新增 `modem/profiles/quectel.zig`、`modem/profiles/simcom.zig` 及对应测试文件
 
 ### R29 (2026-03-16)
 
