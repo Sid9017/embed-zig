@@ -17,6 +17,7 @@ const step0_tag = "[step0-uartSetup]";
 const step2_tag = "[step2-ioTest]";
 const step3_tag = "[step3-parseTest]";
 const step4_tag = "[step4-cellFsm]";
+const step5_tag = "[step5-identity]";
 /// Bootstrap segments: probing, at_configuring, checking_sim, registering.
 const step4_state_total: u32 = 4;
 /// Safety cap per segment (in case the modem never advances).
@@ -147,6 +148,10 @@ fn runCellularFsm(
     }
 
     logCellFsmFinale(LogT, log, &cell);
+
+    if (cell.phase() == .registered) {
+        queryAndLogIdentifiers(LogT, log, &cell);
+    }
 }
 
 /// `true` = stop (`error` or segment stuck past `step4_max_ticks_per_state`).
@@ -266,6 +271,30 @@ fn logCellFsmFinale(comptime LogT: type, logv: LogT, cell: anytype) void {
     logv.infoFmt("{s} [DONE]", .{step4_tag});
 }
 
+fn queryAndLogIdentifiers(comptime LogT: type, logv: LogT, cell: anytype) void {
+    logv.infoFmt("{s} [START] querying IMEI/IMSI/ICCID", .{step5_tag});
+
+    if (cell.modem.getImei()) |imei| {
+        logv.infoFmt("{s} IMEI={s}", .{ step5_tag, imei });
+    } else |e| {
+        logv.infoFmt("{s} [WARN] IMEI query failed: {s}", .{ step5_tag, @errorName(e) });
+    }
+
+    if (cell.modem.getImsi()) |imsi| {
+        logv.infoFmt("{s} IMSI={s}", .{ step5_tag, imsi });
+    } else |e| {
+        logv.infoFmt("{s} [WARN] IMSI query failed: {s}", .{ step5_tag, @errorName(e) });
+    }
+
+    if (cell.modem.getIccid()) |iccid| {
+        logv.infoFmt("{s} ICCID={s}", .{ step5_tag, iccid });
+    } else |e| {
+        logv.infoFmt("{s} [WARN] ICCID query failed: {s}", .{ step5_tag, @errorName(e) });
+    }
+
+    logv.infoFmt("{s} [DONE]", .{step5_tag});
+}
+
 fn mockFeedForBootstrapTick(mock: *mock_mod.MockIo, cell: anytype) void {
     switch (cell.bootstrapStep()) {
         .probe => mock.feed("OK\r\n"),
@@ -370,6 +399,33 @@ fn runCellularFsmMock(
     }
     g_step4_final_phase_state = cell.phase();
     logCellFsmFinale(LogT, log, &cell);
+
+    if (cell.phase() == .registered) {
+        log.infoFmt("{s} [START] querying IMEI/IMSI/ICCID", .{step5_tag});
+
+        mock.feed("867456789012345\r\nOK\r\n");
+        if (cell.modem.getImei()) |imei| {
+            log.infoFmt("{s} IMEI={s}", .{ step5_tag, imei });
+        } else |e| {
+            log.infoFmt("{s} [WARN] IMEI query failed: {s}", .{ step5_tag, @errorName(e) });
+        }
+
+        mock.feed("460011234567890\r\nOK\r\n");
+        if (cell.modem.getImsi()) |imsi| {
+            log.infoFmt("{s} IMSI={s}", .{ step5_tag, imsi });
+        } else |e| {
+            log.infoFmt("{s} [WARN] IMSI query failed: {s}", .{ step5_tag, @errorName(e) });
+        }
+
+        mock.feed("+CCID: 89861234567890123456\r\nOK\r\n");
+        if (cell.modem.getIccid()) |iccid| {
+            log.infoFmt("{s} ICCID={s}", .{ step5_tag, iccid });
+        } else |e| {
+            log.infoFmt("{s} [WARN] ICCID query failed: {s}", .{ step5_tag, @errorName(e) });
+        }
+
+        log.infoFmt("{s} [DONE]", .{step5_tag});
+    }
 }
 
 fn elapsedMs(time: anytype, t_start: u64) u64 {
