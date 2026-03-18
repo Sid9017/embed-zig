@@ -614,31 +614,30 @@
     <section id="s-progress">
       <h2>开发进度</h2>
       <p>以下为当前实现状态，随开发更新。</p>
-      <h3>已完成</h3>
+      <h3>已完成（截至当前）</h3>
       <ul>
-        <li><strong>Step 1：types.zig — 共享类型</strong>
-          <ul>
-            <li>类型定义完整：CellularPhase、SimStatus、RAT、CellularRegStatus、VoiceCallState、CellularSignalInfo、ModemInfo、SimInfo、ModemState、ModemEvent、APNConfig、CmuxChannelRole/Config、ModemConfig、CellularPayload 等。</li>
-            <li>类型命名已与文档统一：CellularPhase、RAT、CmuxChannelRole/Config、CellularSignalInfo、CellularRegStatus、VoiceCallState、APNConfig（原 Phase/NetworkType/ChannelRole/Config/ConnectConfig/RegistrationStatus/CallState 等已重命名）。</li>
-            <li>命名常量（避免魔数）：<code>BaudRate</code>（b9600～b921600）、<code>BufferLen</code>（imei/imsi/iccid/model/firmware）、<code>default_at_timeout_ms</code>；ModemConfig 使用 <code>BaudRate.b921600</code> 与 <code>default_at_timeout_ms</code>。</li>
-            <li>单元测试：<code>test/unit/pkg/cellular/types_test.zig</code> 覆盖各类型与常量，<code>cd test/unit && zig build test</code> 全部通过。</li>
-            <li>验证方式：仅 Mock 验证，<strong>无需上机</strong>（见 plan § Step 1）。</li>
-          </ul>
-        </li>
+        <li><strong>Step 1：types.zig</strong> — 共享类型完整；<code>types_test.zig</code> 覆盖充分。</li>
+        <li><strong>io/</strong> — <code>Io</code>、<code>fromUart</code>（真实包装）；<code>fromSpi</code> 仍为 stub；<code>MockIo</code> + <code>io_test.zig</code>（3 用例）。</li>
+        <li><strong>at/parse.zig</strong> — CSQ/CPIN/CREG 行解析、CME/CMS、rssi 换算等已实现；<code>parse_test.zig</code> 覆盖主要分支。</li>
+        <li><strong>Step 0～3 烧录验证</strong> — <code>test/firmware/110-cellular/app.zig</code>：<code>[step0-uartSetup]</code> 就绪日志；Step2 发 <code>AT</code> 读回显；Step3 发 <code>AT+CSQ</code> / <code>AT+CPIN?</code> / <code>AT+CREG?</code> / <code>AT+CGREG?</code> / <code>AT+CEREG?</code>，<code>parseSummary</code> 单行摘要（含 CME/CMS、EPS/GSM 注册标签）。大缓冲用 BSS；摘要字符串写全局缓冲避免悬空指针。<code>runtime/log.zig</code>：Fmt 缓冲 384B，溢出安全降级。</li>
+        <li><strong>esp-zig examples/cellular</strong> — H106 TIGA V4 真实 UART 模组通路已跑通；<strong>main 任务栈 8192</strong>（<code>core</code> + <code>esp_misc</code>，与 ota_led 一致），避免 Step3 栈溢出。</li>
       </ul>
-      <h3>ESP32 烧录与运行（2026-03-17）</h3>
+      <h3>单测现状</h3>
       <ul>
-        <li><strong>构建与烧录</strong>：esp-zig <code>examples/cellular</code> 已可经 <code>zig build flash-monitor -Dbuild_config=board/esp32s3_devkit/... -Dbsp=... -Dport=... -Desp_idf="$ESP_IDF"</code> 完成编链、烧录并上电；需使用带 Xtensa 后端的 Zig（如 zig-esp）和 <code>source $ESP_IDF/export.sh</code>（或 .zshrc/.zprofile 中配置 <code>ESP_IDF</code>）。</li>
-        <li><strong>运行时崩溃</strong>：上电后进入 <code>app_main</code> → 首次 log 路径时发生 <strong>LoadProhibited（EXCVADDR 0x1）</strong>，backtrace 指向 <code>ets_printf</code> / <code>esp_rom.zig</code>，疑为传入 ROM printf 的指针为空或非法。esp-zig 侧 BSP（<code>board/esp32s3_devkit/bsp.zig</code>）已对 <code>printMsg</code> 做 <code>@intFromPtr(ptr) != 0</code> 空指针防护，<strong>根因待后续排查</strong>。</li>
+        <li><strong>有实质断言</strong>：<code>types_test</code>、<code>parse_test</code>、<code>io_test</code>。</li>
+        <li><strong>仍为 placeholder</strong>（待 AT 引擎及后续实现后补）：<code>engine/commands/urcs/cmux/cellular/modem/sim/signal/trace</code>、<code>quectel/simcom</code> 等对应 <code>*_test.zig</code>。</li>
       </ul>
-      <h3>未完成（占位 / 待实现）</h3>
+      <h3>未开始 / 占位</h3>
       <ul>
-        <li><strong>io/</strong>：Io 接口与 fromUart/fromSpi 为 stub；MockIo 有最少可用实现。</li>
-        <li><strong>at/</strong>：parse.zig、engine.zig、commands.zig、urcs.zig、cmux.zig 为签名 + stub，无真实解析/发送/CMUX 逻辑。</li>
-        <li><strong>modem/</strong>：modem.zig 路由框架 + 占位；profiles/quectel_stub.zig / profiles/quectel.zig / profiles/simcom.zig 为占位或未接全链路。</li>
-        <li><strong>cellular.zig</strong>：仅 <code>CellularStub = struct {}</code>，reducer / 事件源 / Control 未实现。</li>
+        <li><strong>Step 4 起</strong>：<code>at/engine.zig</code>、<code>commands.zig</code> — 无真实收发与超时状态机（里程碑 #1 未达成）。</li>
+        <li><strong>Step 5～7+</strong>：<code>modem/sim/signal</code>、<code>cellular.zig</code> 状态机与 Control、<code>cmux</code>、完整 Module profile、<code>apn.zig</code> / <code>voice.zig</code>（Phase 2 空文件）。</li>
       </ul>
-      <p><em>最后更新：2026-03-17</em></p>
+      <h3>板型说明</h3>
+      <ul>
+        <li><strong>h106_tiga_v4</strong>：真实蜂窝 UART + 电源脚，当前主力烧录验证板型。</li>
+        <li><strong>esp32s3_devkit</strong>：BSP 上 cellular UART 仍为 stub（仅 Io 契约演示）；若仅 devkit 曾出现 log/栈问题，以 H106 真机路径为准。</li>
+      </ul>
+      <p><em>最后更新：2026-03-18</em></p>
     </section>
 
     <section id="s5">

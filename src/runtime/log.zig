@@ -52,8 +52,17 @@ pub fn Log(comptime Impl: type) type {
         }
 
         fn logFmt(comptime level: Level, comptime fmt: []const u8, args: anytype) void {
-            var buf: [256]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, fmt, args) catch &buf;
+            var buf: [384]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, fmt, args) catch {
+                const fallback = "[log] format overflow";
+                switch (level) {
+                    .debug => impl.debug(fallback),
+                    .info => impl.info(fallback),
+                    .warn => impl.warn(fallback),
+                    .err => impl.err(fallback),
+                }
+                return;
+            };
             switch (level) {
                 .debug => impl.debug(msg),
                 .info => impl.info(msg),
