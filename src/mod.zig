@@ -3,6 +3,15 @@ pub const runtime = struct {
     pub const is = @import("runtime/runtime.zig").is;
     pub const std = @import("runtime/std.zig").Std;
 
+    /// Firmware board specs: wrap HAL `hw.log` with fmt helpers (`infoFmt`, …).
+    pub const log = struct {
+        pub const Make = @import("runtime/log.zig").Make;
+    };
+    /// Firmware board specs: wrap HAL `hw.time`.
+    pub const time = struct {
+        pub const Make = @import("runtime/time.zig").Make;
+    };
+
     pub const socket = struct {
         pub const Make = @import("runtime/socket.zig").Make;
         pub const Error = @import("runtime/socket.zig").Error;

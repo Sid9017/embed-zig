@@ -10,12 +10,14 @@ const types = embed.pkg.cellular.types;
 
 test "CellularPhase: all variants and default-like value" {
     try std.testing.expectEqual(types.CellularPhase.off, .off);
-    try std.testing.expectEqual(types.CellularPhase.starting, .starting);
-    try std.testing.expectEqual(types.CellularPhase.ready, .ready);
-    try std.testing.expectEqual(types.CellularPhase.sim_ready, .sim_ready);
+    try std.testing.expectEqual(types.CellularPhase.probing, .probing);
+    try std.testing.expectEqual(types.CellularPhase.at_configuring, .at_configuring);
+    try std.testing.expectEqual(types.CellularPhase.checking_sim, .checking_sim);
+    try std.testing.expectEqual(types.CellularPhase.registering, .registering);
     try std.testing.expectEqual(types.CellularPhase.registered, .registered);
     try std.testing.expectEqual(types.CellularPhase.dialing, .dialing);
     try std.testing.expectEqual(types.CellularPhase.connected, .connected);
+    try std.testing.expectEqual(types.CellularPhase.disconnecting, .disconnecting);
     try std.testing.expectEqual(types.CellularPhase.@"error", .@"error");
 }
 
@@ -242,30 +244,29 @@ test "ModemState: error_reason set when phase error" {
 test "ModemEvent: void payloads" {
     _ = types.ModemEvent{ .power_on = {} };
     _ = types.ModemEvent{ .power_off = {} };
-    _ = types.ModemEvent{ .at_ready = {} };
+    _ = types.ModemEvent{ .retry = {} };
+    _ = types.ModemEvent{ .stop = {} };
+    _ = types.ModemEvent{ .dial_requested = {} };
+    _ = types.ModemEvent{ .bootstrap_probe_ok = {} };
+    _ = types.ModemEvent{ .bootstrap_echo_ok = {} };
+    _ = types.ModemEvent{ .bootstrap_cmee_ok = {} };
     _ = types.ModemEvent{ .at_timeout = {} };
-    _ = types.ModemEvent{ .sim_ready = {} };
-    _ = types.ModemEvent{ .sim_removed = {} };
-    _ = types.ModemEvent{ .pin_required = {} };
-    _ = types.ModemEvent{ .dial_start = {} };
-    _ = types.ModemEvent{ .dial_connected = {} };
+    _ = types.ModemEvent{ .dial_succeeded = {} };
     _ = types.ModemEvent{ .dial_failed = {} };
     _ = types.ModemEvent{ .ip_obtained = {} };
     _ = types.ModemEvent{ .ip_lost = {} };
-    _ = types.ModemEvent{ .retry = {} };
-    _ = types.ModemEvent{ .stop = {} };
 }
 
-test "ModemEvent: sim_error with SimStatus" {
-    const ev = types.ModemEvent{ .sim_error = .pin_required };
-    try std.testing.expectEqual(types.SimStatus.pin_required, ev.sim_error);
+test "ModemEvent: sim_status_reported with SimStatus" {
+    const ev = types.ModemEvent{ .sim_status_reported = .pin_required };
+    try std.testing.expectEqual(types.SimStatus.pin_required, ev.sim_status_reported);
 }
 
-test "ModemEvent: registered and registration_failed with CellularRegStatus" {
-    const ev1 = types.ModemEvent{ .registered = .registered_home };
-    try std.testing.expectEqual(types.CellularRegStatus.registered_home, ev1.registered);
-    const ev2 = types.ModemEvent{ .registration_failed = .denied };
-    try std.testing.expectEqual(types.CellularRegStatus.denied, ev2.registration_failed);
+test "ModemEvent: network_registration with CellularRegStatus" {
+    const ev1 = types.ModemEvent{ .network_registration = .registered_home };
+    try std.testing.expectEqual(types.CellularRegStatus.registered_home, ev1.network_registration);
+    const ev2 = types.ModemEvent{ .network_registration = .denied };
+    try std.testing.expectEqual(types.CellularRegStatus.denied, ev2.network_registration);
 }
 
 test "ModemEvent: signal_updated with CellularSignalInfo" {
@@ -273,6 +274,11 @@ test "ModemEvent: signal_updated with CellularSignalInfo" {
     const ev = types.ModemEvent{ .signal_updated = sig };
     try std.testing.expectEqual(@as(i8, -65), ev.signal_updated.rssi);
     try std.testing.expectEqual(@as(u8, 1), ev.signal_updated.ber.?);
+}
+
+test "ModemEvent: bootstrap_at_error" {
+    const ev = types.ModemEvent{ .bootstrap_at_error = .at_fatal };
+    try std.testing.expectEqual(types.ModemError.at_fatal, ev.bootstrap_at_error);
 }
 
 // =============================================================================

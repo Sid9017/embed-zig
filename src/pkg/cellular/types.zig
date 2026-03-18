@@ -1,6 +1,6 @@
 //! Shared types for the cellular package.
 //! No logic, no dependencies. Used by io/, at/, modem/, and cellular.zig.
-//! See plan.md §5.1 and cellular_dev.html for full specification.
+//! See plan.md R44 / §5.1 and cellular_dev.html. ModemEvent uses bootstrap_* / sim_status_reported / network_registration / dial_requested (no at_ready, sim_ready, dial_start).
 
 // -----------------------------------------------------------------------------
 // Named constants (avoid magic numbers; Zig has no C-style macros, use const)
@@ -39,15 +39,25 @@ pub const BufferLen = struct {
 // Enums and structs
 // -----------------------------------------------------------------------------
 
-/// Modem lifecycle and data phase. Drives the Cellular state machine.
+/// Modem lifecycle phase: each value reflects **what is happening now** (incl. in-flight work).
 pub const CellularPhase = enum {
     off,
-    starting,
-    ready,
-    sim_ready,
+    /// Sending / waiting for `AT` probe.
+    probing,
+    /// ATE0, CMEE, etc.
+    at_configuring,
+    /// `AT+CPIN?` and related.
+    checking_sim,
+    /// EPS registration: repeated `AT+CEREG?` until home/roaming or denied/error.
+    registering,
+    /// Attached to network (home or roaming).
     registered,
+    /// PDP / dial in progress.
     dialing,
+    /// Data path up.
     connected,
+    /// Tearing down data (optional future use).
+    disconnecting,
     @"error",
 };
 
@@ -170,26 +180,37 @@ pub const ModemState = struct {
     at_timeout_count: u8 = 0,
 };
 
-/// Internal events dispatched by the driver layer; reducer maps these to state transitions.
+/// Driver / app → reducer. **Phases** show ongoing work (`registering`, `dialing`); events mark **outcomes** or **intent**.
 pub const ModemEvent = union(enum) {
+    // --- intent (app or policy) ---
     power_on: void,
     power_off: void,
-    at_ready: void,
+    retry: void,
+    stop: void,
+    /// Begin PDP/dial from `registered` (GAP-style: request → enter `dialing` phase).
+    dial_requested: void,
+
+    // --- bootstrap AT outcomes (tick → reducer) ---
+    bootstrap_probe_ok: void,
+    bootstrap_echo_ok: void,
+    bootstrap_cmee_ok: void,
+    /// Result of `AT+CPIN?` (or equivalent).
+    sim_status_reported: SimStatus,
+    /// Result of `AT+CEREG?` / CREG.
+    network_registration: CellularRegStatus,
+    /// Probe / echo / CMEE / CPIN / CREG failed or timed out.
+    bootstrap_at_error: ModemError,
+
+    /// Lifecycle AT timeout (counting / fatal per reducer rules).
     at_timeout: void,
-    sim_ready: void,
-    sim_error: SimStatus,
-    sim_removed: void,
-    pin_required: void,
-    registered: CellularRegStatus,
-    registration_failed: CellularRegStatus,
-    dial_start: void,
-    dial_connected: void,
+
+    // --- data path ---
+    dial_succeeded: void,
     dial_failed: void,
     ip_obtained: void,
     ip_lost: void,
+
     signal_updated: CellularSignalInfo,
-    retry: void,
-    stop: void,
 };
 
 /// APN and credentials for PPP/dial (Phase 1: pass-through; Phase 2: apn.zig may resolve).

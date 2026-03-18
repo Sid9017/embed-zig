@@ -40,13 +40,17 @@ pub fn Modem(
         config: types.ModemConfig = .{},
         pub fn init(cfg: InitConfig) Self {
             var d: u8 = 0;
-            const stub = .{
+            const stub = io.Io{
                 .ctx = @as(*anyopaque, @ptrCast(&d)),
                 .readFn = _stubRead,
                 .writeFn = _stubWrite,
                 .pollFn = _stubPoll,
             };
-            const at_io = cfg.at_io orelse cfg.io orelse stub;
+            const at_io: io.Io = blk: {
+                if (cfg.at_io) |x| break :blk x;
+                if (cfg.io) |x| break :blk x;
+                break :blk stub;
+            };
             return .{
                 .at_engine = At.init(at_io, cfg.time),
                 .config = cfg.config,

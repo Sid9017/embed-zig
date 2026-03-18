@@ -1,6 +1,6 @@
 # 4G Cellular Module Plan
 
-> Status: DISCUSSING — Q10 blocked on main branch IO/lwIP refactoring | Last updated: 2026-03-18 Round 43
+> Status: DISCUSSING — Q10 blocked on main branch IO/lwIP refactoring | Last updated: 2026-03-19 Round 45
 
 ---
 
@@ -21,7 +21,7 @@ Reference: `x/c/esp/components/quectel` (C, ESP-IDF).
 | R5  | Modem is opaque abstraction, CMUX is internal detail |
 | R8  | State machine uses flux pattern (Event -> reducer -> State) |
 | R10 | PPP-link-up state named `connected` |
-| R12 | ModemState has 8 phases: off/starting/ready/sim_ready/registered/dialing/connected/error |
+| R12 | CellularPhase: **-ing 中间态**（probing/at_configuring/checking_sim/registering/dialing/disconnecting）+ registered/connected/error；详见 R44 |
 | R14 | modem.zig belongs in pkg, not hal |
 | R15 | Package named `cellular`, core type named `Modem` |
 | R16 | Modem accepts generic Io, not UART. Supports UART/USB/SPI via Io abstraction |
@@ -31,13 +31,13 @@ Reference: `x/c/esp/components/quectel` (C, ESP-IDF).
 | R24 | Synced main branch updates. Test files moved to test/unit/pkg/cellular/, test commands updated to `cd test/unit && zig build test`. Q10 still blocked. R36: main 已改为 Bus(in/out spec, ChannelFactory) + Injector，无 selector；Cellular 对齐为持 Injector 推事件。 |
 | R25 | Split Modem (hardware driver) from Cellular (event source + state machine). Modem owns Io/CMUX/AtEngine only, no flux Store. Cellular owns Modem + EventInjector(CellularPayload), drives state machine in worker thread, pushes events via injector.invoke(payload) for Bus integration. Aligned with Button/MotionPeripheral pattern (R36: injector-based) |
 | R26 | Subdirectory structure for pkg/cellular: `io/` (transport), `at/` (AT protocol), `modem/` (hardware driver). Shared types.zig and cellular.zig at root. Aligned with pkg/ble directory pattern (host/hci, host/l2cap, gatt, etc.) |
-| R27 | Split `registering` phase into `registered` (network registered, ready to dial) + `dialing` (PPP dial in progress). Phase count 7→8. Added `dial_start` event. `dial_failed` falls back to `registered` not `error`. Reducer tests 18→21 |
+| R27 | ~~旧~~ 见 R44：`registered`（可拨号）与 `dialing`（拨号中）分离；`dial_failed` 回 `registered` |
 | R28 | AT command type abstraction: each AT command is a Zig struct with comptime Response type, prefix, timeout, write/parse methods. AtEngine gains generic `send(comptime Cmd, cmd)` returning typed result. Inspired by Rust atat crate. Commands defined in `at/commands.zig`. sim.zig/signal.zig simplified to call typed commands |
 | R29 | TraceIo Decorator in `io/trace.zig`: wraps any Io, logs all read/write bytes via user-provided log function. Zero-intrusion debugging (inspired by warthog618/modem trace package). URC type abstraction in `at/urcs.zig`: each URC is a struct with prefix + parse method, unified with R28 command type pattern (inspired by ublox-cellular-rs typed Urc enum) |
-| R30 | Q13: 错误恢复简化。移除 ModemState.error_count。error_recovery 改名为 retry，由应用层 dispatch；reducer 仅做 error + retry → starting。与 flux/app 等包一致，状态机不做自动重试 |
+| R30 | Q13: 错误恢复简化。移除 ModemState.error_count。`retry` 由应用 dispatch；reducer：`error` + `retry` → `probing`，清空 `error_reason` 与 `at_timeout_count`。与 flux/app 等包一致，无自动重试 |
 | R31 | ResponseMatcher + ModuleProfile 简化：ResponseMatcher 合并为 Command struct 的可选 `match` 方法（`@hasDecl` 检测），不引入独立类型。ModuleProfile 用命名空间文件替代（`modem/profiles/quectel.zig`、`modem/profiles/simcom.zig`），每个文件导出该模块专属的 commands/urcs/init sequence，Modem 层通过 `comptime Module` 泛型参数选择 |
 | R32 | Q2: Modem 不做线程安全。依据：MotionPeripheral/Button 的 sensor/gpio 仅由 worker 线程访问，主线程只通过 Bus.recv() 收事件；BLE Host 的 HCI 仅由 readLoop/writeLoop 使用。Cellular 的 Modem 同理，仅 worker 访问，单线程使用即可 |
-| R33 | Q25: enterCmux 时机与失败处理。参考 quectel C 代码：在 sim_ready 之后进入 CMUX（WAIT_SIM → SIM ready → CMUX_INIT）。失败则 phase=error，无自动重试；由应用 retry。CMUX 内部可降级波特率或恢复 UART 后返回 |
+| R33 | Q25: enterCmux 时机与失败处理。参考 quectel C：在 **SIM ready 后**（对应 Zig：`registering` 已可发 CEREG 前后，或 `registered` 后）进入 CMUX。失败则 phase=error；应用 retry。CMUX 内部可降级波特率或恢复 UART |
 | R34 | commands.zig 按 3GPP 标准分 13 类注释：General, Control, SIM/DeviceLock, MobileControl, NetworkService, PDP/Packet, CallControl, SMS, CMUX, TCP/IP, HTTP/MQTT/FTP, GNSS, Power/Sleep。核心状态机用到的命令给出完整实现，其余类别只留注释和关键命令列表，由 module profile 或专用文件按需实现 |
 | R35 | 错误与重试融入状态机：统一 ModemError 类型；ModemState 增加 error_reason、at_timeout_count；只有达到重试次数或超时后才进 error 并向 Flux 抛 CellularEvent.error。tick() 只推断并 dispatch 事件，阈值与计数逻辑全部在 reducer 内（见 6.1） |
 | R36 | 与 main 分支 Bus 架构对齐：Cellular 不再持有 Channel，改为在 init 时接收 `EventInjector(CellularPayload)`（由应用通过 `rt.bus.Injector(.cellular)` 传入）；发事件时调用 `injector.invoke(payload)`。应用 App 的 InputSpec 需包含 `.cellular = CellularPayload`；主循环用 `rt.recv()` 收事件再 `rt.dispatch()`，不再使用 selector.poll() 或 bus.register(channel)。Runtime 引用使用 `runtime/channel_factory`、`runtime/sync/notify`（及按需 mutex/condition）。 |
@@ -48,6 +48,10 @@ Reference: `x/c/esp/components/quectel` (C, ESP-IDF).
 | R41 | Q20 解决：保留 CMUX 通道可配置。理由：GSM 07.10 各 DLCI 由模组/用户约定，不同模组或固件可能分配不同（如 AT 在 DLCI 1、PPP 在 2，或反之）；用户需能通过 ModemConfig.cmux_channels 指定 DLCI 与 role（.at / .ppp）的对应关系。实现：enterCmux 的 DLCI 列表与 at/ppp 绑定均来自 config.cmux_channels；init 时做合法性校验。详见 5.6.1 可配置通道实施规格。 |
 | R42 | tick() 改为按 phase 单条 AT 模式 + Q15 修正移除 onSend()。对比 quectel C / ublox-rs / Zephyr，业界主流是"每个状态只做一件事"而非"每次 tick 全量轮询"。tick() 内 switch(phase) 每次最多发一条 AT，状态转换靠单条 AT 结果 + URC 驱动。MockIo 移除 `onSend()` 自动应答，与 BLE `MockHci` 对齐只保留 FIFO `feed()` + `feedSequence()`。每次 tick 只发一条 AT，纯 FIFO 即可覆盖所有测试场景 |
 | R43 | AtEngine：`send`/`sendRaw`、`LineIterator`、`pumpUrcs`、解析与命令侧扩展；`types_test.zig` 覆盖蜂窝类型与事件；`engine_test.zig` 大量用例。根目录 `zig build test-cellular`（及 test/unit 域步骤）跑蜂窝子集 UT；TLS stress 小修。 |
+| R44 | **Phase = 进行中，Event = 一步结束**（唯一命名来源：`types.zig` + `cellular.zig`）。`CellularPhase`：`off`→`probing`→`at_configuring`→`checking_sim`→`registering`（驻网前反复 `AT+CEREG?`）→`registered`→`dialing`→`connected`；`disconnecting` 预留。`ModemEvent`：bootstrap 三步、`sim_status_reported`、`network_registration`；意图 `power_on`/`dial_requested`/`retry`/`stop`/`power_off`；数据 `dial_succeeded`/`dial_failed`/`ip_obtained`/`ip_lost`/`signal_updated`；失败 `bootstrap_at_error`/`at_timeout`。已弃用旧名：`at_ready`、`sim_ready`、`dial_start`、`dial_connected`、`registration_failed`（事件）。**验证**：`zig build test-cellular`。 |
+| R45 | **实现**：`Store(CellularFsmState, ModemEvent)` + `cellularReduce`；`tick()` 只发 AT 并 `dispatch` 上述事件；`emitDiff` → `CellularPayload`。 |
+
+**进度（2026-03-18）：** `CellularPhase` 已去掉 `registration_pending`，驻网前统一为 `registering`（tick 内反复 `AT+CEREG?`）。`test/firmware/110-cellular` Step4 在 H106 + Quectel 真机验证：`probing`→…→`EPS registered!`。验证命令：`zig build test-cellular`、`zig build test-110-cellular-firmware`。
 
 ---
 
@@ -317,7 +321,7 @@ No HAL changes. No runtime changes.
 All shared types. No logic, no dependencies.
 
 ```zig
-CellularPhase = enum { off, starting, ready, sim_ready, registered, dialing, connected, error };
+CellularPhase = enum { off, probing, at_configuring, checking_sim, registering, registered, dialing, connected, disconnecting, error };
 SimStatus = enum { not_inserted, pin_required, puk_required, ready, error };
 RAT = enum { none, gsm, gprs, edge, umts, hsdpa, lte };  // Radio Access Technology
 CellularRegStatus = enum { not_registered, registered_home, searching, denied, registered_roaming, unknown };
@@ -361,28 +365,19 @@ ModemState = struct {
     modem_info: ?ModemInfo = null,
     sim_info: ?SimInfo = null,
     error_reason: ?ModemError = null,   // 仅 phase==error 时有意义；retry 时清空（见 6.1）
-    at_timeout_count: u8 = 0,           // starting 阶段连续 at_timeout 次数；见 6.1
+    at_timeout_count: u8 = 0,           // 连续 at_timeout；见 6.1
 };
 
 ModemEvent = union(enum) {
-    power_on: void,
-    power_off: void,
-    at_ready: void,
+    power_on, power_off, retry, stop: void,
+    dial_requested: void,
+    bootstrap_probe_ok, bootstrap_echo_ok, bootstrap_cmee_ok: void,
+    sim_status_reported: SimStatus,
+    network_registration: CellularRegStatus,
+    bootstrap_at_error: ModemError,
     at_timeout: void,
-    sim_ready: void,
-    sim_error: SimStatus,
-    sim_removed: void,
-    pin_required: void,
-    registered: CellularRegStatus,
-    registration_failed: CellularRegStatus,
-    dial_start: void,
-    dial_connected: void,
-    dial_failed: void,
-    ip_obtained: void,
-    ip_lost: void,
+    dial_succeeded, dial_failed, ip_obtained, ip_lost: void,
     signal_updated: CellularSignalInfo,
-    retry: void,
-    stop: void,
 };
 
 APNConfig = struct {
@@ -1390,13 +1385,11 @@ fn tick(self) {
     const old_phase = self.state.phase;
     const event: ?ModemEvent = switch (self.state.phase) {
         .off => null,
-        .starting => self.probeAt(),            -- AT → at_ready / at_timeout
-        .ready => self.querySim(),              -- AT+CPIN? → sim_ready / sim_error
-        .sim_ready => self.initModem(),         -- enterCmux or config sequence
-        .registered => self.checkDialReady(),   -- AT+CSQ (optional) → dial_start
-        .dialing => null,                       -- wait for CONNECT (driven by URC/response)
-        .connected => self.periodicSignal(),    -- AT+CSQ low-freq (optional, may return signal_updated)
-        .error => null,                         -- wait for retry event from app
+        .probing => self.probeAt(),             -- AT → bootstrap_probe_ok / bootstrap_at_error
+        .at_configuring => self.nextInitAt(),  -- ATE0 → bootstrap_echo_ok; CMEE → bootstrap_cmee_ok
+        .checking_sim => self.queryCpin(),     -- → sim_status_reported / bootstrap_at_error
+        .registering => self.queryCereg(),     -- → network_registration / bootstrap_at_error（searching 等仍 phase=registering，继续 tick）
+        .registered, .dialing, .connected, .disconnecting, .@"error" => null,
     };
 
     -- 3. Drive state machine if we got an event
@@ -1653,23 +1646,26 @@ pub const ModemError = enum {
 
 | 字段 | 类型 | 含义 |
 |------|------|------|
-| `error_reason` | `?ModemError` | 进入 error 时的原因；retry 时清空 |
-| `at_timeout_count` | `u8` | starting 阶段连续 at_timeout 次数；at_ready 或进入 error/retry 时清零 |
+| `error_reason` | `?ModemError` | 进入 error 时的原因；`retry` / `power_on` 时清空 |
+| `at_timeout_count` | `u8` | 生命周期 AT 超时计数（当前实现：`at_timeout` 事件即进 error 并递增）；`power_on` / `retry` 清零 |
 
-可选扩展：`ppp_fail_count`（dialing 阶段 PPP 失败次数，达到 N 次后进 error），首版可与 C 一致仅做 dial_failed → registered，不计数。
+**Reducer 与 tick（R44，以 `src/pkg/cellular/cellular.zig` 为准）：**
 
-**Reducer 规则摘要：**
+| 当前 phase | 典型 ModemEvent（tick 或应用 dispatch） | 下一 phase / 说明 |
+|------------|----------------------------------------|---------------------|
+| off | power_on | probing |
+| probing | bootstrap_probe_ok | at_configuring；bootstrap_at_error / at_timeout → error |
+| at_configuring | bootstrap_echo_ok → bootstrap_cmee_ok | checking_sim |
+| checking_sim | sim_status_reported(ready) | registering；PIN/未插卡 → error |
+| registering | network_registration(home/roam) | registered；searching 等 → 仍 registering，tick 继续 CEREG；denied → error |
+| registered | dial_requested | dialing |
+| dialing | dial_succeeded / ip_obtained | connected；dial_failed → registered |
+| connected | ip_lost | registered |
+| error | retry | probing，清空 error_reason、at_timeout_count |
 
-| phase | 事件 | 行为 |
-|-------|------|------|
-| starting | at_timeout | at_timeout_count++；若 count ≥ 3 则 phase=error, error_reason=at_timeout；否则保持 starting（下次 tick 继续重试） |
-| starting | at_ready | at_timeout_count=0；phase=ready |
-| ready / sim_ready / … | sim_error 等 | 按现有逻辑 → error，并设 error_reason 为对应 ModemError |
-| error | retry | phase=starting；error_reason=null；at_timeout_count=0（所有计数清零） |
+**Cellular.tick()：** 仅在与 bootstrap 相关的 phase 发一条 AT，将结果 dispatch 为 **具名结果事件**（如 `bootstrap_probe_ok`、`sim_status_reported`），**不得**再使用 `at_ready` / `sim_ready` 等旧事件名。
 
-**Cellular.tick() 职责（Q23 结论）：** tick() 只根据 modem/sim/signal 结果推断并 dispatch 事件（如 at_timeout、at_ready、sim_error、dial_failed），**不**在 tick() 内做「第几次才报错」的判断；所有「第 N 次才进 error」的逻辑均在 reducer 内通过 count + 阈值完成。
-
-**与 C (quectel) 对照：** AT 连续 3 次超时进 ERROR、配置失败忽略、PPP 失败 → registered（不重启）、error + retry → starting 软恢复，均通过上述 reducer 规则与 ModemError 表达。
+**与 C (quectel) 对照：** PPP 失败回退 registered；error + retry 回到探活（probing）软恢复。
 
 #### 6.1.1 Control 请求与生命周期隔离（R37 硬性约束）
 
@@ -1678,13 +1674,13 @@ pub const ModemError = enum {
 **约束（实现时必须遵守）：**
 
 1. **仅生命周期路径驱动 reducer**  
-   只有 tick() 内为「状态机流程」执行的 AT（如 starting 探活、sim.getStatus、signal.getStrength 用于推断 phase）产生的超时/失败，才可推断为 ModemEvent（如 at_timeout、sim_error）并送入 reduce()。**任何**由 Control 请求触发的 AT 执行，其超时或 AT 错误**不得**作为 ModemEvent 送入 reducer，**不得**增加 at_timeout_count，**不得**改变 phase 或 error_reason。
+   只有 tick() 内生命周期 AT（probing / at_configuring / checking_sim / registering 等）产生的失败才可 dispatch 为 `bootstrap_at_error`、`at_timeout` 等并 reduce()。**任何** Control 请求的 AT **不得** dispatch 为上述 ModemEvent，**不得**改 phase。
 
 2. **用户请求的 timeout 仅作用于该次请求**  
    Control 侧 API 的 timeout_ms 仅用于：  
    - 调用方在 response channel 上 timedRecv(timeout_ms)，超时则向**调用方**返回 Err(Timeout)；  
    - 可选：worker 执行该请求时若超过 timeout_ms 未完成，可放弃并向 response 发送「超时」结果，同样仅由调用方收到，不触发 reducer。  
-   无论哪种，**均不**向 reducer 派发 at_timeout 或任何事件。
+   无论哪种，**均不**向 reducer 派发任何 `ModemEvent`。
 
 3. **实现检查清单**  
    - Worker 中区分「本周期是生命周期 tick」与「处理 Control 请求」：处理 Control 请求时调用的 at().send() 等，其错误/超时只写入 response channel，不调用 reduce()。  
@@ -1692,75 +1688,9 @@ pub const ModemError = enum {
    - 单测中显式验证：仅生命周期路径的连续 at_timeout 会使 at_timeout_count 增加并最终进 error；Control.getSignalQuality() 超时多次不改变 phase、不增加 at_timeout_count。
 
 ```
-fn reduce(state: *ModemState, event: ModemEvent) void {
-    switch (state.phase) {
-        .off => switch (event) {
-            .power_on => state.phase = .starting,
-            else => {},
-        },
-        .starting => switch (event) {
-            .at_ready   => { state.at_timeout_count = 0; state.phase = .ready; },
-            .at_timeout => {
-                state.at_timeout_count += 1;
-                if (state.at_timeout_count >= 3) {
-                    state.error_reason = .at_timeout;
-                    state.phase = .error;
-                }
-                // else stay in starting, next tick will retry
-            },
-            .stop => state.phase = .off,
-            else => {},
-        },
-        .ready => switch (event) {
-            .sim_ready  => state.phase = .sim_ready,
-            .sim_error  => |s| { state.sim = s; state.error_reason = .sim_error; state.phase = .error; },
-            .stop       => state.phase = .off,
-            else => {},
-        },
-        .sim_ready => switch (event) {
-            .registered          => |r| { state.registration = r; state.phase = .registered; },
-            .registration_failed => |r| { state.registration = r; state.error_reason = .registration_failed; state.phase = .error; },
-            .sim_removed         => { state.sim = .not_inserted; state.phase = .ready; },
-            .stop                => state.phase = .off,
-            else => {},
-        },
-        .registered => switch (event) {
-            .dial_start  => state.phase = .dialing,
-            .sim_removed => { state.sim = .not_inserted; state.phase = .ready; },
-            .stop        => state.phase = .off,
-            else => {},
-        },
-        .dialing => switch (event) {
-            .dial_connected => state.phase = .connected,
-            .dial_failed    => state.phase = .registered,
-            .sim_removed    => { state.sim = .not_inserted; state.phase = .ready; },
-            .stop           => state.phase = .off,
-            else => {},
-        },
-        .connected => switch (event) {
-            .ip_lost     => state.phase = .registered,
-            .sim_removed => { state.sim = .not_inserted; state.phase = .ready; },
-            .stop        => state.phase = .off,
-            else => {},
-        },
-        .error => switch (event) {
-            .retry => {
-                state.error_reason = null;
-                state.at_timeout_count = 0;
-                state.phase = .starting;
-            },
-            .stop => state.phase = .off,
-            else => {},
-        },
-    }
-    -- Cross-cutting updates
-    switch (event) {
-        .signal_updated => |s| state.signal = s,
-        .sim_ready      => state.sim = .ready,
-        .sim_removed    => state.sim = .not_inserted,
-        else => {},
-    }
-}
+// 权威实现：src/pkg/cellular/cellular.zig — pub fn cellularReduce(s: *CellularFsmState, e: ModemEvent) void
+// 状态为 CellularFsmState { modem: ModemState, bootstrap_step: InitSequenceStep }
+// 勿使用已废弃事件名：at_ready, sim_ready, dial_start, dial_connected, registration_failed（ModemEvent 字段）
 ```
 
 ---
@@ -2021,31 +1951,30 @@ MockIo(capacity):
 | MD-12 | multi-ch enterCmux noop | enterCmux() is no-op in multi-ch mode |
 | MD-13 | enterDataMode | ATD*99# -> CONNECT -> pppIo active |
 
-### 8.9 cellular_test.zig — reducer tests (21 tests, pure logic, no IO)
+### 8.9 cellular_test.zig — R44 状态机（`zig build test-cellular`）
 
-| ID    | Test | Validates |
-|-------|------|-----------|
-| CR-01 | off -> power_on -> starting | |
-| CR-02 | starting -> at_ready -> ready | phase=ready |
-| CR-03 | starting -> at_timeout -> error | phase=error |
-| CR-04 | ready -> sim_ready -> sim_ready | sim = .ready |
-| CR-05 | ready -> sim_error -> error | sim status stored |
-| CR-06 | sim_ready -> registered -> registered | reg stored |
-| CR-07 | sim_ready -> reg_failed -> error | |
-| CR-08 | sim_ready -> sim_removed -> ready | sim reset |
-| CR-09 | registered -> dial_start -> dialing | PPP 拨号开始 |
-| CR-10 | registered -> sim_removed -> ready | 注册后 SIM 拔出 |
-| CR-11 | dialing -> dial_connected -> connected | PPP 连接成功 |
-| CR-12 | dialing -> dial_failed -> registered | 拨号失败回退到已注册 |
-| CR-13 | dialing -> sim_removed -> ready | 拨号中 SIM 拔出 |
-| CR-14 | connected -> ip_lost -> registered | 断线回退到已注册 |
-| CR-15 | connected -> sim_removed -> ready | 在线时 SIM 拔出 |
-| CR-16 | connected -> signal_updated | signal stored, phase unchanged |
-| CR-17 | connected -> stop -> off | shutdown |
-| CR-18 | error -> retry -> starting | 应用触发 retry，回到 starting |
-| CR-19 | error -> stop -> off | |
-| CR-20 | any phase -> stop -> off | universal |
-| CR-21 | ignored events | wrong event for phase -> no change |
+规格用例与 **ModemEvent / CellularPhase** 对应（旧名 `at_ready`、`sim_ready`、`dial_start`、`dial_connected` 已删除）：
+
+| ID | 事件序列（节选） | 结果 phase |
+|----|------------------|------------|
+| CR-01 | `power_on` | `probing` |
+| CR-02 | `bootstrap_probe_ok` | `at_configuring` |
+| CR-03 | `bootstrap_echo_ok` → `bootstrap_cmee_ok` | `checking_sim` |
+| CR-04 | `sim_status_reported(.ready)` | `registering` |
+| CR-05 | `network_registration(.registered_home)` 等 | `registered` |
+| CR-06 | `sim_status_reported(.pin_required)` 等 | `error` |
+| CR-07 | `network_registration(.searching)` 等 | 保持 `registering`，`bootstrap_step=done`，继续轮询 CEREG |
+| CR-08 | `network_registration(.denied)` | `error` / `registration_denied` |
+| CR-09 | `bootstrap_at_error` / `at_timeout` | `error` |
+| CR-10 | `dial_requested`（自 `registered`） | `dialing` |
+| CR-11 | `dial_succeeded` / `ip_obtained` | `connected` |
+| CR-12 | `dial_failed` | `registered` |
+| CR-13 | `ip_lost`（自 `connected`） | `registered` |
+| CR-14 | `retry`（自 `error`） | `probing`，`at_timeout_count=0` |
+| CR-15 | `signal_updated` | 仅更新 signal |
+| CR-16 | `power_off` | `off` |
+
+集成路径：`tick()` + MockIo 或 `applyModemEvents` 种子 + `tick`。SIM 热插拔等未实现事件不在上表。
 
 ### 8.10 cellular_test.zig — event emission (7) + Control (3) tests
 
@@ -2272,11 +2201,9 @@ test/esp/110-cellular/
 | `src/pkg/cellular/modem/` | 创建目录 | modem 子包 |
 
 **实现内容：**
-- CellularPhase 枚举（off/starting/ready/sim_ready/registered/dialing/connected/error）
-- SimStatus / RAT / CellularRegStatus / VoiceCallState 枚举
-- CellularSignalInfo / ModemInfo / SimInfo 结构体（含 getter 方法）
-- ModemState 结构体（含默认值）
-- ModemEvent tagged union（16 种事件）
+- CellularPhase（R44：`probing` / `at_configuring` / `checking_sim` / `registering` / …）
+- SimStatus / RAT / CellularRegStatus / VoiceCallState
+- ModemState、ModemEvent（bootstrap_*、`sim_status_reported`、`network_registration`、`dial_requested` 等，**无** `at_ready`/`sim_ready`/`dial_start`）
 - APNConfig / CmuxChannelRole / CmuxChannelConfig / ModemConfig 结构体
 
 **测试命令：**
@@ -2726,68 +2653,23 @@ cd test/unit && zig build test
 cd test/unit && zig build test
 ```
 
-**测试用例（21 个）：**
+**测试用例：** 见 §8.9；运行 `zig build test-cellular`。
 
-| ID | 测试名 | 验证内容 |
-|----|--------|----------|
-| CR-01 | off → power_on → starting | 基本启动 |
-| CR-02 | starting → at_ready → ready | phase=ready |
-| CR-03 | starting → at_timeout → error | phase=error |
-| CR-04 | ready → sim_ready → sim_ready | sim 状态更新为 .ready |
-| CR-05 | ready → sim_error → error | sim 状态存储错误类型 |
-| CR-06 | sim_ready → registered → registered | 注册状态存储 |
-| CR-07 | sim_ready → reg_failed → error | 注册失败 |
-| CR-08 | sim_ready → sim_removed → ready | SIM 拔出回退 |
-| CR-09 | registered → dial_start → dialing | PPP 拨号开始 |
-| CR-10 | registered → sim_removed → ready | 注册后 SIM 拔出 |
-| CR-11 | dialing → dial_connected → connected | PPP 连接成功 |
-| CR-12 | dialing → dial_failed → registered | 拨号失败回退到已注册 |
-| CR-13 | dialing → sim_removed → ready | 拨号中 SIM 拔出 |
-| CR-14 | connected → ip_lost → registered | 断线回退到已注册 |
-| CR-15 | connected → sim_removed → ready | 在线时 SIM 拔出 |
-| CR-16 | connected → signal_updated | 信号更新，phase 不变 |
-| CR-17 | connected → stop → off | 正常关机 |
-| CR-18 | error → retry → starting | 应用触发 retry，回到 starting |
-| CR-19 | error → stop → off | 错误状态关机 |
-| CR-20 | any phase → stop → off | 任意状态都能关机 |
-| CR-21 | ignored events | 错误阶段的事件不改变状态 |
+**通过标准：** cellular 相关测试全部通过。
 
-**通过标准：** `All 21 tests passed.`
-
-**可选烧录验证（追加到 app.zig）：**
+**可选烧录验证（手动 dispatch `ModemEvent`）：**
 
 ```
-1. 在固件中直接调用 Cellular.reduce() 手动驱动状态转换序列：
-   [I] === Step 7: Reducer real-device test ===
-
-   reduce(&state, .power_on)
-   [I] off -> power_on -> starting (ok)
-
-   reduce(&state, .at_ready)
-   [I] starting -> at_ready -> ready (ok)
-
-   reduce(&state, .sim_ready)
-   [I] ready -> sim_ready -> sim_ready (ok)
-
-   reduce(&state, .{ .registered = .registered_home })
-   [I] sim_ready -> registered -> registered (ok)
-
-   reduce(&state, .dial_start)
-   [I] registered -> dial_start -> dialing (ok)
-
-   reduce(&state, .dial_connected)
-   [I] dialing -> dial_connected -> connected (ok)
-
-   reduce(&state, .{ .signal_updated = .{ .rssi = -73, .ber = 0, ... } })
-   [I] connected -> signal_updated -> connected, rssi=-73 (ok)
-
-   reduce(&state, .ip_lost)
-   [I] connected -> ip_lost -> registered (ok)
-
-   reduce(&state, .stop)
-   [I] registered -> stop -> off (ok)
-
-   [I] Reducer test: 9/9 transitions correct
+reduce(&s, .power_on)                    → probing
+reduce(&s, .bootstrap_probe_ok)          → at_configuring
+reduce(&s, .bootstrap_echo_ok)
+reduce(&s, .bootstrap_cmee_ok)          → checking_sim
+reduce(&s, .{ .sim_status_reported = .ready }) → registering
+reduce(&s, .{ .network_registration = .registered_home }) → registered
+reduce(&s, .dial_requested)             → dialing
+reduce(&s, .dial_succeeded)            → connected
+reduce(&s, .ip_lost)                  → registered
+reduce(&s, .{ .signal_updated = .{ .rssi = -73 } })  → signal 更新
 ```
 
 **可选烧录通过标准：** 所有状态转换与 Mock 测试结果一致，
@@ -3127,12 +3009,13 @@ Phase 3: 主循环收事件（rt.recv() → rt.dispatch()）
        }
    }
    rt.dispatch(r.value);
-   [I] Event received: phase_changed .off -> .starting
-   [I] Event received: phase_changed .starting -> .ready
+   [I] Event received: phase_changed .off -> .probing
+   [I] Event received: phase_changed .probing -> .at_configuring
+   …（直至 .registered 等，见 R44）
 
 Phase 4: 持续收事件（10 秒内观察 signal_updated、phase_changed 等）
    [I] Event: signal_updated rssi=-73
-   [I] Event: phase_changed .ready -> .sim_ready
+   [I] Event: phase_changed …（按实际 bootstrap 阶段）
 
 Phase 5: Control 按需查询（可选）
    const ctrl = cell.control();
@@ -3403,7 +3286,7 @@ cd test/unit && zig build test     # 运行全部单元测试（含 cellular）
 - CMUX 层（quectel_cmux.c）内部：AT+IPR 失败则 goto normal_cmux_init 用当前波特率再试；UART 设波特率失败则返回错误并设 state=ERROR；新波特率下 AT 验证 5 次仍失败则恢复 UART 到 base_baud 再 goto normal_cmux_init；esp_modem_set_mode(CMUX_MANUAL) 失败则尝试恢复 UART 波特率并返回 QUECTEL_ERR_CMUX_FAILED，state=ERROR。
 - 结论：**失败即进 ERROR，由应用/用户决定是否重试**（与 plan 中 retry 事件一致）；C 代码 task 内部不做 CMUX 自动重试。
 
-**Zig plan 对齐：** Cellular 在 **sim_ready 阶段之后**（phase 已为 sim_ready 且本轮 tick 确认 SIM 就绪）再调 modem.enterCmux()。enterCmux 失败则进入 error 阶段，不自动重试；应用可 dispatch retry 再走一遍。
+**Zig 对齐（R44）：** 在 **`sim_status_reported(.ready)` 之后**（phase 至少为 `registering`）再调 `enterCmux`。失败 → `error`；`retry` → `probing`。
 
 ### R34 (2026-03-16)
 
@@ -3445,9 +3328,9 @@ cd test/unit && zig build test     # 运行全部单元测试（含 cellular）
    - dialing/connected 阶段频繁 AT 可能干扰数据通道
    - 不符合业界惯例
    - 注册/SIM 状态变化有 URC，不需要主动轮询
-3. 改为 `switch(self.state.phase)` 模式，每个 phase 最多发一条 AT：
-   - off → 无操作；starting → AT probe；ready → AT+CPIN?；sim_ready → enterCmux/config
-   - registered → AT+CSQ（可选）；dialing → 等 CONNECT；connected → 低频 AT+CSQ；error → 等 retry
+3. 改为 `switch(phase)`，每个阶段最多一条 AT（R44）：
+   - off → 无；probing → AT；at_configuring → ATE0/CMEE；checking_sim → CPIN；registering → CEREG
+   - registered / dialing / connected → 由 URC 或应用事件推进；registering 内由 CEREG 结果推进；error → 等 retry
 4. Q15 修正：MockIo 移除 `onSend()` 自动应答，与 BLE `MockHci` 对齐只保留 FIFO `feed()`
    - 每次 tick 只发一条 AT，测试只需按顺序 feed 一条响应
    - 复杂流程用 `feedSequence()` 一次性预填（类比 BLE `injectInitSequence()`）
@@ -3493,7 +3376,7 @@ cd test/unit && zig build test     # 运行全部单元测试（含 cellular）
 1. 对比 C (quectel) 与 Rust (ublox-cellular-rs)：C 在波特率探测、配置失败、SIM 状态、AT 通道健康、PPP 失败、错误恢复等方面更务实（软恢复、忽略可忽略失败、连续 N 次才进 ERROR）。
 2. 原则：重试与超时在状态机内部通过计数/阈值处理；**只有达到重试次数或超时后**才进 error 并向 Flux 抛 `CellularEvent.error(ModemError)`。
 3. 统一错误类型 `ModemError`（types.zig）；ModemState 增加 `error_reason`、`at_timeout_count`。
-4. Reducer 规则：starting + at_timeout 计数，≥3 才 error；error + retry 清零并回到 starting。tick() 只推断并 dispatch 事件，不在 tick() 内做「第几次才报错」判断（Q23 结论）。
+4. Reducer（R44）：具名 `ModemEvent`；error + retry → probing。tick 只 dispatch 事件，由 reducer 改 phase。
 5. 详见 Section 6.1。
 
 ### R31 (2026-03-16)
@@ -3570,7 +3453,7 @@ cd test/unit && zig build test     # 运行全部单元测试（含 cellular）
 2. 采用方案 2：状态机不做自动重试，与现有包对齐
 3. 移除 ModemState.error_count
 4. ModemEvent.error_recovery 改名为 retry，语义为「应用层请求重试」
-5. Reducer 保留 error 阶段收到 retry → starting 的转换，由应用在适当时机 dispatch(retry)
+5. Reducer：`error` + `retry` → `probing`（R44）
 6. 测试用例与描述中去掉对 error_count 的断言
 
 ### R27 (2026-03-16)
@@ -3582,7 +3465,7 @@ cd test/unit && zig build test     # 运行全部单元测试（含 cellular）
 3. 拆分为：
    - `registered` — 已注册网络，可以发起 PPP 拨号
    - `dialing` — PPP 拨号进行中（ATD*99# 已发出，等待 CONNECT）
-4. 新增 `dial_start` 事件触发 registered → dialing 转换
+4. 意图事件 `dial_requested`：`registered` → `dialing`（取代旧名 `dial_start`）
 5. `dial_failed` 回退到 `registered`（而非 `error`），因为网络仍然注册，可以重试拨号
 6. `ip_lost` 也回退到 `registered`（而非原来的 `registering`），语义更准确
 7. CellularPhase 枚举从 7 个变为 8 个，reducer 测试从 18 个变为 21 个
@@ -4064,9 +3947,9 @@ Step 5: AT 引擎恢复到直连物理 Io，发 AT 验证模组正常
 
 **设计深度不足：**
 
-- [x] Q11: registering 阶段命名语义反转。**已解决（R27）**。拆分为两个阶段：`registered`（已注册网络）和 `dialing`（PPP 拨号中）。CellularPhase 从 7 个变为 8 个。新增 `dial_start` 事件触发 registered → dialing 转换。`dial_failed` 回退到 `registered` 而非 `error`。
+- [x] Q11 / R44：`registered` 与 `dialing` 分离；`dial_requested` → `dialing`；`dial_failed` → `registered`。
 - [x] Q12: AtResponse 缓冲区硬编码 [8][128]u8。**已解决（R40）**。改为单一平坦缓冲区 `[buf_size]u8`，大小由 `comptime buf_size` 控制。AtResponse.body 为 rx_buf 内切片 + lineIterator。溢出返回 `AtStatus.overflow`。参考 atat const generic + esp_modem dte_buffer_size 设计。
-- [x] Q13: 错误恢复策略缺失。**已解决（R30）**。采用方案 2：与其它包对齐，reducer 不做自动重试。移除 `error_count`。`error_recovery` 改名为 `retry`，由应用层在需要时 dispatch，reducer 仅做 error + retry → starting 转换。
+- [x] Q13 / R30：`retry` 由应用 dispatch；reducer：`error` + `retry` → `probing`，清零计数与 `error_reason`。
 - [x] Q14: URC pump 调度策略未定义。**已解决**。见下「Q14 实施规格：轮询周期与调用频率」。
 - [x] Q15: MockIo.onSend() 自动应答器设计模糊。**已解决（R42 修正）**。移除 `onSend()` 自动应答，与 BLE `MockHci` 对齐，只保留 FIFO `feed()`。理由：(1) tick 改为按 phase 每次只发一条 AT（对齐 quectel C / ublox-rs / Zephyr），FIFO feed 即可覆盖所有场景；(2) BLE MockHci 也只有 `injectPacket` 无自动应答，已验证可行；(3) 复杂流程用 `feedSequence()` 辅助函数一次性预填。
 - [x] Q16: sim.zig registerUrcs(dispatch_ctx: anytype) 的 anytype 是 comptime 参数，但 URC 回调是运行时注册的，签名可能有实现问题。**已解决**。Zig 的 anytype 在调用点推断，每个 call site 的 dispatch_ctx 类型 comptime 已知；registerUrcs 在 init 时调用一次，AtEngine 内以函数指针+ctx 保存，调用时传 ctx。实现时对 dispatch_ctx 做 comptime 接口约束即可，签名可行。
@@ -4087,7 +3970,7 @@ Step 5: AT 引擎恢复到直连物理 Io，发 AT 验证模组正常
 
 - [x] Q23: Cellular.tick() 的错误处理策略。**已解决（R35/6.1）**。tick() 只根据 modem/sim/signal 结果推断并 dispatch 事件（如 at_timeout、sim_error），不在此处做「第几次才报错」判断；是否进 error、at_timeout_count 与阈值逻辑全部在 reducer 内完成。不同错误类型通过 ModemEvent 变体区分，reducer 按 phase + 事件决定转换。
 - [x] Q24: CellularPayload 的事件粒度。**已解决**。首版维持当前五种（phase_changed / signal_updated / sim_status_changed / registration_changed / error），后续按需求再拆（如区分 at_timeout 与 cmux_failed）或收敛（如 state_changed + 快照）。
-- [x] Q25: Cellular 与 Modem 的 CMUX 生命周期协调。**已解决（R33）**。参考 x/c/esp/components/quectel：enterCmux 在 **sim_ready 之后** 进入（C 状态机为 WAIT_SIM → SIM ready → CMUX_INIT）。enterCmux 失败：task 直接进 ERROR，无自动重试、无回退；由应用 dispatch retry 再试。CMUX 内部：AT+IPR 失败则降级到当前波特率再试 CMUX；esp_modem 进 CMUX 失败则恢复 UART 波特率并返回错误。
+- [x] Q25 / R33：C 侧 WAIT_SIM → SIM ready → CMUX；Zig 侧在 **CPIN ready 已上报之后**（`registering` 及以后）再 enterCmux；失败 → error，`retry` → probing。
 
 ---
 

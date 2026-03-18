@@ -20,8 +20,8 @@ pub fn Board(comptime hw: type) type {
     const spec = struct {
         pub const meta = .{ .id = hw.name };
 
-        pub const log = runtime.log.Log(hw.log);
-        pub const time = runtime.time.Time(hw.time);
+        pub const log = runtime.log.Make(hw.log);
+        pub const time = runtime.time.Make(hw.time);
         pub const rtc = hal.rtc.reader.from(hw.rtc_spec);
     };
     return hal.board.Board(spec);

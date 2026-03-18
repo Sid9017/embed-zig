@@ -1,19 +1,29 @@
-//! 110-cellular firmware — Step 0 + Step 2 + Step 3 burn-in checks.
+//! 110-cellular firmware — Step 0 + Step 2 + Step 3 burn-in + Step 4 Cellular FSM (UART or mock scripted).
 //!
 //! Step 0: UART/modem power path ready (cellular_dev § Step 0).
 //! Step 2: Io — send AT, read response.
 //! Step 3: parse — CSQ, CPIN, CREG, CGREG, CEREG (+ CME/CMS/unrecognized CPIN summaries).
-//! Still device-dependent (no SIM → no +CPIN READY / roaming, etc.); full matrix in test/unit/pkg/cellular/at/parse_test.zig.
+//! Step 4: `powerOn` then four bootstrap segments — within each segment, `tick()` until the next `CellularPhase`
+//! or `error`. Tags `[STATE=1/4]`…`[STATE=4/4]` match `probing` → `at_configuring` → `checking_sim` → `registering`.
 
 const board_spec = @import("board_spec.zig");
 const esp = @import("esp");
 const embed = esp.embed;
 const io_mod = embed.pkg.cellular.io.io_mod;
 const parse = embed.pkg.cellular.at.parse;
+const std = @import("std");
 
 const step0_tag = "[step0-uartSetup]";
 const step2_tag = "[step2-ioTest]";
 const step3_tag = "[step3-parseTest]";
+const step4_tag = "[step4-cellFsm]";
+/// Bootstrap segments: probing, at_configuring, checking_sim, registering.
+const step4_state_total: u32 = 4;
+/// Safety cap per segment (in case the modem never advances).
+const step4_max_ticks_per_state: u32 = 400;
+const step4_sleep_between_ticks_ms: u32 = 20;
+/// Longer sleep between ticks while `registering` and `bootstrap_step == .done` (post–first CEREG, still searching).
+const step4_reg_poll_interval_ms: u32 = 3000;
 
 /// Main-thread only. Large on-stack RX/fold buffers exhaust ESP-IDF main task stack (~3584 B)
 /// when combined with fmt/log frames; use BSS instead.
@@ -67,6 +77,299 @@ pub fn run(comptime hw: type, env: anytype) void {
     testParseAt(io, time, log, "AT+CEREG?\r\n");
 
     log.infoFmt("{s} [DONE] step3 parse tests finished", .{step3_tag});
+
+    if (comptime isMockCellularHw(hw)) {
+        runCellularFsmMock(uart_ptr, Board.time, time, Board.log, log);
+        return;
+    }
+
+    time.sleepMs(500);
+    runCellularFsm(io, Board.time, time, Board.log, log);
+}
+
+/// True for the unit-test mock board (`zig build test-110-cellular-firmware`).
+fn isMockCellularHw(comptime hw: type) bool {
+    return std.mem.eql(u8, hw.name, "mock_cellular");
+}
+
+/// Drive `Cellular` bootstrap: per `[STATE=N/4]`, tick until leaving that phase or `error`.
+fn runCellularFsm(
+    io: io_mod.Io,
+    comptime TimeT: type,
+    time: TimeT,
+    comptime LogT: type,
+    log: LogT,
+) void {
+    const cellular_mod = embed.pkg.cellular.cellular_mod;
+    const modem_mod = embed.pkg.cellular.modem.modem_mod;
+    const bus = embed.pkg.event.bus;
+    const types = embed.pkg.cellular.types;
+    const quectel = embed.pkg.cellular.modem.profiles.quectel;
+
+    const GpioPh = struct {};
+    const ModemT = modem_mod.Modem(struct {}, struct {}, TimeT, quectel, GpioPh, 1024);
+    const CellularT = cellular_mod.Cellular(struct {}, struct {}, TimeT, quectel, GpioPh, 1024);
+
+    const injector = bus.EventInjector(types.CellularPayload){
+        .ctx = null,
+        .call = struct {
+            fn f(_: ?*anyopaque, _: types.CellularPayload) void {}
+        }.f,
+    };
+
+    const modem = ModemT.init(.{ .io = io, .time = time, .gpio = null });
+    var cell = CellularT.init(modem, injector);
+
+    log.infoFmt("{s} [START] bootstrap + EPS poll until registered", .{step4_tag});
+    cell.powerOn();
+    var prev_sim: embed.pkg.cellular.types.SimStatus = .not_inserted;
+    logCellFsmBoot(LogT, log, &cell);
+
+    if (runCellularStateSegment(LogT, log, time, 1, &cell, &prev_sim)) {
+        logCellFsmFinale(LogT, log, &cell);
+        return;
+    }
+    if (runCellularStateSegment(LogT, log, time, 2, &cell, &prev_sim)) {
+        logCellFsmFinale(LogT, log, &cell);
+        return;
+    }
+    if (runCellularStateSegment(LogT, log, time, 3, &cell, &prev_sim)) {
+        logCellFsmFinale(LogT, log, &cell);
+        return;
+    }
+    if (runCellularStateSegment(LogT, log, time, 4, &cell, &prev_sim)) {
+        logCellFsmFinale(LogT, log, &cell);
+        return;
+    }
+
+    if (cell.phase() == .registered) {
+        log.infoFmt("{s} EPS registered!", .{step4_tag});
+    }
+
+    logCellFsmFinale(LogT, log, &cell);
+}
+
+/// `true` = stop (`error` or segment stuck past `step4_max_ticks_per_state`).
+fn runCellularStateSegment(
+    comptime LogT: type,
+    logv: LogT,
+    time: anytype,
+    state_idx: u32,
+    cell: anytype,
+    prev_sim: *embed.pkg.cellular.types.SimStatus,
+) bool {
+    const expect = cellularPhaseForState(state_idx);
+    var inner: u32 = 0;
+    while (cell.phase() == expect) {
+        inner += 1;
+        if (inner > step4_max_ticks_per_state) {
+            logv.infoFmt("{s} [STATE={d}/{d}] [WARN] max_ticks_per_state still phase={s}", .{
+                step4_tag,
+                state_idx,
+                step4_state_total,
+                @tagName(expect),
+            });
+            return true;
+        }
+        const at = atSentLabel(cell);
+        cell.tick();
+        logCellFsmLine(LogT, logv, at, cell, prev_sim);
+        if (cell.phase() == .@"error") return true;
+        const sleep_ms = if (state_idx == 4 and cell.bootstrapStep() == .done)
+            step4_reg_poll_interval_ms
+        else
+            step4_sleep_between_ticks_ms;
+        time.sleepMs(sleep_ms);
+    }
+    return cell.phase() == .@"error";
+}
+
+fn cellularPhaseForState(state_idx: u32) embed.pkg.cellular.types.CellularPhase {
+    return switch (state_idx) {
+        1 => .probing,
+        2 => .at_configuring,
+        3 => .checking_sim,
+        4 => .registering,
+        else => .off,
+    };
+}
+
+/// Log label aligned with **current** `PHASE` (post-tick). Avoids e.g. `[STATE=2/4]` + `PHASE:checking_sim`.
+fn cellFsmStateTag(ph: embed.pkg.cellular.types.CellularPhase) []const u8 {
+    return switch (ph) {
+        .probing => "1/4",
+        .at_configuring => "2/4",
+        .checking_sim => "3/4",
+        .registering => "4/4",
+        .registered => "registered",
+        .@"error" => "error",
+        else => "-",
+    };
+}
+
+fn atSentLabel(cell: anytype) []const u8 {
+    const ph = cell.phase();
+    const st = cell.bootstrapStep();
+    return switch (ph) {
+        .probing => if (st == .probe) "AT" else "-",
+        .at_configuring => switch (st) {
+            .ate0 => "ATE0",
+            .cmee => "AT+CMEE=2",
+            else => "-",
+        },
+        .checking_sim => if (st == .cpin) "AT+CPIN?" else "-",
+        .registering => "AT+CEREG?",
+        else => "-",
+    };
+}
+
+fn logCellFsmBoot(comptime LogT: type, logv: LogT, cell: anytype) void {
+    const m = cell.modemState();
+    logv.infoFmt("{s} [STATE=1/4] [PHASE:probing] sim={s} reg={s}", .{
+        step4_tag,
+        @tagName(m.sim),
+        @tagName(m.registration),
+    });
+}
+
+fn logCellFsmLine(
+    comptime LogT: type,
+    logv: LogT,
+    at_sent: []const u8,
+    cell: anytype,
+    prev_sim: *embed.pkg.cellular.types.SimStatus,
+) void {
+    const m = cell.modemState();
+    if (m.sim == .ready and prev_sim.* != .ready) {
+        logv.infoFmt("{s} SIM OK！", .{step4_tag});
+    }
+    prev_sim.* = m.sim;
+    const err_s: []const u8 = if (m.error_reason) |e| @tagName(e) else "-";
+    logv.infoFmt("{s} [STATE={s}] {s} [PHASE:{s}] sim={s} reg={s} err={s}", .{
+        step4_tag,
+        cellFsmStateTag(cell.phase()),
+        at_sent,
+        @tagName(cell.phase()),
+        @tagName(m.sim),
+        @tagName(m.registration),
+        err_s,
+    });
+}
+
+fn logCellFsmFinale(comptime LogT: type, logv: LogT, cell: anytype) void {
+    const ph = cell.phase();
+    if (ph == .registered or ph == .@"error") {
+        logv.infoFmt("{s} [PHASE:{s}] [STOP] terminal", .{ step4_tag, @tagName(ph) });
+    } else {
+        logv.infoFmt("{s} [PHASE:{s}] [WARN] bootstrap incomplete", .{ step4_tag, @tagName(ph) });
+    }
+    logv.infoFmt("{s} [DONE]", .{step4_tag});
+}
+
+fn mockFeedForBootstrapTick(mock: *mock_mod.MockIo, cell: anytype) void {
+    switch (cell.bootstrapStep()) {
+        .probe => mock.feed("OK\r\n"),
+        .ate0 => mock.feed("OK\r\n"),
+        .cmee => mock.feed("OK\r\n"),
+        .cpin => mock.feed("\r\n+CPIN: READY\r\n\r\nOK\r\n"),
+        .cereg => mock.feed("\r\n+CEREG: 0,1\r\n\r\nOK\r\n"),
+        .done => {
+            if (cell.phase() == .registering and cell.bootstrapStep() == .done)
+                mock.feed("\r\n+CEREG: 0,1\r\n\r\nOK\r\n");
+        },
+    }
+}
+
+fn runMockCellularStateSegment(
+    comptime LogT: type,
+    logv: LogT,
+    mock: *mock_mod.MockIo,
+    state_idx: u32,
+    cell: anytype,
+    prev_sim: *embed.pkg.cellular.types.SimStatus,
+) bool {
+    const expect = cellularPhaseForState(state_idx);
+    var inner: u32 = 0;
+    while (cell.phase() == expect) {
+        inner += 1;
+        if (inner > step4_max_ticks_per_state) {
+            logv.infoFmt("{s} [STATE={d}/{d}] [WARN] max_ticks_per_state mock", .{ step4_tag, state_idx, step4_state_total });
+            return true;
+        }
+        const at = atSentLabel(cell);
+        mockFeedForBootstrapTick(mock, cell);
+        cell.tick();
+        logCellFsmLine(LogT, logv, at, cell, prev_sim);
+        if (cell.phase() == .@"error") return true;
+    }
+    return cell.phase() == .@"error";
+}
+
+/// Last Step4 terminal phase after mock run (for `test "run with mock hw"`).
+var g_step4_final_phase_state: embed.pkg.cellular.types.CellularPhase = .off;
+
+/// Mock Step4: fresh MockIo + feed before each tick (same sequence as `cellular_test.zig` bootstrap to registered).
+fn runCellularFsmMock(
+    mock: *mock_mod.MockIo,
+    comptime TimeT: type,
+    time: TimeT,
+    comptime LogT: type,
+    log: LogT,
+) void {
+    const cellular_mod = embed.pkg.cellular.cellular_mod;
+    const modem_mod = embed.pkg.cellular.modem.modem_mod;
+    const bus = embed.pkg.event.bus;
+    const types = embed.pkg.cellular.types;
+    const quectel = embed.pkg.cellular.modem.profiles.quectel;
+
+    mock.* = mock_mod.MockIo.init();
+    const io = io_mod.fromUart(mock_mod.MockIo, mock);
+
+    const GpioPh = struct {};
+    const ModemT = modem_mod.Modem(struct {}, struct {}, TimeT, quectel, GpioPh, 1024);
+    const CellularT = cellular_mod.Cellular(struct {}, struct {}, TimeT, quectel, GpioPh, 1024);
+
+    const injector = bus.EventInjector(types.CellularPayload){
+        .ctx = null,
+        .call = struct {
+            fn f(_: ?*anyopaque, _: types.CellularPayload) void {}
+        }.f,
+    };
+
+    const modem = ModemT.init(.{ .io = io, .time = time, .gpio = null });
+    var cell = CellularT.init(modem, injector);
+
+    log.infoFmt("{s} [START] mock bootstrap + EPS", .{step4_tag});
+    cell.powerOn();
+    var prev_sim: embed.pkg.cellular.types.SimStatus = .not_inserted;
+    logCellFsmBoot(LogT, log, &cell);
+
+    if (runMockCellularStateSegment(LogT, log, mock, 1, &cell, &prev_sim)) {
+        g_step4_final_phase_state = cell.phase();
+        logCellFsmFinale(LogT, log, &cell);
+        return;
+    }
+    if (runMockCellularStateSegment(LogT, log, mock, 2, &cell, &prev_sim)) {
+        g_step4_final_phase_state = cell.phase();
+        logCellFsmFinale(LogT, log, &cell);
+        return;
+    }
+    if (runMockCellularStateSegment(LogT, log, mock, 3, &cell, &prev_sim)) {
+        g_step4_final_phase_state = cell.phase();
+        logCellFsmFinale(LogT, log, &cell);
+        return;
+    }
+    if (runMockCellularStateSegment(LogT, log, mock, 4, &cell, &prev_sim)) {
+        g_step4_final_phase_state = cell.phase();
+        logCellFsmFinale(LogT, log, &cell);
+        return;
+    }
+
+    if (cell.phase() == .registered) {
+        log.infoFmt("{s} EPS registered!", .{step4_tag});
+    }
+    g_step4_final_phase_state = cell.phase();
+    logCellFsmFinale(LogT, log, &cell);
 }
 
 fn elapsedMs(time: anytype, t_start: u64) u64 {
@@ -201,7 +504,6 @@ fn parseSummary(cmd: []const u8, raw: []const u8) []const u8 {
     return "";
 }
 
-const std = @import("std");
 const mock_mod = embed.pkg.cellular.io.mock;
 
 var test_mock_io: mock_mod.MockIo = mock_mod.MockIo.init();
@@ -251,4 +553,5 @@ test "run with mock hw" {
         }
     };
     run(MockHw, .{});
+    try std.testing.expectEqual(embed.pkg.cellular.types.CellularPhase.registered, g_step4_final_phase_state);
 }

@@ -292,6 +292,7 @@ For every change, cover at least:
 1. direct tests for the modified file (the corresponding `test/unit/**/*_test.zig`)
 2. a full `zig build test` run from `test/unit/`
 
+- When changing `pkg/cellular` state machine: **`ModemEvent` / `CellularPhase` follow R44** (`types.zig` + `cellular.zig`); do not reintroduce `at_ready`, `sim_ready`, `dial_start`, `dial_connected`. Run `zig build test-cellular` from the repo root.
 - When changing crypto-related code:
   - add or update test vectors in the relevant test file
   - cover both positive and negative behavior when practical

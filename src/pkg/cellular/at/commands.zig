@@ -22,6 +22,99 @@ pub const Probe = struct {
     }
 };
 
+/// ATE0 — disable command echo (typical first step after probe).
+pub const SetEchoOff = struct {
+    pub const Response = void;
+    pub const prefix: []const u8 = "";
+    pub const timeout_ms: u32 = 2000;
+
+    pub fn write(buf: []u8) usize {
+        const cmd = "ATE0\r\n";
+        if (cmd.len > buf.len) return 0;
+        @memcpy(buf[0..cmd.len], cmd);
+        return cmd.len;
+    }
+
+    pub fn parseResponse(_: []const u8) ?Response {
+        return null;
+    }
+};
+
+/// AT+CMEE=2 — enable verbose +CME ERROR: <n> (numeric) responses.
+pub const SetCmeErrorVerbose = struct {
+    pub const Response = void;
+    pub const prefix: []const u8 = "";
+    pub const timeout_ms: u32 = 2000;
+
+    pub fn write(buf: []u8) usize {
+        const cmd = "AT+CMEE=2\r\n";
+        if (cmd.len > buf.len) return 0;
+        @memcpy(buf[0..cmd.len], cmd);
+        return cmd.len;
+    }
+
+    pub fn parseResponse(_: []const u8) ?Response {
+        return null;
+    }
+};
+
+/// AT+CPIN? — SIM PIN state.
+pub const GetCpin = struct {
+    pub const Response = types.SimStatus;
+    pub const prefix: []const u8 = "+CPIN:";
+    pub const timeout_ms: u32 = 5000;
+
+    pub fn write(buf: []u8) usize {
+        const cmd = "AT+CPIN?\r\n";
+        if (cmd.len > buf.len) return 0;
+        @memcpy(buf[0..cmd.len], cmd);
+        return cmd.len;
+    }
+
+    pub fn parseResponse(line: []const u8) ?Response {
+        const val = parse.parsePrefix(line, "+CPIN:") orelse return null;
+        return parse.parseCpin(val);
+    }
+};
+
+/// AT+CEREG? — EPS (LTE) registration status.
+pub const GetCereg = struct {
+    pub const Response = types.CellularRegStatus;
+    pub const prefix: []const u8 = "+CEREG:";
+    pub const timeout_ms: u32 = 5000;
+
+    pub fn write(buf: []u8) usize {
+        const cmd = "AT+CEREG?\r\n";
+        if (cmd.len > buf.len) return 0;
+        @memcpy(buf[0..cmd.len], cmd);
+        return cmd.len;
+    }
+
+    pub fn parseResponse(line: []const u8) ?Response {
+        const val = parse.parsePrefix(line, "+CEREG:") orelse return null;
+        return parse.parseCreg(val);
+    }
+};
+
+/// AT+CREG? — CS domain registration (2G/3G); same stat encoding as CEREG for tick path.
+pub const GetCreg = struct {
+    pub const Response = types.CellularRegStatus;
+    pub const prefix: []const u8 = "+CREG:";
+    pub const timeout_ms: u32 = 5000;
+
+    pub fn write(buf: []u8) usize {
+        const cmd = "AT+CREG?\r\n";
+        if (cmd.len > buf.len) return 0;
+        @memcpy(buf[0..cmd.len], cmd);
+        return cmd.len;
+    }
+
+    pub fn parseResponse(line: []const u8) ?Response {
+        const val = parse.parsePrefix(line, "+CREG:") orelse return null;
+        return parse.parseCreg(val);
+    }
+};
+
 /// AT+CSQ — signal quality.
 pub const GetSignalQuality = struct {
     pub const Response = types.CellularSignalInfo;
