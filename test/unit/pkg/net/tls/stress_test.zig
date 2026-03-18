@@ -69,7 +69,8 @@ fn createTcpPair() !TcpPair {
 
 // ---------------------------------------------------------------------------
 // STRESS TEST: RecordLayer over real TCP loopback
-// Run with: zig build test-net -- --test-filter "stress"
+// Not linked from test/unit/mod.zig by default. Import this file there, then:
+//   cd test/unit && zig build test
 // ---------------------------------------------------------------------------
 test "stress: RecordLayer over TCP loopback" {
     const Crypto = runtime_std.Crypto;

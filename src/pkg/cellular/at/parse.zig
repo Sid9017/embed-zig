@@ -11,6 +11,33 @@ fn trimCr(line: []const u8) []const u8 {
     return line;
 }
 
+/// Next logical line from AT response body; advances `pos`.
+pub fn atBodyNextLine(body: []const u8, pos: *usize) ?[]const u8 {
+    if (pos.* >= body.len) return null;
+    const rest = body[pos.*..];
+    const nl = std.mem.indexOfScalar(u8, rest, '\n') orelse {
+        pos.* = body.len;
+        return trimCr(rest);
+    };
+    const line = rest[0..nl];
+    pos.* += nl + 1;
+    return trimCr(line);
+}
+
+/// First line for which `Cmd.parseResponse` returns non-null.
+pub fn parseTypedAtResponse(comptime Cmd: type, body: []const u8) ?(Cmd.Response) {
+    comptime {
+        _ = Cmd.Response;
+        _ = @as(*const fn ([]const u8) ?(Cmd.Response), &Cmd.parseResponse);
+    }
+    var pos: usize = 0;
+    while (true) {
+        const line = atBodyNextLine(body, &pos) orelse break;
+        if (Cmd.parseResponse(line)) |v| return v;
+    }
+    return null;
+}
+
 /// Returns true if the line is "OK".
 pub fn isOk(line: []const u8) bool {
     return std.mem.eql(u8, trimCr(line), "OK");
@@ -112,4 +139,37 @@ pub fn rssiToPercent(dbm: i8) u8 {
     // Range is 62 dBm (-113 to -51). Scale to 0-100.
     const offset: u8 = @intCast(dbm - (-113));
     return @intCast((@as(u16, offset) * 100) / 62);
+}
+
+/// Last complete terminal line in an AT RX buffer (OK / ERROR / +CME / +CMS).
+pub const AtRxTerminal = struct {
+    pub const Kind = enum { ok, gen_error, cme_error, cms_error };
+    kind: Kind,
+    error_code: ?u16 = null,
+    body_end: usize,
+};
+
+/// Returns null until a full line ending with `\n` completes a terminal response.
+pub fn scanAtTerminal(rx: []const u8) ?AtRxTerminal {
+    var last: ?AtRxTerminal = null;
+    var line_start: usize = 0;
+    var seg_it = std.mem.splitScalar(u8, rx, '\n');
+    while (seg_it.next()) |segment| {
+        const line = trimCr(segment);
+        if (line.len != 0) {
+            if (isOk(line)) {
+                last = .{ .kind = .ok, .body_end = line_start };
+            } else if (isError(line)) {
+                last = .{ .kind = .gen_error, .body_end = line_start };
+            } else {
+                if (parseCmeError(line)) |code| {
+                    last = .{ .kind = .cme_error, .error_code = code, .body_end = line_start };
+                } else if (parseCmsError(line)) |code2| {
+                    last = .{ .kind = .cms_error, .error_code = code2, .body_end = line_start };
+                }
+            }
+        }
+        line_start += segment.len + 1;
+    }
+    return last;
 }

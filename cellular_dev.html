@@ -584,7 +584,7 @@
         <thead><tr><th>方式</th><th>说明</th><th>适用场景</th></tr></thead>
         <tbody>
           <tr><td><strong>烧录验证</strong></td><td>编译固件烧录到 ESP32S3，UART 连接真实 4G 模组，串口 log 输出结果</td><td>涉及 IO 交互的所有步骤</td></tr>
-          <tr><td><strong>Mock 验证</strong></td><td>开发机 <code>zig build test</code>，MockIo 模拟通道；测试位于 test/unit/pkg/cellular/</td><td>纯类型、纯函数、纯状态机逻辑</td></tr>
+          <tr><td><strong>Mock 验证</strong></td><td>开发机 <code>cd test/unit && zig build test</code>，MockIo 模拟通道；测试位于 test/unit/pkg/cellular/</td><td>纯类型、纯函数、纯状态机逻辑</td></tr>
         </tbody>
       </table>
       <p>原则：能烧录验证就烧录验证。只有完全没有硬件交互的纯计算逻辑才用 Mock。</p>

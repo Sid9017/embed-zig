@@ -1,6 +1,6 @@
 # 4G Cellular Module Plan
 
-> Status: DISCUSSING — Q10 blocked on main branch IO/lwIP refactoring | Last updated: 2026-03-16 Round 42
+> Status: DISCUSSING — Q10 blocked on main branch IO/lwIP refactoring | Last updated: 2026-03-18 Round 43
 
 ---
 
@@ -47,6 +47,7 @@ Reference: `x/c/esp/components/quectel` (C, ESP-IDF).
 | R40 | Q12 解决：AtResponse 缓冲区从 `[8][128]u8` 改为单一平坦缓冲区 `[buf_size]u8`，大小由 `comptime buf_size` 参数控制（参考 atat 的 const generic 模式）。AtResponse.body 为指向 rx_buf 内的切片，通过 lineIterator 按需遍历行。溢出返回 `AtStatus.overflow`。默认 1024；AT+COPS=?/AT+CMGL 等长响应需 2048+。AtEngine 签名变为 `AtEngine(comptime Time, comptime buf_size)`，Modem/Cellular 签名透传 `at_buf_size` |
 | R41 | Q20 解决：保留 CMUX 通道可配置。理由：GSM 07.10 各 DLCI 由模组/用户约定，不同模组或固件可能分配不同（如 AT 在 DLCI 1、PPP 在 2，或反之）；用户需能通过 ModemConfig.cmux_channels 指定 DLCI 与 role（.at / .ppp）的对应关系。实现：enterCmux 的 DLCI 列表与 at/ppp 绑定均来自 config.cmux_channels；init 时做合法性校验。详见 5.6.1 可配置通道实施规格。 |
 | R42 | tick() 改为按 phase 单条 AT 模式 + Q15 修正移除 onSend()。对比 quectel C / ublox-rs / Zephyr，业界主流是"每个状态只做一件事"而非"每次 tick 全量轮询"。tick() 内 switch(phase) 每次最多发一条 AT，状态转换靠单条 AT 结果 + URC 驱动。MockIo 移除 `onSend()` 自动应答，与 BLE `MockHci` 对齐只保留 FIFO `feed()` + `feedSequence()`。每次 tick 只发一条 AT，纯 FIFO 即可覆盖所有测试场景 |
+| R43 | AtEngine：`send`/`sendRaw`、`LineIterator`、`pumpUrcs`、解析与命令侧扩展；`types_test.zig` 覆盖蜂窝类型与事件；`engine_test.zig` 大量用例。根目录 `zig build test-cellular`（及 test/unit 域步骤）跑蜂窝子集 UT；TLS stress 小修。 |
 
 ---
 

@@ -81,13 +81,10 @@ ALPN protocols are sent in ClientHello but the server's selection in EncryptedEx
 
 ## Testing
 
+TLS tests live under `test/unit/pkg/net/tls/` and are pulled in by `test/unit/mod.zig`.
+
 ```bash
-# All TLS tests (133 tests)
-zig build test-net
-
-# Stress tests only (real TCP loopback)
-zig test --dep runtime -Mroot=src/pkg/net/root.zig -Mruntime=src/runtime/root.zig --test-filter "stress"
-
-# Runtime crypto tests (includes x509)
-zig test src/runtime/std.zig
+cd test/unit && zig build test
 ```
+
+`stress_test.zig` (TCP loopback stress) is **not** imported from `mod.zig` by default. To run it, add `_ = @import("pkg/net/tls/stress_test.zig");` to `test/unit/mod.zig`, then `cd test/unit && zig build test`.

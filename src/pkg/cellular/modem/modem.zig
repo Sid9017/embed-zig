@@ -46,8 +46,9 @@ pub fn Modem(
                 .writeFn = _stubWrite,
                 .pollFn = _stubPoll,
             };
+            const at_io = cfg.at_io orelse cfg.io orelse stub;
             return .{
-                .at_engine = At.init(stub),
+                .at_engine = At.init(at_io, cfg.time),
                 .config = cfg.config,
             };
         }

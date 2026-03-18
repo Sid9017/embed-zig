@@ -127,4 +127,14 @@ pub fn build(b: *std.Build) void {
     });
     const run_firmware_test = b.addRunArtifact(firmware_test);
     b.step("test-110-cellular-firmware", "Run 110-cellular firmware mock test (no esp-zig)").dependOn(&run_firmware_test.step);
+
+    const unit_steps = [_][]const u8{ "test", "test-audio", "test-ble", "test-ui", "test-event", "test-cellular" };
+    inline for (unit_steps) |name| {
+        const run_u = b.addSystemCommand(&.{ b.graph.zig_exe, "build" });
+        run_u.addArg("--build-file");
+        run_u.addFileArg(b.path("test/unit/build.zig"));
+        run_u.addArg(name);
+        run_u.has_side_effects = true;
+        b.step(name, b.fmt("Unit tests: {s} (test/unit)", .{name})).dependOn(&run_u.step);
+    }
 }
