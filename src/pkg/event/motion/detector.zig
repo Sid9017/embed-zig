@@ -9,15 +9,15 @@
 //!   if (detector.update(sample)) |event| { ... }
 
 const std = @import("std");
-pub const types = @import("types.zig");
+const types = @import("types.zig");
 
-pub const AccelData = types.AccelData;
-pub const GyroData = types.GyroData;
-pub const SensorSample = types.SensorSample;
-pub const MotionAction = types.MotionAction;
-pub const Thresholds = types.Thresholds;
-pub const Axis = types.Axis;
-pub const Orientation = types.Orientation;
+const AccelData = types.AccelData;
+const GyroData = types.GyroData;
+const SensorSample = types.SensorSample;
+const MotionAction = types.MotionAction;
+const Thresholds = types.Thresholds;
+const Axis = types.Axis;
+const Orientation = types.Orientation;
 
 /// Check if a type has a method with the expected return structure
 /// Uses structural matching instead of exact type equality to support

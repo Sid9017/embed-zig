@@ -11,7 +11,7 @@
 //! Example (basic):
 //!   const ntp = @import("ntp");
 //!
-//!   const Client = ntp.Client(Socket);
+//!   const Client = ntp.Client(Runtime);
 //!   var client = Client{ .server = .{ 162, 159, 200, 1 } }; // time.cloudflare.com
 //!
 //!   const t1 = Board.time.nowMs();
@@ -28,10 +28,8 @@
 //!   const resp = try client.query(nonce);
 
 const std = @import("std");
-const runtime = struct {
-    pub const socket = @import("../../../runtime/socket.zig");
-    pub const std = @import("../../../runtime/std.zig");
-};
+const embed = @import("../../../mod.zig");
+const runtime_suite = embed.runtime;
 
 pub const Ipv4Address = [4]u8;
 
@@ -47,11 +45,14 @@ pub const NTP_UNIX_OFFSET: i64 = 2208988800;
 /// This makes the Origin Timestamp unpredictable, preventing off-path spoofing.
 ///
 /// Example:
-///   const nonce = ntp.generateNonce(Board.crypto.Rng);
+///   const nonce = ntp.generateNonce(Board.Runtime);
 ///   const resp = try client.query(nonce);
-pub fn generateNonce(comptime Rng: type) i64 {
+pub fn generateNonce(comptime Runtime: type) i64 {
+    comptime _ = runtime_suite.is(Runtime);
+
     var buf: [8]u8 = undefined;
-    Rng.fill(&buf);
+    var rng_inst = Runtime.Rng.init();
+    rng_inst.fill(&buf) catch return 1;
     // Convert to i64, ensure non-zero (0 is reserved)
     const raw = std.mem.readInt(i64, &buf, .little);
     return if (raw == 0) 1 else raw;
@@ -139,12 +140,12 @@ pub const ServerLists = struct {
     };
 };
 
-/// NTP Client - generic over socket type
+/// NTP Client - generic over runtime
 ///
 /// Type parameters:
-///   - `Socket`: must satisfy `runtime.socket.from` contract
-pub fn Client(comptime Socket: type) type {
-    comptime _ = runtime.socket.from(Socket);
+///   - `Runtime`: sealed runtime suite (provides Socket)
+pub fn Client(comptime Runtime: type) type {
+    comptime _ = runtime_suite.is(Runtime);
 
     return struct {
         const Self = @This();
@@ -170,7 +171,7 @@ pub fn Client(comptime Socket: type) type {
         /// Returns:
         ///   Response containing server receive (T2) and transmit (T3) timestamps
         pub fn query(self: *const Self, t1_local_ms: i64) NtpError!Response {
-            var sock = Socket.udp() catch return error.SocketError;
+            var sock = Runtime.Socket.udp() catch return error.SocketError;
             defer sock.close();
 
             sock.setRecvTimeout(self.timeout_ms);
@@ -222,7 +223,7 @@ pub fn Client(comptime Socket: type) type {
         pub fn queryRace(self: *const Self, t1_local_ms: i64, servers: []const Ipv4Address) NtpError!Response {
             if (servers.len == 0) return error.InvalidResponse;
 
-            var sock = Socket.udp() catch return error.SocketError;
+            var sock = Runtime.Socket.udp() catch return error.SocketError;
             defer sock.close();
 
             sock.setRecvTimeout(self.timeout_ms);
@@ -443,16 +444,4 @@ pub fn formatTime(epoch_ms: i64, buf: []u8) []const u8 {
         day_seconds.getMinutesIntoHour(),
         day_seconds.getSecondsIntoMinute(),
     }) catch "????-??-??T??:??:??Z";
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-// ============================================================================
-// Real Network Tests (using runtime.std.Socket)
-// ============================================================================
-
-pub fn nowMs() i64 {
-    return @intCast(@divFloor(std.time.nanoTimestamp(), 1_000_000));
 }

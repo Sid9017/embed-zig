@@ -1,7 +1,8 @@
 //! Audio resampling and channel conversion helpers.
 
 const std = @import("std");
-pub const speexdsp = @import("../../third_party/speexdsp/src.zig");
+const embed = @import("../../mod.zig");
+const speexdsp = embed.third_party.speexdsp;
 
 pub const Format = struct {
     rate: u32,

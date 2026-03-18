@@ -1,9 +1,8 @@
 const std = @import("std");
 const embed = @import("embed");
-const module = embed.pkg.ui.led_strip.animator;
 const frame_mod = embed.pkg.ui.led_strip.frame;
-const Color = module.Color;
-const Animator = module.Animator;
+const animator = embed.pkg.ui.led_strip.animator;
+const led_strip = embed.hal.led_strip;
 
 // ============================================================================
 // Tests
@@ -14,22 +13,22 @@ const Frame = frame_mod.Frame;
 
 test "Animator: fixed converges to target" {
     const F = Frame(4);
-    const Anim = Animator(4, 4);
-    var anim = Anim.fixed(F.solid(Color.red));
+    const Anim = animator.Animator(4, 4);
+    var anim = Anim.fixed(F.solid(led_strip.Color.red));
     anim.step_amount = 50;
 
     var ticks: u32 = 0;
-    while (!anim.current.eql(F.solid(Color.red))) : (ticks += 1) {
+    while (!anim.current.eql(F.solid(led_strip.Color.red))) : (ticks += 1) {
         _ = anim.tick();
         if (ticks > 100) break;
     }
-    try testing.expect(anim.current.eql(F.solid(Color.red)));
+    try testing.expect(anim.current.eql(F.solid(led_strip.Color.red)));
 }
 
 test "Animator: flash alternates" {
     const F = Frame(1);
-    const Anim = Animator(1, 4);
-    var anim = Anim.flash(F.solid(Color.white), 2);
+    const Anim = animator.Animator(1, 4);
+    var anim = Anim.flash(F.solid(led_strip.Color.white), 2);
     anim.step_amount = 255;
 
     _ = anim.tick();
@@ -44,15 +43,15 @@ test "Animator: flash alternates" {
 }
 
 test "Animator: zero frames returns false" {
-    const Anim = Animator(2, 4);
+    const Anim = animator.Animator(2, 4);
     var anim = Anim{};
     try testing.expect(!anim.tick());
 }
 
 test "Animator: brightness scales output" {
     const F = Frame(1);
-    const Anim = Animator(1, 4);
-    var anim = Anim.fixed(F.solid(Color.white));
+    const Anim = animator.Animator(1, 4);
+    var anim = Anim.fixed(F.solid(led_strip.Color.white));
     anim.brightness = 128;
     anim.step_amount = 255;
 
@@ -63,15 +62,15 @@ test "Animator: brightness scales output" {
 
 test "Animator: rotateAnim generates rotated frames" {
     const F = Frame(4);
-    const Anim = Animator(4, 4);
+    const Anim = animator.Animator(4, 4);
     var f: F = .{};
-    f.pixels[0] = Color.red;
-    f.pixels[1] = Color.green;
-    f.pixels[2] = Color.blue;
-    f.pixels[3] = Color.white;
+    f.pixels[0] = led_strip.Color.red;
+    f.pixels[1] = led_strip.Color.green;
+    f.pixels[2] = led_strip.Color.blue;
+    f.pixels[3] = led_strip.Color.white;
 
     const anim = Anim.rotateAnim(f, 8);
     try testing.expectEqual(@as(u8, 4), anim.total_frames);
-    try testing.expectEqual(Color.green, anim.frames[1].pixels[0]);
-    try testing.expectEqual(Color.blue, anim.frames[2].pixels[0]);
+    try testing.expectEqual(led_strip.Color.green, anim.frames[1].pixels[0]);
+    try testing.expectEqual(led_strip.Color.blue, anim.frames[2].pixels[0]);
 }

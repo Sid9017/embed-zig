@@ -8,26 +8,17 @@
 //! while using a simpler in-memory queue strategy for deterministic bring-up.
 
 const std = @import("std");
-pub const resampler_mod = @import("resampler.zig");
-pub const runtime = struct {
-    pub const sync = struct {
-        pub const mutex = @import("../../runtime/sync/mutex.zig");
-        pub const condition = @import("../../runtime/sync/condition.zig");
-        pub const isMutex = mutex.is;
-        pub const isCondition = condition.is;
-    };
-    pub const std = @import("../../runtime/std.zig");
-};
+const embed = @import("../../mod.zig");
+const resampler_mod = @import("resampler.zig");
 
-pub const Allocator = std.mem.Allocator;
-pub const Resampler = resampler_mod.Resampler;
+const Allocator = std.mem.Allocator;
+const Resampler = resampler_mod.Resampler;
 
 /// Bounded sample buffer for mixer tracks.
 /// Write blocks when the buffer is at capacity (backpressure).
 /// Read is non-blocking — returns however many samples are available.
-pub fn Buffer(comptime Mutex: type, comptime Cond: type) type {
-    comptime _ = runtime.sync.isMutex(Mutex);
-    comptime _ = runtime.sync.isCondition(Cond);
+pub fn Buffer(comptime Runtime: type) type {
+    comptime _ = embed.runtime.is(Runtime);
 
     return struct {
         const Self = @This();
@@ -37,8 +28,8 @@ pub fn Buffer(comptime Mutex: type, comptime Cond: type) type {
         len: usize,
         capacity: usize,
         closed: bool,
-        mutex: Mutex,
-        not_full: Cond,
+        mutex: Runtime.Mutex,
+        not_full: Runtime.Condition,
 
         pub fn init(allocator: Allocator, capacity: usize) Allocator.Error!Self {
             const items = try allocator.alloc(i16, capacity);
@@ -48,8 +39,8 @@ pub fn Buffer(comptime Mutex: type, comptime Cond: type) type {
                 .len = 0,
                 .capacity = capacity,
                 .closed = false,
-                .mutex = Mutex.init(),
-                .not_full = Cond.init(),
+                .mutex = Runtime.Mutex.init(),
+                .not_full = Runtime.Condition.init(),
             };
         }
 
@@ -157,11 +148,10 @@ pub fn Buffer(comptime Mutex: type, comptime Cond: type) type {
     };
 }
 
-pub fn Mixer(comptime Mutex: type, comptime Cond: type) type {
-    comptime _ = runtime.sync.isMutex(Mutex);
-    comptime _ = runtime.sync.isCondition(Cond);
+pub fn Mixer(comptime Runtime: type) type {
+    comptime _ = embed.runtime.is(Runtime);
 
-    const BufferType = Buffer(Mutex, Cond);
+    const BufferType = Buffer(Runtime);
 
     return struct {
         const Self = @This();
@@ -188,12 +178,12 @@ pub fn Mixer(comptime Mutex: type, comptime Cond: type) type {
 
         allocator: Allocator,
         config: Config,
-        mutex: Mutex,
+        mutex: Runtime.Mutex,
         close_write: bool = false,
         close_err: bool = false,
         tracks: std.ArrayList(*TrackCtrl),
 
-        pub fn init(allocator: Allocator, config: Config, mutex: Mutex) Self {
+        pub fn init(allocator: Allocator, config: Config, mutex: Runtime.Mutex) Self {
             return .{
                 .allocator = allocator,
                 .config = config,

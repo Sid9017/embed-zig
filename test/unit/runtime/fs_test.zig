@@ -1,10 +1,8 @@
-const module = @import("embed").runtime.fs;
-const OpenMode = module.OpenMode;
-const Error = module.Error;
-const File = module.File;
-
 const std = @import("std");
 const testing = std.testing;
+
+const embed = @import("embed");
+const fs = embed.runtime.fs;
 
 test "File readAll with mock reader" {
     const Ctx = struct {
@@ -15,7 +13,7 @@ test "File readAll with mock reader" {
     var ctx = Ctx{ .data = "hello", .pos = 0 };
 
     const readFn = struct {
-        fn read(ctx_ptr: *anyopaque, buf: []u8) Error!usize {
+        fn read(ctx_ptr: *anyopaque, buf: []u8) fs.Error!usize {
             const c: *Ctx = @ptrCast(@alignCast(ctx_ptr));
             const rem = c.data.len - c.pos;
             const n = @min(rem, buf.len);
@@ -27,7 +25,7 @@ test "File readAll with mock reader" {
         fn close(_: *anyopaque) void {}
     };
 
-    var file = File{
+    var file = fs.File{
         .ctx = @ptrCast(&ctx),
         .readFn = &readFn.read,
         .closeFn = &readFn.close,
@@ -47,15 +45,15 @@ test "File readAll propagates read errors" {
     var ctx = Ctx{ .called = false };
 
     const readFn = struct {
-        fn read(ctx_ptr: *anyopaque, _: []u8) Error!usize {
+        fn read(ctx_ptr: *anyopaque, _: []u8) fs.Error!usize {
             const c: *Ctx = @ptrCast(@alignCast(ctx_ptr));
             c.called = true;
-            return Error.IoError;
+            return fs.Error.IoError;
         }
         fn close(_: *anyopaque) void {}
     };
 
-    var file = File{
+    var file = fs.File{
         .ctx = @ptrCast(&ctx),
         .readFn = &readFn.read,
         .closeFn = &readFn.close,
@@ -63,6 +61,6 @@ test "File readAll propagates read errors" {
     };
 
     var buf: [8]u8 = undefined;
-    try std.testing.expectError(Error.IoError, file.readAll(&buf));
+    try std.testing.expectError(fs.Error.IoError, file.readAll(&buf));
     try std.testing.expect(ctx.called);
 }

@@ -1,7 +1,4 @@
 const std = @import("std");
-pub const runtime = struct {
-    pub const std = @import("../../../runtime/std.zig");
-};
 
 /// HKDF-Expand-Label for TLS 1.3 (RFC 8446 Section 7.1).
 pub fn hkdfExpandLabel(

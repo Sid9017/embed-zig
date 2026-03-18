@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn HashWrapper(comptime StdHash: type) type {
+fn HashWrapper(comptime StdHash: type) type {
     return struct {
         pub const digest_length = StdHash.digest_length;
 
@@ -26,6 +26,11 @@ pub fn HashWrapper(comptime StdHash: type) type {
     };
 }
 
-pub const Sha256 = HashWrapper(std.crypto.hash.sha2.Sha256);
-pub const Sha384 = HashWrapper(std.crypto.hash.sha2.Sha384);
-pub const Sha512 = HashWrapper(std.crypto.hash.sha2.Sha512);
+pub fn hash(comptime digest_len: usize) type {
+    return switch (digest_len) {
+        32 => HashWrapper(std.crypto.hash.sha2.Sha256),
+        48 => HashWrapper(std.crypto.hash.sha2.Sha384),
+        64 => HashWrapper(std.crypto.hash.sha2.Sha512),
+        else => @compileError("unsupported hash digest length"),
+    };
+}

@@ -1,13 +1,8 @@
-const module = @import("embed").hal.hci;
-const is = module.is;
-const PollFlags = module.PollFlags;
-const PacketType = module.PacketType;
-const Error = module.Error;
-const from = module.from;
-const hal_marker = module.hal_marker;
-
 const std = @import("std");
 const testing = std.testing;
+const embed = @import("embed");
+
+const hci_mod = embed.hal.hci;
 
 test "hci wrapper basic" {
     const MockDriver = struct {
@@ -17,7 +12,7 @@ test "hci wrapper basic" {
         rx_len: usize = 4,
         tx_buf: [8]u8 = .{0} ** 8,
 
-        pub fn read(self: *Self, buf: []u8) Error!usize {
+        pub fn read(self: *Self, buf: []u8) hci_mod.Error!usize {
             if (self.rx_len == 0) return error.WouldBlock;
             const n = @min(self.rx_len, buf.len);
             @memcpy(buf[0..n], self.rx_buf[0..n]);
@@ -25,13 +20,13 @@ test "hci wrapper basic" {
             return n;
         }
 
-        pub fn write(self: *Self, buf: []const u8) Error!usize {
+        pub fn write(self: *Self, buf: []const u8) hci_mod.Error!usize {
             const n = @min(buf.len, self.tx_buf.len);
             @memcpy(self.tx_buf[0..n], buf[0..n]);
             return n;
         }
 
-        pub fn poll(self: *Self, flags: PollFlags, _: i32) PollFlags {
+        pub fn poll(self: *Self, flags: hci_mod.PollFlags, _: i32) hci_mod.PollFlags {
             return .{
                 .readable = flags.readable and self.rx_len > 0,
                 .writable = flags.writable,
@@ -39,7 +34,7 @@ test "hci wrapper basic" {
         }
     };
 
-    const Hci = from(struct {
+    const Hci = hci_mod.from(struct {
         pub const Driver = MockDriver;
         pub const meta = .{ .id = "hci.test" };
     });
@@ -52,9 +47,9 @@ test "hci wrapper basic" {
     var buf: [8]u8 = undefined;
     const n = try hci.read(&buf);
     try std.testing.expectEqual(@as(usize, 4), n);
-    try std.testing.expectEqual(@as(u8, @intFromEnum(PacketType.event)), buf[0]);
+    try std.testing.expectEqual(@as(u8, @intFromEnum(hci_mod.PacketType.event)), buf[0]);
 
-    const cmd = [_]u8{ @intFromEnum(PacketType.command), 0x03, 0x0C, 0x00 };
+    const cmd = [_]u8{ @intFromEnum(hci_mod.PacketType.command), 0x03, 0x0C, 0x00 };
     _ = try hci.write(&cmd);
     try std.testing.expectEqualSlices(u8, &cmd, d.tx_buf[0..cmd.len]);
 }

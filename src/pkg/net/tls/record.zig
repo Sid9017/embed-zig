@@ -1,14 +1,13 @@
 const std = @import("std");
-pub const runtime = struct {
-    pub const std = @import("../../../runtime/std.zig");
-};
-pub const common = @import("common.zig");
+const embed = @import("../../../mod.zig");
+const runtime_suite = embed.runtime;
+const common = @import("common.zig");
 
-pub const ContentType = common.ContentType;
-pub const ProtocolVersion = common.ProtocolVersion;
-pub const CipherSuite = common.CipherSuite;
-pub const AlertDescription = common.AlertDescription;
-pub const AlertLevel = common.AlertLevel;
+const ContentType = common.ContentType;
+const ProtocolVersion = common.ProtocolVersion;
+const CipherSuite = common.CipherSuite;
+const AlertDescription = common.AlertDescription;
+const AlertLevel = common.AlertLevel;
 
 pub const RecordHeader = struct {
     content_type: ContentType,
@@ -34,12 +33,15 @@ pub const RecordHeader = struct {
     }
 };
 
-pub fn CipherState(comptime Crypto: type) type {
+pub fn CipherState(comptime Runtime: type) type {
+    comptime {
+        _ = runtime_suite.is(Runtime);
+    }
     return union(enum) {
         none,
-        aes_128_gcm: AesGcmState(Crypto, 16),
-        aes_256_gcm: AesGcmState(Crypto, 32),
-        chacha20_poly1305: ChaChaState(Crypto),
+        aes_128_gcm: AesGcmState(Runtime, 16),
+        aes_256_gcm: AesGcmState(Runtime, 32),
+        chacha20_poly1305: ChaChaState(Runtime),
 
         const Self = @This();
 
@@ -48,17 +50,17 @@ pub fn CipherState(comptime Crypto: type) type {
                 .TLS_AES_128_GCM_SHA256,
                 .TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
                 .TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-                => .{ .aes_128_gcm = try AesGcmState(Crypto, 16).init(key, iv) },
+                => .{ .aes_128_gcm = try AesGcmState(Runtime, 16).init(key, iv) },
 
                 .TLS_AES_256_GCM_SHA384,
                 .TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
                 .TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-                => .{ .aes_256_gcm = try AesGcmState(Crypto, 32).init(key, iv) },
+                => .{ .aes_256_gcm = try AesGcmState(Runtime, 32).init(key, iv) },
 
                 .TLS_CHACHA20_POLY1305_SHA256,
                 .TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
                 .TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-                => .{ .chacha20_poly1305 = try ChaChaState(Crypto).init(key, iv) },
+                => .{ .chacha20_poly1305 = try ChaChaState(Runtime).init(key, iv) },
 
                 else => return error.UnsupportedCipherSuite,
             };
@@ -66,13 +68,16 @@ pub fn CipherState(comptime Crypto: type) type {
     };
 }
 
-pub fn AesGcmState(comptime Crypto: type, comptime key_len: usize) type {
+pub fn AesGcmState(comptime Runtime: type, comptime key_len: usize) type {
+    comptime {
+        _ = runtime_suite.is(Runtime);
+    }
     return struct {
         key: [key_len]u8,
         iv: [12]u8,
 
         const Self = @This();
-        const AEAD = if (key_len == 16) Crypto.Aes128Gcm else Crypto.Aes256Gcm;
+        const AEAD = if (key_len == 16) Runtime.Crypto.Aead.Aes128Gcm() else Runtime.Crypto.Aead.Aes256Gcm();
 
         pub fn init(key: []const u8, iv: []const u8) !Self {
             if (key.len != key_len) return error.InvalidKeyLength;
@@ -118,13 +123,16 @@ pub fn AesGcmState(comptime Crypto: type, comptime key_len: usize) type {
     };
 }
 
-pub fn ChaChaState(comptime Crypto: type) type {
+pub fn ChaChaState(comptime Runtime: type) type {
+    comptime {
+        _ = runtime_suite.is(Runtime);
+    }
     return struct {
         key: [32]u8,
         iv: [12]u8,
 
         const Self = @This();
-        const AEAD = Crypto.ChaCha20Poly1305;
+        const AEAD = Runtime.Crypto.Aead.ChaCha20Poly1305();
 
         pub fn init(key: []const u8, iv: []const u8) !Self {
             if (key.len != 32) return error.InvalidKeyLength;
@@ -186,11 +194,14 @@ pub const RecordError = error{
 /// TLS Record Layer — reads/writes TLS records over a `Conn`.
 ///
 /// `Conn` must satisfy the `net.conn.from` contract (`read`/`write`/`close`).
-pub fn RecordLayer(comptime Conn: type, comptime Crypto: type) type {
+pub fn RecordLayer(comptime Conn: type, comptime Runtime: type) type {
+    comptime {
+        _ = runtime_suite.is(Runtime);
+    }
     return struct {
         conn: *Conn,
-        read_cipher: CipherState(Crypto),
-        write_cipher: CipherState(Crypto),
+        read_cipher: CipherState(Runtime),
+        write_cipher: CipherState(Runtime),
         read_seq: u64,
         write_seq: u64,
         version: ProtocolVersion,
@@ -208,12 +219,12 @@ pub fn RecordLayer(comptime Conn: type, comptime Crypto: type) type {
             };
         }
 
-        pub fn setReadCipher(self: *Self, cipher: CipherState(Crypto)) void {
+        pub fn setReadCipher(self: *Self, cipher: CipherState(Runtime)) void {
             self.read_cipher = cipher;
             self.read_seq = 0;
         }
 
-        pub fn setWriteCipher(self: *Self, cipher: CipherState(Crypto)) void {
+        pub fn setWriteCipher(self: *Self, cipher: CipherState(Runtime)) void {
             self.write_cipher = cipher;
             self.write_seq = 0;
         }
@@ -435,44 +446,3 @@ pub fn RecordLayer(comptime Conn: type, comptime Crypto: type) type {
         }
     };
 }
-
-pub const MockConn = struct {
-    write_buf: [16384]u8 = undefined,
-    write_len: usize = 0,
-    read_buf: [16384]u8 = undefined,
-    read_len: usize = 0,
-    read_pos: usize = 0,
-    closed: bool = false,
-
-    const conn_mod = @import("../conn.zig");
-
-    pub fn read(self: *MockConn, buf: []u8) conn_mod.Error!usize {
-        if (self.closed) return conn_mod.Error.Closed;
-        if (self.read_pos >= self.read_len) return conn_mod.Error.ReadFailed;
-        const avail = self.read_len - self.read_pos;
-        const n = @min(avail, buf.len);
-        @memcpy(buf[0..n], self.read_buf[self.read_pos..][0..n]);
-        self.read_pos += n;
-        return n;
-    }
-
-    pub fn write(self: *MockConn, data: []const u8) conn_mod.Error!usize {
-        if (self.closed) return conn_mod.Error.Closed;
-        const space = self.write_buf.len - self.write_len;
-        const n = @min(space, data.len);
-        if (n == 0) return conn_mod.Error.WriteFailed;
-        @memcpy(self.write_buf[self.write_len..][0..n], data[0..n]);
-        self.write_len += n;
-        return n;
-    }
-
-    pub fn close(self: *MockConn) void {
-        self.closed = true;
-    }
-
-    pub fn feedData(self: *MockConn, data: []const u8) void {
-        @memcpy(self.read_buf[0..data.len], data);
-        self.read_len = data.len;
-        self.read_pos = 0;
-    }
-};

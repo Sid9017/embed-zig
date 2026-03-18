@@ -1,22 +1,20 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.websim.hal.led_strip;
-const Color = embed.hal.led_strip.Color;
-const max_pixels = module.max_pixels;
-const LedStrip = module.LedStrip;
+const led_strip = embed.hal.led_strip;
+const led_strip_mod = embed.websim.hal.led_strip;
 
 test "websim led_strip satisfies hal contract" {
     const LedStripHal = embed.hal.led_strip.from(struct {
-        pub const Driver = LedStrip;
+        pub const Driver = led_strip_mod.LedStrip;
         pub const meta = .{ .id = "led_strip.websim" };
     });
 
-    var drv = LedStrip.init();
+    var drv = led_strip_mod.LedStrip.init();
     var strip = LedStripHal.init(&drv);
 
     try std.testing.expectEqual(@as(u32, 1), strip.getPixelCount());
 
-    strip.setPixel(0, Color.red);
-    try std.testing.expectEqual(Color.red, drv.pixels[0]);
+    strip.setPixel(0, led_strip.Color.red);
+    try std.testing.expectEqual(led_strip.Color.red, drv.pixels[0]);
 }

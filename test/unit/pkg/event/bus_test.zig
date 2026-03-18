@@ -3,7 +3,7 @@ const testing = std.testing;
 const embed = @import("embed");
 const bus_mod = embed.pkg.event.bus;
 const Bus = bus_mod.Bus;
-const StdChannel = embed.runtime.std.ChannelFactory;
+const Std = embed.runtime.std;
 
 const TestPayload = struct { value: u32 };
 
@@ -12,7 +12,7 @@ const TestBus = Bus(.{
     .src_b = TestPayload,
 }, .{
     .transformed = TestPayload,
-}, StdChannel);
+}, Std);
 
 test "init and deinit" {
     var bus = try TestBus.init(testing.allocator, 16);

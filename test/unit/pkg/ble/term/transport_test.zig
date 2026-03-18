@@ -1,15 +1,13 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.ble.term.transport_mod;
-const GattTransport = module.GattTransport;
-const builtin = module.builtin;
-const TestMutex = module.TestMutex;
-const TestCond = module.TestCond;
-const testNotify = module.testNotify;
+const transport_mod = embed.pkg.ble.term.transport;
+const Std = embed.runtime.std;
+
+fn testNotify(_: ?*anyopaque, _: []const u8) anyerror!void {}
 
 test "GattTransport: push and recv" {
-    const T = GattTransport(TestMutex, TestCond);
+    const T = transport_mod.GattTransport(Std);
     var transport = T.init(testNotify, null);
     defer transport.deinit();
 
@@ -21,7 +19,7 @@ test "GattTransport: push and recv" {
 }
 
 test "GattTransport: recv timeout returns null" {
-    const T = GattTransport(TestMutex, TestCond);
+    const T = transport_mod.GattTransport(Std);
     var transport = T.init(testNotify, null);
     defer transport.deinit();
 
@@ -31,7 +29,7 @@ test "GattTransport: recv timeout returns null" {
 }
 
 test "GattTransport: multiple push/recv" {
-    const T = GattTransport(TestMutex, TestCond);
+    const T = transport_mod.GattTransport(Std);
     var transport = T.init(testNotify, null);
     defer transport.deinit();
 
@@ -56,7 +54,7 @@ test "GattTransport: send calls notify_fn" {
         }
     };
     var ctx = Ctx{};
-    const T = GattTransport(TestMutex, TestCond);
+    const T = transport_mod.GattTransport(Std);
     var transport = T.init(Ctx.notify, @ptrCast(&ctx));
     defer transport.deinit();
 
@@ -65,7 +63,7 @@ test "GattTransport: send calls notify_fn" {
 }
 
 test "GattTransport: close wakes recv" {
-    const T = GattTransport(TestMutex, TestCond);
+    const T = transport_mod.GattTransport(Std);
     var transport = T.init(testNotify, null);
     defer transport.deinit();
 
@@ -77,7 +75,7 @@ test "GattTransport: close wakes recv" {
 }
 
 test "GattTransport: reset clears queue" {
-    const T = GattTransport(TestMutex, TestCond);
+    const T = transport_mod.GattTransport(Std);
     var transport = T.init(testNotify, null);
     defer transport.deinit();
 

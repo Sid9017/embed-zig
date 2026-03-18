@@ -1,10 +1,8 @@
 const std = @import("std");
 const embed = @import("embed");
-const channel_factory = embed.runtime.std.ChannelFactory;
-const runner = embed.runtime.test_runners.channel;
+const ChannelTestRunner = embed.runtime.test_runners.ChannelTestRunner;
 
-const StdChannel = channel_factory.Channel(u32);
-const TestRunner = runner.ChannelTestRunner(StdChannel);
+const TestRunner = ChannelTestRunner(embed.runtime.std.ChannelFactory);
 
 test "std channel passes basic tests" {
     try TestRunner.run(std.testing.allocator, .{ .basic = true });

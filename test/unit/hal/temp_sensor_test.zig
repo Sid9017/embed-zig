@@ -1,17 +1,14 @@
-const module = @import("embed").hal.temp_sensor;
-const Error = module.Error;
-const is = module.is;
-const from = module.from;
-const hal_marker = module.hal_marker;
-
 const std = @import("std");
 const testing = std.testing;
+const embed = @import("embed");
+
+const temp_sensor = embed.hal.temp_sensor;
 
 test "TempSensor with mock driver" {
     const MockDriver = struct {
         temperature: f32 = 25.0,
 
-        pub fn readCelsius(self: *@This()) Error!f32 {
+        pub fn readCelsius(self: *@This()) temp_sensor.Error!f32 {
             return self.temperature;
         }
     };
@@ -21,7 +18,7 @@ test "TempSensor with mock driver" {
         pub const meta = .{ .id = "temp.test" };
     };
 
-    const TestTemp = from(temp_spec);
+    const TestTemp = temp_sensor.from(temp_spec);
 
     var driver = MockDriver{ .temperature = 25.0 };
     var temp = TestTemp.init(&driver);
@@ -39,9 +36,9 @@ test "TempSensor with mock driver" {
 }
 
 test "Temperature conversions" {
-    const TestTemp = from(struct {
+    const TestTemp = temp_sensor.from(struct {
         pub const Driver = struct {
-            pub fn readCelsius(_: *@This()) Error!f32 {
+            pub fn readCelsius(_: *@This()) temp_sensor.Error!f32 {
                 return 0;
             }
         };

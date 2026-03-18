@@ -1,20 +1,10 @@
 const std = @import("std");
 const testing = std.testing;
-const module = @import("embed").pkg.net.url;
-const ParseError = module.ParseError;
-const Url = module.Url;
-const QueryIterator = module.QueryIterator;
-const parse = module.parse;
-const getSchemeEnd = module.getSchemeEnd;
-const parseAuthority = module.parseAuthority;
-const parsePort = module.parsePort;
-const isAlpha = module.isAlpha;
-const isDigit = module.isDigit;
-const indexOf = module.indexOf;
-const lastIndexOf = module.lastIndexOf;
+const embed = @import("embed");
+const url = embed.pkg.net.url;
 
 test "full URL with all components" {
-    const u = try parse("mqtts://user:pass@example.com:8883/topic?qos=1#ref");
+    const u = try url.parse("mqtts://user:pass@example.com:8883/topic?qos=1#ref");
     try testing.expectEqualStrings("mqtts", u.scheme.?);
     try testing.expectEqualStrings("user", u.username.?);
     try testing.expectEqualStrings("pass", u.password.?);
@@ -26,7 +16,7 @@ test "full URL with all components" {
 }
 
 test "HTTP URL without userinfo" {
-    const u = try parse("https://www.example.com:443/path/to/resource?key=value");
+    const u = try url.parse("https://www.example.com:443/path/to/resource?key=value");
     try testing.expectEqualStrings("https", u.scheme.?);
     try testing.expect(u.username == null);
     try testing.expect(u.password == null);
@@ -38,7 +28,7 @@ test "HTTP URL without userinfo" {
 }
 
 test "URL without port" {
-    const u = try parse("http://example.com/path");
+    const u = try url.parse("http://example.com/path");
     try testing.expectEqualStrings("http", u.scheme.?);
     try testing.expectEqualStrings("example.com", u.host.?);
     try testing.expect(u.port == null);
@@ -47,14 +37,14 @@ test "URL without port" {
 }
 
 test "URL without path" {
-    const u = try parse("http://example.com");
+    const u = try url.parse("http://example.com");
     try testing.expectEqualStrings("http", u.scheme.?);
     try testing.expectEqualStrings("example.com", u.host.?);
     try testing.expectEqualStrings("", u.path);
 }
 
 test "URL with only scheme and host" {
-    const u = try parse("mqtt://broker.local");
+    const u = try url.parse("mqtt://broker.local");
     try testing.expectEqualStrings("mqtt", u.scheme.?);
     try testing.expectEqualStrings("broker.local", u.host.?);
     try testing.expect(u.port == null);
@@ -62,7 +52,7 @@ test "URL with only scheme and host" {
 }
 
 test "username without password" {
-    const u = try parse("ftp://admin@files.example.com/pub");
+    const u = try url.parse("ftp://admin@files.example.com/pub");
     try testing.expectEqualStrings("ftp", u.scheme.?);
     try testing.expectEqualStrings("admin", u.username.?);
     try testing.expect(u.password == null);
@@ -71,13 +61,13 @@ test "username without password" {
 }
 
 test "empty password" {
-    const u = try parse("ftp://admin:@files.example.com/pub");
+    const u = try url.parse("ftp://admin:@files.example.com/pub");
     try testing.expectEqualStrings("admin", u.username.?);
     try testing.expectEqualStrings("", u.password.?);
 }
 
 test "IPv6 host without port" {
-    const u = try parse("http://[::1]/path");
+    const u = try url.parse("http://[::1]/path");
     try testing.expectEqualStrings("[::1]", u.host.?);
     try testing.expectEqualStrings("::1", u.hostname().?);
     try testing.expect(u.port == null);
@@ -85,7 +75,7 @@ test "IPv6 host without port" {
 }
 
 test "IPv6 host with port" {
-    const u = try parse("http://[2001:db8::1]:8080/path");
+    const u = try url.parse("http://[2001:db8::1]:8080/path");
     try testing.expectEqualStrings("[2001:db8::1]", u.host.?);
     try testing.expectEqualStrings("2001:db8::1", u.hostname().?);
     try testing.expectEqual(@as(u16, 8080), u.port.?);
@@ -93,29 +83,29 @@ test "IPv6 host with port" {
 }
 
 test "IPv6 trailing colon, no port" {
-    const u = try parse("http://[::1]:/path");
+    const u = try url.parse("http://[::1]:/path");
     try testing.expectEqualStrings("[::1]", u.host.?);
     try testing.expect(u.port == null);
     try testing.expectEqualStrings("/path", u.path);
 }
 
 test "IPv6 unclosed bracket" {
-    try testing.expectError(error.InvalidHost, parse("http://[::1/path"));
+    try testing.expectError(error.InvalidHost, url.parse("http://[::1/path"));
 }
 
 test "IPv6 junk after bracket" {
-    try testing.expectError(error.InvalidHost, parse("http://[::1]x/path"));
+    try testing.expectError(error.InvalidHost, url.parse("http://[::1]x/path"));
 }
 
 test "file URI with empty authority" {
-    const u = try parse("file:///etc/hosts");
+    const u = try url.parse("file:///etc/hosts");
     try testing.expectEqualStrings("file", u.scheme.?);
     try testing.expect(u.host == null);
     try testing.expectEqualStrings("/etc/hosts", u.path);
 }
 
 test "relative reference (no scheme)" {
-    const u = try parse("/path/to/resource?q=1#frag");
+    const u = try url.parse("/path/to/resource?q=1#frag");
     try testing.expect(u.scheme == null);
     try testing.expect(u.host == null);
     try testing.expectEqualStrings("/path/to/resource", u.path);
@@ -124,7 +114,7 @@ test "relative reference (no scheme)" {
 }
 
 test "empty string" {
-    const u = try parse("");
+    const u = try url.parse("");
     try testing.expect(u.scheme == null);
     try testing.expect(u.host == null);
     try testing.expectEqualStrings("", u.path);
@@ -133,21 +123,21 @@ test "empty string" {
 }
 
 test "fragment only" {
-    const u = try parse("#section");
+    const u = try url.parse("#section");
     try testing.expect(u.scheme == null);
     try testing.expectEqualStrings("section", u.fragment.?);
     try testing.expectEqualStrings("", u.path);
 }
 
 test "query only" {
-    const u = try parse("?key=value");
+    const u = try url.parse("?key=value");
     try testing.expect(u.scheme == null);
     try testing.expectEqualStrings("key=value", u.raw_query.?);
     try testing.expectEqualStrings("", u.path);
 }
 
 test "opaque URI (mailto)" {
-    const u = try parse("mailto:user@example.com");
+    const u = try url.parse("mailto:user@example.com");
     try testing.expectEqualStrings("mailto", u.scheme.?);
     // No authority (no "//"), so "user@example.com" is the path
     try testing.expectEqualStrings("user@example.com", u.path);
@@ -155,48 +145,48 @@ test "opaque URI (mailto)" {
 }
 
 test "scheme with digits and special chars" {
-    const u = try parse("coap+tcp://sensor.local:5683/temp");
+    const u = try url.parse("coap+tcp://sensor.local:5683/temp");
     try testing.expectEqualStrings("coap+tcp", u.scheme.?);
     try testing.expectEqualStrings("sensor.local", u.host.?);
     try testing.expectEqual(@as(u16, 5683), u.port.?);
 }
 
 test "invalid port: non-numeric" {
-    try testing.expectError(error.InvalidPort, parse("http://host:abc/path"));
+    try testing.expectError(error.InvalidPort, url.parse("http://host:abc/path"));
 }
 
 test "invalid port: exceeds u16" {
-    try testing.expectError(error.InvalidPort, parse("http://host:99999/path"));
+    try testing.expectError(error.InvalidPort, url.parse("http://host:99999/path"));
 }
 
 test "trailing colon, no port" {
-    const u = try parse("http://host:/path");
+    const u = try url.parse("http://host:/path");
     try testing.expectEqualStrings("host", u.host.?);
     try testing.expect(u.port == null);
     try testing.expectEqualStrings("/path", u.path);
 }
 
 test "port boundary: 0" {
-    const u = try parse("http://host:0/path");
+    const u = try url.parse("http://host:0/path");
     try testing.expectEqual(@as(u16, 0), u.port.?);
 }
 
 test "port boundary: 65535" {
-    const u = try parse("http://host:65535/path");
+    const u = try url.parse("http://host:65535/path");
     try testing.expectEqual(@as(u16, 65535), u.port.?);
 }
 
 test "port boundary: 65536 overflows" {
-    try testing.expectError(error.InvalidPort, parse("http://host:65536/path"));
+    try testing.expectError(error.InvalidPort, url.parse("http://host:65536/path"));
 }
 
 test "query with multiple params" {
-    const u = try parse("http://h/p?a=1&b=2&c=3");
+    const u = try url.parse("http://h/p?a=1&b=2&c=3");
     try testing.expectEqualStrings("a=1&b=2&c=3", u.raw_query.?);
 }
 
 test "query iterator" {
-    const u = try parse("http://h/p?a=1&b=2&flag&c=");
+    const u = try url.parse("http://h/p?a=1&b=2&flag&c=");
     var it = u.queryIterator();
 
     const e1 = it.next().?;
@@ -219,7 +209,7 @@ test "query iterator" {
 }
 
 test "query iterator: empty segments" {
-    const u = try parse("http://h/p?a=1&&b=2");
+    const u = try url.parse("http://h/p?a=1&&b=2");
     var it = u.queryIterator();
 
     const e1 = it.next().?;
@@ -232,7 +222,7 @@ test "query iterator: empty segments" {
 }
 
 test "query iterator: reset" {
-    const u = try parse("http://h/p?x=1");
+    const u = try url.parse("http://h/p?x=1");
     var it = u.queryIterator();
     _ = it.next();
     try testing.expect(it.next() == null);
@@ -243,52 +233,52 @@ test "query iterator: reset" {
 }
 
 test "query iterator: no query" {
-    const u = try parse("http://h/p");
+    const u = try url.parse("http://h/p");
     var it = u.queryIterator();
     try testing.expect(it.next() == null);
 }
 
 test "hostname: regular host" {
-    const u = try parse("http://example.com/");
+    const u = try url.parse("http://example.com/");
     try testing.expectEqualStrings("example.com", u.hostname().?);
 }
 
 test "hostname: no host" {
-    const u = try parse("/path");
+    const u = try url.parse("/path");
     try testing.expect(u.hostname() == null);
 }
 
 test "portOrDefault: port present" {
-    const u = try parse("http://h:9090/");
+    const u = try url.parse("http://h:9090/");
     try testing.expectEqual(@as(u16, 9090), u.portOrDefault(80));
 }
 
 test "portOrDefault: port absent" {
-    const u = try parse("http://h/");
+    const u = try url.parse("http://h/");
     try testing.expectEqual(@as(u16, 80), u.portOrDefault(80));
 }
 
 test "raw field preserves original input" {
     const input = "http://example.com/path?q=1#f";
-    const u = try parse(input);
+    const u = try url.parse(input);
     try testing.expectEqualStrings(input, u.raw);
 }
 
 test "query and fragment interaction" {
     // '?' in fragment should not be treated as query delimiter
-    const u = try parse("http://h/p?q=1#frag?ment");
+    const u = try url.parse("http://h/p?q=1#frag?ment");
     try testing.expectEqualStrings("q=1", u.raw_query.?);
     try testing.expectEqualStrings("frag?ment", u.fragment.?);
 }
 
 test "fragment with '#' characters" {
     // Only the first '#' splits; rest is part of fragment
-    const u = try parse("http://h/p#a#b#c");
+    const u = try url.parse("http://h/p#a#b#c");
     try testing.expectEqualStrings("a#b#c", u.fragment.?);
 }
 
 test "MQTT URL (primary use case)" {
-    const u = try parse("mqtt://device:secret@broker.haivivi.com:1883");
+    const u = try url.parse("mqtt://device:secret@broker.haivivi.com:1883");
     try testing.expectEqualStrings("mqtt", u.scheme.?);
     try testing.expectEqualStrings("device", u.username.?);
     try testing.expectEqualStrings("secret", u.password.?);
@@ -298,7 +288,7 @@ test "MQTT URL (primary use case)" {
 }
 
 test "MQTTS URL" {
-    const u = try parse("mqtts://broker.haivivi.com:8883/telemetry");
+    const u = try url.parse("mqtts://broker.haivivi.com:8883/telemetry");
     try testing.expectEqualStrings("mqtts", u.scheme.?);
     try testing.expectEqualStrings("broker.haivivi.com", u.host.?);
     try testing.expectEqual(@as(u16, 8883), u.port.?);
@@ -306,7 +296,7 @@ test "MQTTS URL" {
 }
 
 test "WebSocket URL" {
-    const u = try parse("wss://stream.example.com/v1/events?token=abc");
+    const u = try url.parse("wss://stream.example.com/v1/events?token=abc");
     try testing.expectEqualStrings("wss", u.scheme.?);
     try testing.expectEqualStrings("stream.example.com", u.host.?);
     try testing.expectEqualStrings("/v1/events", u.path);

@@ -1,9 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.flux.app_state_manager;
-const AppStateManager = module.AppStateManager;
-const Store = module.Store;
+const app_state_manager = embed.pkg.flux.app_state_manager;
 
 // ============================================================================
 // Tests
@@ -36,7 +34,7 @@ const TestApp = struct {
 };
 
 test "AppStateManager: init and dispatch" {
-    var app = AppStateManager(TestApp).init(.{ .fps = 30 });
+    var app = app_state_manager.AppStateManager(TestApp).init(.{ .fps = 30 });
 
     try testing.expectEqual(@as(u32, 0), app.getState().count);
     try testing.expect(app.isDirty()); // first frame always dirty
@@ -47,7 +45,7 @@ test "AppStateManager: init and dispatch" {
 }
 
 test "AppStateManager: shouldRender respects fps" {
-    var app = AppStateManager(TestApp).init(.{ .fps = 30 });
+    var app = app_state_manager.AppStateManager(TestApp).init(.{ .fps = 30 });
 
     // First frame: dirty + enough time → should render
     try testing.expect(app.shouldRender(33));
@@ -67,7 +65,7 @@ test "AppStateManager: shouldRender respects fps" {
 }
 
 test "AppStateManager: fps=0 unlimited" {
-    var app = AppStateManager(TestApp).init(.{ .fps = 0 });
+    var app = app_state_manager.AppStateManager(TestApp).init(.{ .fps = 0 });
     app.dispatch(.increment);
     // Should always render when dirty
     try testing.expect(app.shouldRender(0));
@@ -77,7 +75,7 @@ test "AppStateManager: fps=0 unlimited" {
 }
 
 test "AppStateManager: no render when not dirty" {
-    var app = AppStateManager(TestApp).init(.{ .fps = 30 });
+    var app = app_state_manager.AppStateManager(TestApp).init(.{ .fps = 30 });
     app.commitFrame(0); // clear initial dirty
 
     // No events → not dirty → no render
@@ -85,7 +83,7 @@ test "AppStateManager: no render when not dirty" {
 }
 
 test "AppStateManager: batch dispatch" {
-    var app = AppStateManager(TestApp).init(.{ .fps = 30 });
+    var app = app_state_manager.AppStateManager(TestApp).init(.{ .fps = 30 });
     app.commitFrame(0);
 
     const events = [_]TestApp.Event{ .increment, .increment, .increment };
@@ -96,7 +94,7 @@ test "AppStateManager: batch dispatch" {
 }
 
 test "AppStateManager: state navigation" {
-    var app = AppStateManager(TestApp).init(.{ .fps = 30 });
+    var app = app_state_manager.AppStateManager(TestApp).init(.{ .fps = 30 });
 
     app.dispatch(.{ .navigate = .settings });
     try testing.expectEqual(.settings, app.getState().page);

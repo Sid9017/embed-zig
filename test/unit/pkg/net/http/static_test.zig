@@ -1,19 +1,36 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.net.http.static;
-const EmbeddedFile = module.EmbeddedFile;
-const serveEmbedded = module.serveEmbedded;
-const mimeFromPath = module.mimeFromPath;
+const static = embed.pkg.net.http.static;
 const mem = std.mem;
 const request_mod = embed.pkg.net.http.request;
 const response_mod = embed.pkg.net.http.response;
 const router_mod = embed.pkg.net.http.router;
 const Request = request_mod.Request;
 const Response = response_mod.Response;
-const endsWith = module.endsWith;
-const TestWriter = module.TestWriter;
-const test_files = module.test_files;
+
+const TestWriter = struct {
+    buf: [4096]u8 = undefined,
+    len: usize = 0,
+
+    pub fn writeFn(ctx: *anyopaque, data: []const u8) Response.WriteError!void {
+        const self: *TestWriter = @ptrCast(@alignCast(ctx));
+        const end = self.len + data.len;
+        if (end > self.buf.len) return error.BufferOverflow;
+        @memcpy(self.buf[self.len..end], data);
+        self.len = end;
+    }
+
+    pub fn output(self: *const TestWriter) []const u8 {
+        return self.buf[0..self.len];
+    }
+};
+
+const test_files = [_]static.EmbeddedFile{
+    .{ .path = "/static/app.js", .data = "console.log('hello');", .mime = "application/javascript" },
+    .{ .path = "/static/style.css", .data = "body { margin: 0; }", .mime = "text/css" },
+};
+
 test "embedded file hit" {
     var tw = TestWriter{};
     var write_buf: [512]u8 = undefined;
@@ -32,7 +49,7 @@ test "embedded file hit" {
         .content_length = 0,
     };
 
-    const handler = serveEmbedded(&test_files);
+    const handler = static.serveEmbedded(&test_files);
     handler(&req, &resp);
 
     const out = tw.output();
@@ -58,7 +75,7 @@ test "embedded file 404" {
         .content_length = 0,
     };
 
-    const handler = serveEmbedded(&test_files);
+    const handler = static.serveEmbedded(&test_files);
     handler(&req, &resp);
 
     const out = tw.output();
@@ -66,10 +83,10 @@ test "embedded file 404" {
 }
 
 test "mimeFromPath" {
-    try testing.expectEqualStrings("text/html", mimeFromPath("/index.html"));
-    try testing.expectEqualStrings("text/css", mimeFromPath("/style.css"));
-    try testing.expectEqualStrings("application/javascript", mimeFromPath("/app.js"));
-    try testing.expectEqualStrings("application/json", mimeFromPath("/data.json"));
-    try testing.expectEqualStrings("image/png", mimeFromPath("/logo.png"));
-    try testing.expectEqualStrings("application/octet-stream", mimeFromPath("/unknown.xyz"));
+    try testing.expectEqualStrings("text/html", static.mimeFromPath("/index.html"));
+    try testing.expectEqualStrings("text/css", static.mimeFromPath("/style.css"));
+    try testing.expectEqualStrings("application/javascript", static.mimeFromPath("/app.js"));
+    try testing.expectEqualStrings("application/json", static.mimeFromPath("/data.json"));
+    try testing.expectEqualStrings("image/png", static.mimeFromPath("/logo.png"));
+    try testing.expectEqualStrings("application/octet-stream", static.mimeFromPath("/unknown.xyz"));
 }

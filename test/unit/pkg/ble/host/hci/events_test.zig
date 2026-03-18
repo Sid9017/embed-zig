@@ -1,45 +1,20 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.ble.host.hci.events;
-const EventCode = module.EventCode;
-const LeSubevent = module.LeSubevent;
-const Event = module.Event;
-const CommandComplete = module.CommandComplete;
-const CommandStatus = module.CommandStatus;
-const DisconnectionComplete = module.DisconnectionComplete;
-const NumCompletedPackets = module.NumCompletedPackets;
-const LeConnectionComplete = module.LeConnectionComplete;
-const LeAdvertisingReport = module.LeAdvertisingReport;
-const AdvReport = module.AdvReport;
-const parseAdvReport = module.parseAdvReport;
-const LeConnectionUpdateComplete = module.LeConnectionUpdateComplete;
-const LeDataLengthChange = module.LeDataLengthChange;
-const LePhyUpdateComplete = module.LePhyUpdateComplete;
-const UnknownEvent = module.UnknownEvent;
-const decode = module.decode;
-const hci = embed.pkg.ble.host.hci.hci;
-const decodeCommandComplete = module.decodeCommandComplete;
-const decodeCommandStatus = module.decodeCommandStatus;
-const decodeDisconnectionComplete = module.decodeDisconnectionComplete;
-const decodeNumCompletedPackets = module.decodeNumCompletedPackets;
-const decodeLeMetaEvent = module.decodeLeMetaEvent;
-const decodeLeConnectionComplete = module.decodeLeConnectionComplete;
-const decodeLeConnectionUpdateComplete = module.decodeLeConnectionUpdateComplete;
-const decodeLeDataLengthChange = module.decodeLeDataLengthChange;
-const decodeLePhyUpdateComplete = module.decodeLePhyUpdateComplete;
+const events = embed.pkg.ble.host.hci.events;
+const hci = embed.pkg.ble.host.hci;
 
 test "decode Command Complete for HCI_Reset" {
-    // Event: Command Complete, Status: Success, OpCode: HCI_Reset
+    // events.Event: Command Complete, Status: Success, OpCode: HCI_Reset
     const raw = [_]u8{
-        0x0E, // Event Code: Command Complete
+        0x0E, // events.Event Code: Command Complete
         0x04, // Parameter Length
         0x01, // Num_HCI_Command_Packets
         0x03, 0x0C, // OpCode: HCI_Reset (0x0C03)
         0x00, // Status: Success
     };
 
-    const evt = decode(&raw) orelse unreachable;
+    const evt = events.decode(&raw) orelse unreachable;
     switch (evt) {
         .command_complete => |cc| {
             try std.testing.expectEqual(@as(u8, 0x01), cc.num_cmd_packets);
@@ -52,14 +27,14 @@ test "decode Command Complete for HCI_Reset" {
 
 test "decode Command Status" {
     const raw = [_]u8{
-        0x0F, // Event Code: Command Status
+        0x0F, // events.Event Code: Command Status
         0x04, // Parameter Length
         0x00, // Status: Success (pending)
         0x01, // Num_HCI_Command_Packets
         0x0D, 0x20, // OpCode: LE_Create_Connection (0x200D)
     };
 
-    const evt = decode(&raw) orelse unreachable;
+    const evt = events.decode(&raw) orelse unreachable;
     switch (evt) {
         .command_status => |cs| {
             try std.testing.expect(cs.status.isSuccess());
@@ -71,7 +46,7 @@ test "decode Command Status" {
 
 test "decode LE Connection Complete" {
     const raw = [_]u8{
-        0x3E, // Event Code: LE Meta
+        0x3E, // events.Event Code: LE Meta
         0x13, // Parameter Length: 19
         0x01, // Sub-event: Connection Complete
         0x00, // Status: Success
@@ -85,13 +60,13 @@ test "decode LE Connection Complete" {
         0x00, // Master Clock Accuracy
     };
 
-    const evt = decode(&raw) orelse unreachable;
+    const evt = events.decode(&raw) orelse unreachable;
     switch (evt) {
         .le_connection_complete => |lc| {
             try std.testing.expect(lc.status.isSuccess());
             try std.testing.expectEqual(@as(u16, 0x0040), lc.conn_handle);
             try std.testing.expectEqual(@as(u8, 0x01), lc.role);
-            try std.testing.expectEqual(hci.AddrType.random, lc.peer_addr_type);
+            try std.testing.expectEqual(hci.hci.AddrType.random, lc.peer_addr_type);
             try std.testing.expectEqual(@as(u16, 0x0018), lc.conn_interval);
         },
         else => unreachable,
@@ -110,7 +85,7 @@ test "decode LE Data Length Change" {
         0x48, 0x08, // Max RX Time: 2120
     };
 
-    const evt = decode(&raw) orelse unreachable;
+    const evt = events.decode(&raw) orelse unreachable;
     switch (evt) {
         .le_data_length_change => |dl| {
             try std.testing.expectEqual(@as(u16, 0x0040), dl.conn_handle);
@@ -133,7 +108,7 @@ test "decode LE PHY Update Complete" {
         0x02, // RX PHY: 2M
     };
 
-    const evt = decode(&raw) orelse unreachable;
+    const evt = events.decode(&raw) orelse unreachable;
     switch (evt) {
         .le_phy_update_complete => |pu| {
             try std.testing.expect(pu.status.isSuccess());
@@ -148,7 +123,7 @@ test "decode LE PHY Update Complete" {
 test "parse Advertising Report" {
     // Single ADV_IND report from a device advertising "ZigBLE"
     const raw = [_]u8{
-        0x00, // Event type: ADV_IND
+        0x00, // events.Event type: ADV_IND
         0x00, // Addr type: Public
         0x50, 0x5C, 0x11, 0xE0, 0x88, 0x98, // Address (little-endian)
         0x0B, // Data length: 11
@@ -158,9 +133,9 @@ test "parse Advertising Report" {
         0xC0, // RSSI: -64 dBm
     };
 
-    const report = parseAdvReport(&raw) orelse unreachable;
+    const report = events.parseAdvReport(&raw) orelse unreachable;
     try std.testing.expectEqual(@as(u8, 0x00), report.event_type);
-    try std.testing.expectEqual(hci.AddrType.public, report.addr_type);
+    try std.testing.expectEqual(hci.hci.AddrType.public, report.addr_type);
     try std.testing.expectEqual(@as(u8, 0x50), report.addr[0]);
     try std.testing.expectEqual(@as(usize, 11), report.data.len);
     try std.testing.expectEqual(@as(i8, -64), report.rssi);
@@ -174,7 +149,7 @@ test "decode unknown event" {
         0xBB,
     };
 
-    const evt = decode(&raw) orelse unreachable;
+    const evt = events.decode(&raw) orelse unreachable;
     switch (evt) {
         .unknown => |u| {
             try std.testing.expectEqual(@as(u8, 0xFF), u.event_code);

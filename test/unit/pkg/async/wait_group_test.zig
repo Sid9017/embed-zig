@@ -1,14 +1,11 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.async.waitgroup;
 const runtime = embed.runtime;
-const WaitGroupError = module.WaitGroupError;
-const CallbackFn = module.CallbackFn;
-const WaitGroup = module.WaitGroup;
+const waitgroup = embed.pkg.async.waitgroup;
 
 test "waitgroup basic synchronization add=10 done=10" {
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.add(10);
     try std.testing.expect(!wg.isDone());
@@ -21,13 +18,13 @@ test "waitgroup basic synchronization add=10 done=10" {
 }
 
 test "waitgroup underflow returns error" {
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     try std.testing.expectError(error.Underflow, wg.done());
 }
 
 test "waitgroup done after add underflow" {
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.add(2);
     try wg.done();
@@ -44,7 +41,7 @@ test "waitgroup onComplete callback fires when reaching zero" {
     };
     Ctx.fired = false;
 
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.onComplete(Ctx.cb, null);
     wg.add(3);
@@ -66,7 +63,7 @@ test "waitgroup onComplete does not fire if never reaches zero" {
     };
     Ctx.fired = false;
 
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.onComplete(Ctx.cb, null);
     wg.add(5);
@@ -76,7 +73,7 @@ test "waitgroup onComplete does not fire if never reaches zero" {
 }
 
 test "waitgroup reset clears state" {
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.add(5);
     try wg.done();
@@ -86,14 +83,14 @@ test "waitgroup reset clears state" {
 }
 
 test "waitgroup fresh instance isDone is true" {
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     try std.testing.expect(wg.isDone());
     try std.testing.expectEqual(@as(usize, 0), wg.remaining());
 }
 
 test "waitgroup multiple add calls accumulate" {
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.add(3);
     wg.add(2);
@@ -117,7 +114,7 @@ test "waitgroup onComplete callback receives context" {
     }.cb;
 
     var ctx = Ctx{ .result = 0 };
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.onComplete(handler, &ctx);
     wg.add(1);
@@ -134,7 +131,7 @@ test "waitgroup reset then reuse" {
     };
     Ctx.count = 0;
 
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.onComplete(Ctx.cb, null);
     wg.add(1);
@@ -150,7 +147,7 @@ test "waitgroup reset then reuse" {
 }
 
 test "waitgroup done on reset waitgroup returns underflow" {
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.add(3);
     wg.reset();
@@ -168,7 +165,7 @@ test "waitgroup onComplete does not fire on intermediate done" {
     Ctx.fired_at = null;
     Ctx.call_seq = 0;
 
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.onComplete(Ctx.cb, null);
     wg.add(3);
@@ -186,7 +183,7 @@ test "waitgroup onComplete does not fire on intermediate done" {
 }
 
 test "waitgroup add zero keeps done state unchanged" {
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
 
     try std.testing.expect(wg.isDone());
@@ -196,7 +193,7 @@ test "waitgroup add zero keeps done state unchanged" {
 }
 
 test "waitgroup wait on zero pending returns immediately" {
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
 
     wg.wait();
@@ -217,7 +214,7 @@ test "waitgroup latest callback overrides previous registration" {
     Ctx.a = 0;
     Ctx.b = 0;
 
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.onComplete(Ctx.cbA, null);
     wg.onComplete(Ctx.cbB, null);
@@ -237,7 +234,7 @@ test "waitgroup reset clears callback registration" {
     };
     Ctx.fired = 0;
 
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.onComplete(Ctx.cb, null);
     wg.add(1);
@@ -257,7 +254,7 @@ test "waitgroup supports multiple completion cycles" {
     };
     Ctx.fired = 0;
 
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
     wg.onComplete(Ctx.cb, null);
 
@@ -280,7 +277,7 @@ test "waitgroup callback can be registered after first completion" {
     };
     Ctx.fired = 0;
 
-    var wg = WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
+    var wg = waitgroup.WaitGroup(runtime.std.Mutex, runtime.std.Condition).init();
     defer wg.deinit();
 
     wg.add(1);

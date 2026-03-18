@@ -22,7 +22,8 @@
 //!   write_pipe —— receiver 写 token 通知 sender "数据已取走，你可以返回了"
 
 const std = @import("std");
-const channel_factory = @import("../channel_factory.zig");
+const embed = @import("../../mod.zig");
+const channel_factory = embed.runtime.channel_factory;
 
 pub fn ChannelFactory(comptime Event: type) type {
     return struct {

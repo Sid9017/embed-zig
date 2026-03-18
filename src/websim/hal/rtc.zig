@@ -1,9 +1,5 @@
 const std = @import("std");
-const embed = struct {
-    pub const hal = struct {
-        pub const rtc = @import("../../hal/rtc.zig");
-    };
-};
+const embed = @import("../../mod.zig");
 
 pub const Rtc = struct {
     start_ms: i64,

@@ -2,7 +2,7 @@ const std = @import("std");
 const ws_mod = @import("ws.zig");
 const remote_hal_mod = @import("remote_hal.zig");
 
-pub const RemoteHal = remote_hal_mod.RemoteHal;
+const RemoteHal = remote_hal_mod.RemoteHal;
 
 const default_index_html = @embedFile("ui/themes/default/index.html");
 const default_style_css = @embedFile("ui/themes/default/style.css");

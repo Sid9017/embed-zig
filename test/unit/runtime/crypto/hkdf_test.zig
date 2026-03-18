@@ -1,24 +1,9 @@
 const std = @import("std");
-const module = @import("embed").runtime.crypto.hkdf;
-const from = module.from;
-const Sha256 = module.Sha256;
-const Sha384 = module.Sha384;
-const Sha512 = module.Sha512;
+const Crypto = @import("embed").runtime.std.Crypto;
+const HkdfSha256 = Crypto.Hkdf.Sha256();
 
-
-test "hkdf contract with mock" {
-    const MockHkdf = struct {
-        pub const prk_length = 32;
-
-        pub fn extract(_: ?[]const u8, _: []const u8) [32]u8 {
-            return [_]u8{3} ** 32;
-        }
-
-        pub fn expand(_: *const [32]u8, _: []const u8, comptime len: usize) [len]u8 {
-            return [_]u8{0x33} ** len;
-        }
-    };
-
-    const H = Sha256(MockHkdf);
-    _ = H;
+test "hkdf contract with Std.Crypto" {
+    const prk = HkdfSha256.extract(null, "secret");
+    const out = HkdfSha256.expand(&prk, "info", 32);
+    try std.testing.expect(out.len == 32);
 }

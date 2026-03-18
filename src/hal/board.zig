@@ -245,6 +245,7 @@ pub fn Board(comptime spec: type) type {
         pub const time = if (@hasDecl(spec, "time")) spec.time else void;
         pub const thread = if (@hasDecl(spec, "thread")) spec.thread else void;
         pub const allocator = if (@hasDecl(spec, "allocator")) spec.allocator else void;
+        pub const Runtime = if (@hasDecl(spec, "Runtime")) spec.Runtime else void;
         pub const fs = if (@hasDecl(spec, "fs")) spec.fs else void;
         pub const isRunning = if (@hasDecl(spec, "isRunning"))
             spec.isRunning

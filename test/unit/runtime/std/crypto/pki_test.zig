@@ -1,9 +1,7 @@
 const std = @import("std");
-const testing = std.testing;
-const module = @import("embed").runtime.std.std_crypto_pki;
-const Ed25519 = module.Ed25519;
-const EcdsaP256Sha256 = module.EcdsaP256Sha256;
-const EcdsaP384Sha384 = module.EcdsaP384Sha384;
+const Ed25519 = std.crypto.sign.Ed25519;
+const EcdsaP256Sha256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
+const EcdsaP384Sha384 = std.crypto.sign.ecdsa.EcdsaP384Sha384;
 
 test "pki ed25519 sign/verify" {
     const msg = "pki-ed25519-msg";
@@ -12,9 +10,11 @@ test "pki ed25519 sign/verify" {
     const seed: [Ed25519.KeyPair.seed_length]u8 = [_]u8{0x42} ** Ed25519.KeyPair.seed_length;
     const kp = try Ed25519.KeyPair.generateDeterministic(seed);
 
-    const sig = try Ed25519.sign(kp, msg, null);
-    try std.testing.expect(Ed25519.verify(sig, msg, kp.public_key));
-    try std.testing.expect(!Ed25519.verify(sig, bad, kp.public_key));
+    const sig = try kp.sign(msg, null);
+    sig.verify(msg, kp.public_key) catch return error.TestUnexpectedResult;
+    if (sig.verify(bad, kp.public_key)) |_| {
+        return error.TestUnexpectedResult;
+    } else |_| {}
 }
 
 test "pki ecdsa p256 sign/verify" {
@@ -24,9 +24,11 @@ test "pki ecdsa p256 sign/verify" {
     const seed: [EcdsaP256Sha256.KeyPair.seed_length]u8 = [_]u8{0x23} ** EcdsaP256Sha256.KeyPair.seed_length;
     const kp = try EcdsaP256Sha256.KeyPair.generateDeterministic(seed);
 
-    const sig = try EcdsaP256Sha256.sign(kp, msg, null);
-    try std.testing.expect(EcdsaP256Sha256.verify(sig, msg, kp.public_key));
-    try std.testing.expect(!EcdsaP256Sha256.verify(sig, bad, kp.public_key));
+    const sig = try kp.sign(msg, null);
+    sig.verify(msg, kp.public_key) catch return error.TestUnexpectedResult;
+    if (sig.verify(bad, kp.public_key)) |_| {
+        return error.TestUnexpectedResult;
+    } else |_| {}
 }
 
 test "pki ecdsa p384 sign/verify" {
@@ -36,7 +38,9 @@ test "pki ecdsa p384 sign/verify" {
     const seed: [EcdsaP384Sha384.KeyPair.seed_length]u8 = [_]u8{0x37} ** EcdsaP384Sha384.KeyPair.seed_length;
     const kp = try EcdsaP384Sha384.KeyPair.generateDeterministic(seed);
 
-    const sig = try EcdsaP384Sha384.sign(kp, msg, null);
-    try std.testing.expect(EcdsaP384Sha384.verify(sig, msg, kp.public_key));
-    try std.testing.expect(!EcdsaP384Sha384.verify(sig, bad, kp.public_key));
+    const sig = try kp.sign(msg, null);
+    sig.verify(msg, kp.public_key) catch return error.TestUnexpectedResult;
+    if (sig.verify(bad, kp.public_key)) |_| {
+        return error.TestUnexpectedResult;
+    } else |_| {}
 }

@@ -21,7 +21,7 @@ const Seal = struct {};
 
 /// Construct a sealed OtaBackend wrapper from a backend Impl type.
 /// Impl must provide: init, begin, write, finalize, abort, confirm, rollback, getState.
-pub fn OtaBackend(comptime Impl: type) type {
+pub fn Make(comptime Impl: type) type {
     comptime {
         _ = @as(*const fn () Error!Impl, &Impl.init);
         _ = @as(*const fn (*Impl, u32) Error!void, &Impl.begin);
@@ -77,7 +77,7 @@ pub fn OtaBackend(comptime Impl: type) type {
 pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: ota_backend.Seal — use ota_backend.OtaBackend(Backend) to construct");
+            @compileError("Impl must have pub const seal: ota_backend.Seal — use ota_backend.Make(Backend) to construct");
         }
     }
     return Impl;

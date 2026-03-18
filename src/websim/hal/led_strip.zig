@@ -1,11 +1,7 @@
 const std = @import("std");
-const embed = struct {
-    pub const hal = struct {
-        pub const led_strip = @import("../../hal/led_strip.zig");
-    };
-};
+const embed = @import("../../mod.zig");
 const Color = embed.hal.led_strip.Color;
-const RemoteHal = @import("../remote_hal.zig").RemoteHal;
+const RemoteHal = embed.websim.RemoteHal;
 
 pub const max_pixels = 64;
 

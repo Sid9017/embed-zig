@@ -1,42 +1,124 @@
 const std = @import("std");
 const testing = std.testing;
-const module = @import("embed").pkg.net.tls.client;
-const Config = module.Config;
-const Client = module.Client;
-const Error = module.Error;
-const connect = module.connect;
-const runtime = module.runtime;
-const conn_mod = module.conn_mod;
-const common = module.common;
-const record = module.record;
-const handshake = module.handshake;
-const ProtocolVersion = module.ProtocolVersion;
-const CipherSuite = module.CipherSuite;
-const AlertDescription = module.AlertDescription;
-const TestMockConn = module.TestMockConn;
-const ConcurrentPipeConn = module.ConcurrentPipeConn;
+const embed = @import("embed");
+const Std = embed.runtime.std;
+const client_mod = embed.pkg.net.tls.client;
+const tls_common = embed.pkg.net.tls.common;
+const tls_record = embed.pkg.net.tls.record;
+const conn_mod = embed.pkg.net.conn;
+
+const TestMockConn = struct {
+    write_buf: [16384]u8 = undefined,
+    write_len: usize = 0,
+    read_buf: [16384]u8 = undefined,
+    read_len: usize = 0,
+    read_pos: usize = 0,
+    closed: bool = false,
+
+    pub fn read(self: *TestMockConn, buf: []u8) conn_mod.Error!usize {
+        if (self.closed) return conn_mod.Error.Closed;
+        if (self.read_pos >= self.read_len) return conn_mod.Error.ReadFailed;
+        const avail = self.read_len - self.read_pos;
+        const n = @min(avail, buf.len);
+        @memcpy(buf[0..n], self.read_buf[self.read_pos..][0..n]);
+        self.read_pos += n;
+        return n;
+    }
+
+    pub fn write(self: *TestMockConn, data: []const u8) conn_mod.Error!usize {
+        if (self.closed) return conn_mod.Error.Closed;
+        const space = self.write_buf.len - self.write_len;
+        const n = @min(space, data.len);
+        if (n == 0) return conn_mod.Error.WriteFailed;
+        @memcpy(self.write_buf[self.write_len..][0..n], data[0..n]);
+        self.write_len += n;
+        return n;
+    }
+
+    pub fn close(self: *TestMockConn) void {
+        self.closed = true;
+    }
+
+    fn feedData(self: *TestMockConn, data: []const u8) void {
+        @memcpy(self.read_buf[0..data.len], data);
+        self.read_len = data.len;
+        self.read_pos = 0;
+    }
+};
+
+const ConcurrentPipeConn = struct {
+    mu: std.Thread.Mutex = .{},
+    cond: std.Thread.Condition = .{},
+    buf: [65536]u8 = undefined,
+    len: usize = 0,
+    pos: usize = 0,
+    closed: bool = false,
+
+    pub fn read(self: *ConcurrentPipeConn, out: []u8) conn_mod.Error!usize {
+        self.mu.lock();
+        defer self.mu.unlock();
+
+        const deadline = std.time.nanoTimestamp() + 2_000_000_000;
+        while (self.pos >= self.len and !self.closed) {
+            if (std.time.nanoTimestamp() >= deadline) return conn_mod.Error.Timeout;
+            self.cond.timedWait(&self.mu, 10_000_000) catch {};
+        }
+        if (self.closed and self.pos >= self.len) return conn_mod.Error.Closed;
+
+        const avail = self.len - self.pos;
+        const n = @min(avail, out.len);
+        @memcpy(out[0..n], self.buf[self.pos..][0..n]);
+        self.pos += n;
+        if (self.pos == self.len) {
+            self.pos = 0;
+            self.len = 0;
+        }
+        self.cond.broadcast();
+        return n;
+    }
+
+    pub fn write(self: *ConcurrentPipeConn, data: []const u8) conn_mod.Error!usize {
+        self.mu.lock();
+        defer self.mu.unlock();
+
+        const deadline = std.time.nanoTimestamp() + 2_000_000_000;
+        while (self.len > 0 and !self.closed) {
+            if (std.time.nanoTimestamp() >= deadline) return conn_mod.Error.Timeout;
+            self.cond.timedWait(&self.mu, 10_000_000) catch {};
+        }
+        if (self.closed) return conn_mod.Error.Closed;
+
+        const n = @min(data.len, self.buf.len);
+        @memcpy(self.buf[0..n], data[0..n]);
+        self.len = n;
+        self.pos = 0;
+        self.cond.broadcast();
+        return n;
+    }
+
+    pub fn close(self: *ConcurrentPipeConn) void {
+        self.mu.lock();
+        defer self.mu.unlock();
+        self.closed = true;
+        self.cond.broadcast();
+    }
+};
 
 test "Config defaults" {
-    const Crypto = runtime.std.Crypto;
-
-    const TestConfig = Config(Crypto);
+    const TestConfig = client_mod.Config;
     const config: TestConfig = .{
         .allocator = std.testing.allocator,
         .hostname = "example.com",
     };
 
-    try std.testing.expectEqual(ProtocolVersion.tls_1_2, config.min_version);
-    try std.testing.expectEqual(ProtocolVersion.tls_1_3, config.max_version);
+    try std.testing.expectEqual(tls_common.ProtocolVersion.tls_1_2, config.min_version);
+    try std.testing.expectEqual(tls_common.ProtocolVersion.tls_1_3, config.max_version);
     try std.testing.expectEqual(false, config.skip_verify);
 }
 
 test "Client init and deinit" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
     var conn = TestMockConn{};
-    const TestClient = Client(TestMockConn, Crypto, Rng, Mutex);
+    const TestClient = client_mod.Client(TestMockConn, Std);
 
     var c = try TestClient.init(&conn, .{
         .allocator = std.testing.allocator,
@@ -47,13 +129,9 @@ test "Client init and deinit" {
     try std.testing.expect(!c.isConnected());
 }
 
-test "Client send before connect returns NotConnected" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
+test "Client send before client_mod.connect returns NotConnected" {
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
+    var c = try client_mod.Client(TestMockConn, Std).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -62,13 +140,9 @@ test "Client send before connect returns NotConnected" {
     try std.testing.expectError(error.NotConnected, c.send("hello"));
 }
 
-test "Client recv before connect returns NotConnected" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
+test "Client recv before client_mod.connect returns NotConnected" {
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
+    var c = try client_mod.Client(TestMockConn, Std).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -79,12 +153,8 @@ test "Client recv before connect returns NotConnected" {
 }
 
 test "Client isConnected reflects state" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
+    var c = try client_mod.Client(TestMockConn, Std).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -100,12 +170,8 @@ test "Client isConnected reflects state" {
 }
 
 test "Client close on not-connected is safe" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
+    var c = try client_mod.Client(TestMockConn, Std).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -116,25 +182,19 @@ test "Client close on not-connected is safe" {
 }
 
 test "Client getVersion and getCipherSuite defaults" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
+    var c = try client_mod.Client(TestMockConn, Std).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
     defer c.deinit();
 
-    try std.testing.expectEqual(ProtocolVersion.tls_1_3, c.getVersion());
-    try std.testing.expectEqual(CipherSuite.TLS_AES_128_GCM_SHA256, c.getCipherSuite());
+    try std.testing.expectEqual(tls_common.ProtocolVersion.tls_1_3, c.getVersion());
+    try std.testing.expectEqual(tls_common.CipherSuite.TLS_AES_128_GCM_SHA256, c.getCipherSuite());
 }
 
 test "Config custom values" {
-    const Crypto = runtime.std.Crypto;
-
-    const config: Config(Crypto) = .{
+    const config: client_mod.Config = .{
         .allocator = std.testing.allocator,
         .hostname = "custom.example.com",
         .skip_verify = true,
@@ -144,20 +204,16 @@ test "Config custom values" {
     };
 
     try std.testing.expectEqual(true, config.skip_verify);
-    try std.testing.expectEqual(ProtocolVersion.tls_1_3, config.min_version);
+    try std.testing.expectEqual(tls_common.ProtocolVersion.tls_1_3, config.min_version);
     try std.testing.expectEqual(@as(u32, 5000), config.timeout_ms);
     try std.testing.expectEqualStrings("custom.example.com", config.hostname);
 }
 
 test "Client multiple init/deinit cycles" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
     var conn = TestMockConn{};
 
     for (0..5) |_| {
-        var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
+        var c = try client_mod.Client(TestMockConn, Std).init(&conn, .{
             .allocator = std.testing.allocator,
             .hostname = "test.com",
         });
@@ -166,12 +222,8 @@ test "Client multiple init/deinit cycles" {
 }
 
 test "Client close sets connected to false" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
+    var c = try client_mod.Client(TestMockConn, Std).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -185,12 +237,8 @@ test "Client close sets connected to false" {
 }
 
 test "concurrent send does not deadlock" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
     var pipe = ConcurrentPipeConn{};
-    var c = try Client(ConcurrentPipeConn, Crypto, Rng, Mutex).init(&pipe, .{
+    var c = try client_mod.Client(ConcurrentPipeConn, Std).init(&pipe, .{
         .allocator = std.testing.allocator,
         .hostname = "concurrent.test",
     });
@@ -200,7 +248,7 @@ test "concurrent send does not deadlock" {
 
     const key: [16]u8 = [_]u8{0x80} ** 16;
     const iv: [12]u8 = [_]u8{0x81} ** 12;
-    const cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const cipher = try tls_record.CipherState(Std).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
     c.hs.records.setWriteCipher(cipher);
     c.hs.records.version = .tls_1_3;
 
@@ -216,7 +264,7 @@ test "concurrent send does not deadlock" {
     var send_errors: [2]bool = .{ false, false };
     const threads: [2]std.Thread = .{
         try std.Thread.spawn(.{}, struct {
-            fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex), err_flag: *bool) void {
+            fn run(client: *client_mod.Client(ConcurrentPipeConn, Std), err_flag: *bool) void {
                 for (0..50) |_| {
                     _ = client.send("hello from thread A") catch {
                         err_flag.* = true;
@@ -226,7 +274,7 @@ test "concurrent send does not deadlock" {
             }
         }.run, .{ &c, &send_errors[0] }),
         try std.Thread.spawn(.{}, struct {
-            fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex), err_flag: *bool) void {
+            fn run(client: *client_mod.Client(ConcurrentPipeConn, Std), err_flag: *bool) void {
                 for (0..50) |_| {
                     _ = client.send("hello from thread B") catch {
                         err_flag.* = true;
@@ -244,12 +292,8 @@ test "concurrent send does not deadlock" {
 }
 
 test "concurrent recv does not deadlock" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
     var pipe = ConcurrentPipeConn{};
-    var c = try Client(ConcurrentPipeConn, Crypto, Rng, Mutex).init(&pipe, .{
+    var c = try client_mod.Client(ConcurrentPipeConn, Std).init(&pipe, .{
         .allocator = std.testing.allocator,
         .hostname = "concurrent.test",
     });
@@ -259,13 +303,13 @@ test "concurrent recv does not deadlock" {
 
     const key: [16]u8 = [_]u8{0x90} ** 16;
     const iv: [12]u8 = [_]u8{0x91} ** 12;
-    const write_cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
-    const read_cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const write_cipher = try tls_record.CipherState(Std).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const read_cipher = try tls_record.CipherState(Std).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
     c.hs.records.setWriteCipher(write_cipher);
     c.hs.records.version = .tls_1_3;
 
     const feed_thread = try std.Thread.spawn(.{}, struct {
-        fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex)) void {
+        fn run(client: *client_mod.Client(ConcurrentPipeConn, Std)) void {
             for (0..20) |_| {
                 _ = client.send("feed data for recv") catch break;
             }
@@ -286,12 +330,8 @@ test "concurrent recv does not deadlock" {
 }
 
 test "concurrent send and recv do not deadlock" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
     var pipe = ConcurrentPipeConn{};
-    var c = try Client(ConcurrentPipeConn, Crypto, Rng, Mutex).init(&pipe, .{
+    var c = try client_mod.Client(ConcurrentPipeConn, Std).init(&pipe, .{
         .allocator = std.testing.allocator,
         .hostname = "concurrent.test",
     });
@@ -301,8 +341,8 @@ test "concurrent send and recv do not deadlock" {
 
     const key: [16]u8 = [_]u8{0xA0} ** 16;
     const iv: [12]u8 = [_]u8{0xA1} ** 12;
-    const write_cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
-    const read_cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const write_cipher = try tls_record.CipherState(Std).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const read_cipher = try tls_record.CipherState(Std).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
     c.hs.records.setWriteCipher(write_cipher);
     c.hs.records.setReadCipher(read_cipher);
     c.hs.records.version = .tls_1_3;
@@ -311,7 +351,7 @@ test "concurrent send and recv do not deadlock" {
     var recv_done = std.atomic.Value(bool).init(false);
 
     const send_thread = try std.Thread.spawn(.{}, struct {
-        fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex), done: *std.atomic.Value(bool)) void {
+        fn run(client: *client_mod.Client(ConcurrentPipeConn, Std), done: *std.atomic.Value(bool)) void {
             defer done.store(true, .release);
             for (0..10) |_| {
                 _ = client.send("concurrent data") catch return;
@@ -320,7 +360,7 @@ test "concurrent send and recv do not deadlock" {
     }.run, .{ &c, &send_done });
 
     const recv_thread = try std.Thread.spawn(.{}, struct {
-        fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex), done: *std.atomic.Value(bool)) void {
+        fn run(client: *client_mod.Client(ConcurrentPipeConn, Std), done: *std.atomic.Value(bool)) void {
             defer done.store(true, .release);
             var buf: [256]u8 = undefined;
             for (0..10) |_| {
@@ -337,12 +377,8 @@ test "concurrent send and recv do not deadlock" {
 }
 
 test "concurrent close while send does not deadlock" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
     var pipe = ConcurrentPipeConn{};
-    var c = try Client(ConcurrentPipeConn, Crypto, Rng, Mutex).init(&pipe, .{
+    var c = try client_mod.Client(ConcurrentPipeConn, Std).init(&pipe, .{
         .allocator = std.testing.allocator,
         .hostname = "concurrent.test",
     });
@@ -352,7 +388,7 @@ test "concurrent close while send does not deadlock" {
 
     const key: [16]u8 = [_]u8{0xB0} ** 16;
     const iv: [12]u8 = [_]u8{0xB1} ** 12;
-    const cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const cipher = try tls_record.CipherState(Std).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
     c.hs.records.setWriteCipher(cipher);
     c.hs.records.version = .tls_1_3;
 
@@ -366,7 +402,7 @@ test "concurrent close while send does not deadlock" {
     }.run, .{&pipe});
 
     const send_thread = try std.Thread.spawn(.{}, struct {
-        fn run(client: *Client(ConcurrentPipeConn, Crypto, Rng, Mutex)) void {
+        fn run(client: *client_mod.Client(ConcurrentPipeConn, Std)) void {
             for (0..20) |_| {
                 _ = client.send("data") catch return;
             }
@@ -386,12 +422,8 @@ test "concurrent close while send does not deadlock" {
 }
 
 test "concurrent close_notify sets received flag" {
-    const Crypto = runtime.std.Crypto;
-    const Rng = runtime.std.Rng;
-    const Mutex = runtime.std.Mutex;
-
     var conn = TestMockConn{};
-    var c = try Client(TestMockConn, Crypto, Rng, Mutex).init(&conn, .{
+    var c = try client_mod.Client(TestMockConn, Std).init(&conn, .{
         .allocator = std.testing.allocator,
         .hostname = "test.com",
     });
@@ -410,7 +442,8 @@ test "concurrent close_notify sets received flag" {
 }
 
 test "mutex lock/unlock cycle under contention" {
-    const Mutex = runtime.std.Mutex;
+    const Runtime = Std;
+    const Mutex = Runtime.Mutex;
 
     var mu = Mutex.init();
     defer mu.deinit();

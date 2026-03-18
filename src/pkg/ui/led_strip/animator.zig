@@ -2,7 +2,7 @@ const std = @import("std");
 const frame_mod = @import("frame.zig");
 const transition = @import("transition.zig");
 
-pub const Color = frame_mod.Color;
+const Color = frame_mod.Color;
 
 /// Multi-frame LED strip animator with inter-frame transitions.
 ///

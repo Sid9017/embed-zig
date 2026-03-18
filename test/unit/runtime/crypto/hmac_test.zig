@@ -1,30 +1,10 @@
 const std = @import("std");
-const module = @import("embed").runtime.crypto.hmac;
-const from = module.from;
-const Sha256 = module.Sha256;
-const Sha384 = module.Sha384;
-const Sha512 = module.Sha512;
+const Crypto = @import("embed").runtime.std.Crypto;
+const HmacSha256 = Crypto.Hmac.Sha256();
 
-
-test "hmac contract with mock" {
-    const MockHmac = struct {
-        pub const mac_length = 32;
-
-        pub fn create(out: *[32]u8, _: []const u8, _: []const u8) void {
-            out.* = [_]u8{2} ** 32;
-        }
-
-        pub fn init(_: []const u8) @This() {
-            return .{};
-        }
-
-        pub fn update(_: *@This(), _: []const u8) void {}
-
-        pub fn final(_: *@This()) [32]u8 {
-            return [_]u8{2} ** 32;
-        }
-    };
-
-    const H = Sha256(MockHmac);
-    _ = H;
+test "hmac contract with Std.Crypto" {
+    const key = [_]u8{0x0b} ** 20;
+    var mac: [32]u8 = undefined;
+    HmacSha256.create(&mac, "Hi There", &key);
+    try std.testing.expect(mac[0] != 0 or mac[1] != 0);
 }

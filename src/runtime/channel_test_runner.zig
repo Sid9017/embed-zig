@@ -1,7 +1,7 @@
 //! Channel 行为一致性测试运行器
 //!
-//! 本文件接受一个 Channel(T) 的实现（通过 comptime 参数传入），运行全部测试，
-//! 验证其行为与 Go channel 语义一致。
+//! 本文件接受一个 ChannelFactory（通过 comptime 参数传入），内部实例化 Channel(u32)，
+//! 运行全部测试，验证其行为与 Go channel 语义一致。
 //!
 //! 注意：本 runner 只使用 channel contract 暴露的 API（init/deinit/send/recv/close），
 //! 不依赖 trySend/tryRecv/readFd/writeFd 等 impl 特有方法。
@@ -9,7 +9,7 @@
 //!
 //! 用法示例：
 //! ```
-//! const runner = @import("channel_test_runner.zig").ChannelTestRunner(MyChannel);
+//! const runner = @import("channel_test_runner.zig").ChannelTestRunner(MyChannelFactory);
 //! test { try runner.run(std.testing.allocator, .{}); }                  // 全部跑
 //! test { try runner.run(std.testing.allocator, .{ .long_running = false }); } // 只跑快速
 //! ```
@@ -134,9 +134,15 @@
 //!  46. 快速连续 close + send 不 panic、不 hang
 
 const std = @import("std");
+const channel_factory = @import("channel_factory.zig");
 const testing = std.testing;
 
-pub fn ChannelTestRunner(comptime Ch: type) type {
+pub fn ChannelTestRunner(comptime Factory: type) type {
+    comptime {
+        _ = channel_factory.is(Factory);
+    }
+
+    const Ch = Factory.Channel(u32);
     const Event = Ch.event_t;
 
     return struct {

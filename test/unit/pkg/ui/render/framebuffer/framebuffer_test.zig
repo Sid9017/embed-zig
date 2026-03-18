@@ -1,17 +1,13 @@
 const std = @import("std");
 const testing = std.testing;
-const module = @import("embed").pkg.ui.render.framebuffer;
-const ttf_font_mod = module.ttf_font_mod;
-const TtfFont = module.TtfFont;
-const ColorFormat = module.ColorFormat;
-const Framebuffer = module.Framebuffer;
+const embed = @import("embed");
+const framebuffer = embed.pkg.ui.render.framebuffer;
 
 // ============================================================================
 // Tests
 // ============================================================================
 
-
-const TestFB = Framebuffer(16, 16, .rgb565);
+const TestFB = framebuffer.Framebuffer(16, 16, .rgb565);
 
 test "init fills buffer" {
     const fb = TestFB.init(0x1234);

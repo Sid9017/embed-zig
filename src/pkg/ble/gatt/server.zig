@@ -46,11 +46,8 @@
 //! ```
 
 const std = @import("std");
-const runtime = struct {
-    pub const thread = @import("../../../runtime/thread.zig");
-    pub const std = @import("../../../runtime/std.zig");
-};
-const att = @import("../host/att/att.zig");
+const embed = @import("../../../mod.zig");
+const att = embed.pkg.ble.host.att.att;
 
 // ============================================================================
 // Comptime Service/Characteristic Definition
@@ -140,12 +137,10 @@ pub const ResponseWriter = struct {
 /// Handlers are bound at runtime via `handle()`.
 ///
 /// When `enableAsync()` is called, handler invocations are dispatched to
-/// independent threads via `Thread.spawn()`, keeping the readLoop
+/// independent threads via `Runtime.Thread.spawn()`, keeping the readLoop
 /// unblocked. Without `enableAsync()`, handlers run synchronously (useful for tests).
-pub fn GattServer(comptime Thread: type, comptime services: []const ServiceDef) type {
-    comptime {
-        _ = runtime.thread.is(Thread);
-    }
+pub fn GattServer(comptime Runtime: type, comptime services: []const ServiceDef) type {
+    comptime _ = embed.runtime.is(Runtime);
     const total_chars = comptime blk: {
         var n: usize = 0;
         for (services) |svc| n += svc.chars.len;
@@ -467,7 +462,7 @@ pub fn GattServer(comptime Thread: type, comptime services: []const ServiceDef) 
                     @memcpy(ctx.data_buf[0..copy_len], data[0..copy_len]);
                 }
 
-                var t = Thread.spawn(.{}, handlerTaskEntry, @ptrCast(ctx)) catch {
+                var t = Runtime.Thread.spawn(.{}, handlerTaskEntry, @ptrCast(ctx)) catch {
                     self.async_allocator.?.destroy(ctx);
                     return self.callHandlerSync(binding, conn_handle, attr_handle, op, data, buf);
                 };

@@ -1,54 +1,51 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.net.conn;
-const Error = module.Error;
-const from = module.from;
-const SocketConn = module.SocketConn;
+const conn = embed.pkg.net.conn;
 const runtime = embed.runtime;
 
 test "Conn contract validation with valid type" {
     const ValidConn = struct {
         const Self = @This();
-        pub fn read(_: *Self, _: []u8) Error!usize {
+        pub fn read(_: *Self, _: []u8) conn.Error!usize {
             return 0;
         }
-        pub fn write(_: *Self, _: []const u8) Error!usize {
+        pub fn write(_: *Self, _: []const u8) conn.Error!usize {
             return 0;
         }
         pub fn close(_: *Self) void {}
     };
-    _ = from(ValidConn);
+    _ = conn.from(ValidConn);
 }
 
-test "Conn Error values are distinct" {
-    try testing.expect(@intFromError(Error.ReadFailed) != @intFromError(Error.WriteFailed));
-    try testing.expect(@intFromError(Error.ReadFailed) != @intFromError(Error.Closed));
-    try testing.expect(@intFromError(Error.ReadFailed) != @intFromError(Error.Timeout));
-    try testing.expect(@intFromError(Error.WriteFailed) != @intFromError(Error.Closed));
-    try testing.expect(@intFromError(Error.WriteFailed) != @intFromError(Error.Timeout));
-    try testing.expect(@intFromError(Error.Closed) != @intFromError(Error.Timeout));
+test "Conn conn.Error values are distinct" {
+    try testing.expect(@intFromError(conn.Error.ReadFailed) != @intFromError(conn.Error.WriteFailed));
+    try testing.expect(@intFromError(conn.Error.ReadFailed) != @intFromError(conn.Error.Closed));
+    try testing.expect(@intFromError(conn.Error.ReadFailed) != @intFromError(conn.Error.Timeout));
+    try testing.expect(@intFromError(conn.Error.WriteFailed) != @intFromError(conn.Error.Closed));
+    try testing.expect(@intFromError(conn.Error.WriteFailed) != @intFromError(conn.Error.Timeout));
+    try testing.expect(@intFromError(conn.Error.Closed) != @intFromError(conn.Error.Timeout));
 }
 
-test "Conn from returns the same type" {
+test "Conn conn.from returns the same type" {
     const MyConn = struct {
         const Self = @This();
-        pub fn read(_: *Self, _: []u8) Error!usize {
+        pub fn read(_: *Self, _: []u8) conn.Error!usize {
             return 0;
         }
-        pub fn write(_: *Self, _: []const u8) Error!usize {
+        pub fn write(_: *Self, _: []const u8) conn.Error!usize {
             return 0;
         }
         pub fn close(_: *Self) void {}
     };
-    const Validated = from(MyConn);
+    const Validated = conn.from(MyConn);
     try @import("std").testing.expect(Validated == MyConn);
 }
 
 test "SocketConn satisfies Conn contract" {
     const Socket = runtime.std.Socket;
-    const Adapted = SocketConn(Socket);
-    _ = from(Adapted);
+    const Adapted = conn.SocketConn(Socket);
+    _ = conn.from(Adapted);
 }
 
 test "SocketConn read/write/close over TCP loopback" {
@@ -66,8 +63,8 @@ test "SocketConn read/write/close over TCP loopback" {
     var server_sock = try listener.accept();
     defer server_sock.close();
 
-    var client_conn = SocketConn(Socket).init(&client_sock);
-    var server_conn = SocketConn(Socket).init(&server_sock);
+    var client_conn = conn.SocketConn(Socket).init(&client_sock);
+    var server_conn = conn.SocketConn(Socket).init(&server_sock);
 
     const msg = "hello via SocketConn";
     const written = try client_conn.write(msg);
@@ -95,12 +92,12 @@ test "SocketConn maps Closed error" {
     var server_sock = try listener.accept();
     server_sock.close();
 
-    var client_conn = SocketConn(Socket).init(&client_sock);
+    var client_conn = conn.SocketConn(Socket).init(&client_sock);
     defer client_conn.close();
 
     var buf: [64]u8 = undefined;
     const result = client_conn.read(&buf);
-    try testing.expectError(Error.Closed, result);
+    try testing.expectError(conn.Error.Closed, result);
 }
 
 test "SocketConn maps Timeout error" {
@@ -120,9 +117,9 @@ test "SocketConn maps Timeout error" {
     defer server_sock.close();
 
     client_sock.setRecvTimeout(50);
-    var client_conn = SocketConn(Socket).init(&client_sock);
+    var client_conn = conn.SocketConn(Socket).init(&client_sock);
 
     var buf: [64]u8 = undefined;
     const result = client_conn.read(&buf);
-    try testing.expectError(Error.Timeout, result);
+    try testing.expectError(conn.Error.Timeout, result);
 }

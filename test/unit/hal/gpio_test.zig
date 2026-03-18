@@ -1,31 +1,24 @@
-const module = @import("embed").hal.gpio;
-const Error = module.Error;
-const Level = module.Level;
-const Mode = module.Mode;
-const Pull = module.Pull;
-const PinConfig = module.PinConfig;
-const is = module.is;
-const from = module.from;
-const hal_marker = module.hal_marker;
-
 const std = @import("std");
 const testing = std.testing;
+const embed = @import("embed");
+
+const gpio_mod = embed.hal.gpio;
 
 test "gpio wrapper" {
     const Mock = struct {
-        pins: [8]Level = [_]Level{.low} ** 8,
+        pins: [8]gpio_mod.Level = [_]gpio_mod.Level{.low} ** 8,
 
-        pub fn setMode(_: *@This(), _: u8, _: Mode) Error!void {}
-        pub fn setLevel(self: *@This(), pin: u8, level: Level) Error!void {
+        pub fn setMode(_: *@This(), _: u8, _: gpio_mod.Mode) gpio_mod.Error!void {}
+        pub fn setLevel(self: *@This(), pin: u8, level: gpio_mod.Level) gpio_mod.Error!void {
             self.pins[pin] = level;
         }
-        pub fn getLevel(self: *@This(), pin: u8) Error!Level {
+        pub fn getLevel(self: *@This(), pin: u8) gpio_mod.Error!gpio_mod.Level {
             return self.pins[pin];
         }
-        pub fn setPull(_: *@This(), _: u8, _: Pull) Error!void {}
+        pub fn setPull(_: *@This(), _: u8, _: gpio_mod.Pull) gpio_mod.Error!void {}
     };
 
-    const Gpio = from(struct {
+    const Gpio = gpio_mod.from(struct {
         pub const Driver = Mock;
         pub const meta = .{ .id = "gpio.test" };
     });
@@ -34,7 +27,7 @@ test "gpio wrapper" {
     var gpio = Gpio.init(&d);
     try gpio.configure(1, .{ .mode = .output, .pull = .none });
     try gpio.setHigh(1);
-    try std.testing.expectEqual(Level.high, try gpio.getLevel(1));
+    try std.testing.expectEqual(gpio_mod.Level.high, try gpio.getLevel(1));
     try gpio.toggle(1);
-    try std.testing.expectEqual(Level.low, try gpio.getLevel(1));
+    try std.testing.expectEqual(gpio_mod.Level.low, try gpio.getLevel(1));
 }

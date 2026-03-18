@@ -1,10 +1,10 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const shell_mod = embed.pkg.ble.term.shell_mod;
-const transport_mod = embed.pkg.ble.term.transport_mod;
-const xfer = embed.pkg.ble.xfer;
+const term = embed.pkg.ble.term;
+const ble = embed.pkg.ble;
 
+const shell_mod = embed.pkg.ble.term.shell;
 const Shell = shell_mod.Shell;
 const CancellationToken = shell_mod.CancellationToken;
 const ResponseWriter = shell_mod.ResponseWriter;
@@ -199,7 +199,7 @@ test "JSON: special characters escaped" {
 }
 
 // ============================================================================
-// xfer end-to-end: simulate CLI sending command, firmware responding
+// ble.xfer end-to-end: simulate CLI sending command, firmware responding
 // ============================================================================
 
 test "xfer roundtrip: WRITE_X command then READ_X response" {
@@ -208,10 +208,10 @@ test "xfer roundtrip: WRITE_X command then READ_X response" {
 
     // Step 1: Simulate CLI sending command via WRITE_X (ReadX on CLI side)
     var cli_write_mock = MockTransport{};
-    cli_write_mock.scriptRecv(&xfer.start_magic);
-    cli_write_mock.scriptRecv(&xfer.ack_signal);
+    cli_write_mock.scriptRecv(&ble.xfer.start_magic);
+    cli_write_mock.scriptRecv(&ble.xfer.ack_signal);
 
-    var cli_rx = xfer.ReadX(MockTransport).init(&cli_write_mock, cmd_json, .{
+    var cli_rx = ble.xfer.ReadX(MockTransport).init(&cli_write_mock, cmd_json, .{
         .mtu = mtu,
         .send_redundancy = 1,
     });
@@ -224,7 +224,7 @@ test "xfer roundtrip: WRITE_X command then READ_X response" {
     }
 
     var recv_buf: [2048]u8 = undefined;
-    var fw_wx = xfer.WriteX(MockTransport).init(&fw_recv_mock, &recv_buf, .{ .mtu = mtu });
+    var fw_wx = ble.xfer.WriteX(MockTransport).init(&fw_recv_mock, &recv_buf, .{ .mtu = mtu });
     const result = try fw_wx.run();
 
     try std.testing.expectEqualSlices(u8, cmd_json, result.data);
@@ -248,10 +248,10 @@ test "xfer roundtrip: WRITE_X command then READ_X response" {
 
     // Step 4: Firmware sends response via READ_X
     var fw_send_mock = MockTransport{};
-    fw_send_mock.scriptRecv(&xfer.start_magic);
-    fw_send_mock.scriptRecv(&xfer.ack_signal);
+    fw_send_mock.scriptRecv(&ble.xfer.start_magic);
+    fw_send_mock.scriptRecv(&ble.xfer.ack_signal);
 
-    var fw_rx = xfer.ReadX(MockTransport).init(&fw_send_mock, resp_json, .{
+    var fw_rx = ble.xfer.ReadX(MockTransport).init(&fw_send_mock, resp_json, .{
         .mtu = mtu,
         .send_redundancy = 1,
     });
@@ -264,7 +264,7 @@ test "xfer roundtrip: WRITE_X command then READ_X response" {
     }
 
     var cli_recv_buf: [2048]u8 = undefined;
-    var cli_wx = xfer.WriteX(MockTransport).init(&cli_recv_mock, &cli_recv_buf, .{ .mtu = mtu });
+    var cli_wx = ble.xfer.WriteX(MockTransport).init(&cli_recv_mock, &cli_recv_buf, .{ .mtu = mtu });
     const cli_result = try cli_wx.run();
 
     // Verify final response

@@ -1,11 +1,7 @@
 const std = @import("std");
 const base64 = std.base64.standard;
-const embed = struct {
-    pub const hal = struct {
-        pub const display = @import("../../hal/display.zig");
-    };
-};
-const RemoteHal = @import("../remote_hal.zig").RemoteHal;
+const embed = @import("../../mod.zig");
+const RemoteHal = embed.websim.RemoteHal;
 
 const Color565 = embed.hal.display.Color565;
 const max_chunk_rows: u16 = 60;

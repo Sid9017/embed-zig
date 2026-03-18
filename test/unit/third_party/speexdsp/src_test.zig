@@ -1,19 +1,12 @@
 const std = @import("std");
 const testing = std.testing;
-const module = @import("embed").third_party.speexdsp;
-const EchoCanceller = module.EchoCanceller;
-const Decorrelator = module.Decorrelator;
-const Preprocessor = module.Preprocessor;
-const ResamplerError = module.ResamplerError;
-const ProcessResult = module.ProcessResult;
-const Resampler = module.Resampler;
-const JitterBuffer = module.JitterBuffer;
-const Buffer = module.Buffer;
+const embed = @import("embed");
+const speexdsp = embed.third_party.speexdsp;
 
 // ── tests ─────────────────────────────────────────────────────────────────
 
 test "echo canceller lifecycle" {
-    var aec = EchoCanceller.init(160, 1024) orelse return error.InitFailed;
+    var aec = speexdsp.EchoCanceller.init(160, 1024) orelse return error.InitFailed;
     defer aec.deinit();
 
     aec.setSamplingRate(16000);
@@ -23,7 +16,7 @@ test "echo canceller lifecycle" {
 }
 
 test "echo canceller cancel zero frame" {
-    var aec = EchoCanceller.init(160, 1024) orelse return error.InitFailed;
+    var aec = speexdsp.EchoCanceller.init(160, 1024) orelse return error.InitFailed;
     defer aec.deinit();
     aec.setSamplingRate(16000);
 
@@ -35,7 +28,7 @@ test "echo canceller cancel zero frame" {
 }
 
 test "preprocessor lifecycle" {
-    var pp = Preprocessor.init(160, 16000) orelse return error.InitFailed;
+    var pp = speexdsp.Preprocessor.init(160, 16000) orelse return error.InitFailed;
     defer pp.deinit();
 
     pp.setDenoise(true);
@@ -47,7 +40,7 @@ test "preprocessor lifecycle" {
 }
 
 test "preprocessor run zero frame" {
-    var pp = Preprocessor.init(160, 16000) orelse return error.InitFailed;
+    var pp = speexdsp.Preprocessor.init(160, 16000) orelse return error.InitFailed;
     defer pp.deinit();
 
     var audio = [_]i16{0} ** 160;
@@ -55,11 +48,11 @@ test "preprocessor run zero frame" {
 }
 
 test "preprocessor linked to echo canceller" {
-    var aec = EchoCanceller.init(160, 1024) orelse return error.InitFailed;
+    var aec = speexdsp.EchoCanceller.init(160, 1024) orelse return error.InitFailed;
     defer aec.deinit();
     aec.setSamplingRate(16000);
 
-    var pp = Preprocessor.init(160, 16000) orelse return error.InitFailed;
+    var pp = speexdsp.Preprocessor.init(160, 16000) orelse return error.InitFailed;
     defer pp.deinit();
     pp.setEchoState(&aec);
 
@@ -70,7 +63,7 @@ test "preprocessor linked to echo canceller" {
 }
 
 test "resampler lifecycle" {
-    var rs = try Resampler.init(1, 48000, 16000, 5);
+    var rs = try speexdsp.Resampler.init(1, 48000, 16000, 5);
     defer rs.deinit();
 
     const rate = rs.getRate();
@@ -83,7 +76,7 @@ test "resampler lifecycle" {
 }
 
 test "resampler 48k to 16k" {
-    var rs = try Resampler.init(1, 48000, 16000, 5);
+    var rs = try speexdsp.Resampler.init(1, 48000, 16000, 5);
     defer rs.deinit();
 
     var input = [_]i16{0} ** 480;
@@ -95,7 +88,7 @@ test "resampler 48k to 16k" {
 }
 
 test "jitter buffer lifecycle" {
-    var jb = JitterBuffer.init(160) orelse return error.InitFailed;
+    var jb = speexdsp.JitterBuffer.init(160) orelse return error.InitFailed;
     defer jb.deinit();
 
     jb.tick();
@@ -103,7 +96,7 @@ test "jitter buffer lifecycle" {
 }
 
 test "buffer write and read" {
-    var buf = Buffer.init(256) orelse return error.InitFailed;
+    var buf = speexdsp.Buffer.init(256) orelse return error.InitFailed;
     defer buf.deinit();
 
     try std.testing.expectEqual(@as(c_int, 0), buf.getAvailable());
@@ -119,7 +112,7 @@ test "buffer write and read" {
 }
 
 test "buffer write zeros" {
-    var buf = Buffer.init(256) orelse return error.InitFailed;
+    var buf = speexdsp.Buffer.init(256) orelse return error.InitFailed;
     defer buf.deinit();
 
     _ = buf.writeZeros(16);

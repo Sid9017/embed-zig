@@ -1,7 +1,7 @@
 const std = @import("std");
-const module = @import("embed").pkg.ui.led_strip.frame;
-const Color = module.Color;
-const Frame = module.Frame;
+const embed = @import("embed");
+const frame = embed.pkg.ui.led_strip.frame;
+const led_strip = embed.hal.led_strip;
 
 // ============================================================================
 // Tests
@@ -10,58 +10,58 @@ const Frame = module.Frame;
 const testing = std.testing;
 
 test "Frame: solid" {
-    const F = Frame(4);
-    const f = F.solid(Color.red);
+    const F = frame.Frame(4);
+    const f = F.solid(led_strip.Color.red);
     for (f.pixels) |p| {
-        try testing.expectEqual(Color.red, p);
+        try testing.expectEqual(led_strip.Color.red, p);
     }
 }
 
 test "Frame: gradient endpoints" {
-    const F = Frame(8);
-    const f = F.gradient(Color.red, Color.blue);
-    try testing.expectEqual(Color.red, f.pixels[0]);
-    try testing.expectEqual(Color.blue, f.pixels[7]);
+    const F = frame.Frame(8);
+    const f = F.gradient(led_strip.Color.red, led_strip.Color.blue);
+    try testing.expectEqual(led_strip.Color.red, f.pixels[0]);
+    try testing.expectEqual(led_strip.Color.blue, f.pixels[7]);
 }
 
 test "Frame: rotate shifts left" {
-    const F = Frame(4);
+    const F = frame.Frame(4);
     var f: F = .{};
-    f.pixels[0] = Color.red;
-    f.pixels[1] = Color.green;
-    f.pixels[2] = Color.blue;
-    f.pixels[3] = Color.white;
+    f.pixels[0] = led_strip.Color.red;
+    f.pixels[1] = led_strip.Color.green;
+    f.pixels[2] = led_strip.Color.blue;
+    f.pixels[3] = led_strip.Color.white;
     const r = f.rotate();
-    try testing.expectEqual(Color.green, r.pixels[0]);
-    try testing.expectEqual(Color.blue, r.pixels[1]);
-    try testing.expectEqual(Color.white, r.pixels[2]);
-    try testing.expectEqual(Color.red, r.pixels[3]);
+    try testing.expectEqual(led_strip.Color.green, r.pixels[0]);
+    try testing.expectEqual(led_strip.Color.blue, r.pixels[1]);
+    try testing.expectEqual(led_strip.Color.white, r.pixels[2]);
+    try testing.expectEqual(led_strip.Color.red, r.pixels[3]);
 }
 
 test "Frame: flip reverses" {
-    const F = Frame(3);
+    const F = frame.Frame(3);
     var f: F = .{};
-    f.pixels[0] = Color.red;
-    f.pixels[1] = Color.green;
-    f.pixels[2] = Color.blue;
+    f.pixels[0] = led_strip.Color.red;
+    f.pixels[1] = led_strip.Color.green;
+    f.pixels[2] = led_strip.Color.blue;
     const fl = f.flip();
-    try testing.expectEqual(Color.blue, fl.pixels[0]);
-    try testing.expectEqual(Color.green, fl.pixels[1]);
-    try testing.expectEqual(Color.red, fl.pixels[2]);
+    try testing.expectEqual(led_strip.Color.blue, fl.pixels[0]);
+    try testing.expectEqual(led_strip.Color.green, fl.pixels[1]);
+    try testing.expectEqual(led_strip.Color.red, fl.pixels[2]);
 }
 
 test "Frame: withBrightness scales" {
-    const F = Frame(1);
-    const f = F.solid(Color.white).withBrightness(128);
+    const F = frame.Frame(1);
+    const f = F.solid(led_strip.Color.white).withBrightness(128);
     try testing.expect(f.pixels[0].r < 200);
     try testing.expect(f.pixels[0].r > 100);
 }
 
 test "Frame: eql" {
-    const F = Frame(2);
-    const a = F.solid(Color.red);
-    const b = F.solid(Color.red);
-    const c = F.solid(Color.green);
+    const F = frame.Frame(2);
+    const a = F.solid(led_strip.Color.red);
+    const b = F.solid(led_strip.Color.red);
+    const c = F.solid(led_strip.Color.green);
     try testing.expect(a.eql(b));
     try testing.expect(!a.eql(c));
 }

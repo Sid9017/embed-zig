@@ -18,7 +18,8 @@
 //! | 0x0006 | SMP                    |
 
 const std = @import("std");
-const acl = @import("../hci/acl.zig");
+const embed = @import("../../../../mod.zig");
+const acl = embed.pkg.ble.host.hci.acl;
 
 // ============================================================================
 // Channel IDs

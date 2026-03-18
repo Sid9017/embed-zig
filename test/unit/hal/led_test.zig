@@ -1,10 +1,8 @@
-const module = @import("embed").hal.led;
-const is = module.is;
-const from = module.from;
-const hal_marker = module.hal_marker;
-
 const std = @import("std");
 const testing = std.testing;
+const embed = @import("embed");
+
+const led_mod = embed.hal.led;
 
 test "led wrapper" {
     const Mock = struct {
@@ -23,7 +21,7 @@ test "led wrapper" {
         }
     };
 
-    const Led = from(struct {
+    const Led = led_mod.from(struct {
         pub const Driver = Mock;
         pub const meta = .{ .id = "led.test" };
     });

@@ -214,22 +214,3 @@ pub const BufWriter = struct {
         self.pos += data.len;
     }
 };
-
-// ==========================================================================
-// Tests
-// ==========================================================================
-
-const std = @import("std");
-
-pub fn contains(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len > haystack.len) return false;
-    for (0..haystack.len - needle.len + 1) |i| {
-        if (eql(haystack[i..][0..needle.len], needle)) return true;
-    }
-    return false;
-}
-
-pub fn endsWith(haystack: []const u8, suffix: []const u8) bool {
-    if (haystack.len < suffix.len) return false;
-    return eql(haystack[haystack.len - suffix.len ..], suffix);
-}

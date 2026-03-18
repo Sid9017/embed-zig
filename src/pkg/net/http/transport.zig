@@ -13,21 +13,16 @@
 //! not on `Transport` directly — enabling mock transports for testing.
 
 const std = @import("std");
-const runtime = struct {
-    pub const socket = @import("../../../runtime/socket.zig");
-    pub const std = @import("../../../runtime/std.zig");
-};
-const conn_mod = @import("../conn.zig");
-const tls_mod = struct {
-    pub fn Client(comptime Conn: type, comptime Crypto: type, comptime Rng: type, comptime Mutex: type) type {
-        return @import("../tls/client.zig").Client(Conn, Crypto, Rng, Mutex);
-    }
-};
-const dns_mod = @import("../dns/dns.zig");
-const url_mod = @import("../url/url.zig");
+const embed = @import("../../../mod.zig");
+const runtime_suite = embed.runtime;
+const socket_mod = embed.runtime.socket;
+const conn_mod = embed.pkg.net.conn;
+const tls_client_mod = embed.pkg.net.tls.client;
+const dns_mod = embed.pkg.net.dns;
+const url_mod = embed.pkg.net.url;
 const request_mod = @import("request.zig");
 
-pub const Method = request_mod.Method;
+const Method = request_mod.Method;
 
 pub const Scheme = enum {
     http,
@@ -120,31 +115,23 @@ pub fn RoundTripper(comptime Impl: type) type {
 /// Default HTTP Transport — handles DNS, TCP, TLS, and HTTP over the wire.
 ///
 /// Type parameters:
-///   - `Socket`: must satisfy `runtime.socket.from` contract
-///   - `Crypto`: crypto primitives for TLS (pass `void` for HTTP-only)
-///   - `Rng`:    random number generator for TLS (pass `void` for HTTP-only)
-///   - `Mutex`:  mutex type for TLS thread safety (pass `void` for HTTP-only)
+///   - `Runtime`: sealed runtime suite (provides Socket, TLS via Crypto when available)
 ///   - `DomainResolver`: custom DNS resolver (pass `void` to disable)
 pub fn Transport(
-    comptime Socket: type,
-    comptime Crypto: type,
-    comptime Rng: type,
-    comptime Mutex: type,
+    comptime Runtime: type,
     comptime DomainResolver: type,
 ) type {
-    comptime _ = runtime.socket.from(Socket);
+    comptime {
+        if (Runtime == void) @compileError("Transport requires Runtime (provides Socket); for HTTP-only use a Runtime with Socket");
+        _ = runtime_suite.is(Runtime);
+    }
 
-    const has_tls = Crypto != void and Rng != void and Mutex != void;
+    const has_tls = true;
     const has_custom_resolver = DomainResolver != void;
 
-    const SConn = conn_mod.SocketConn(Socket);
-    const TlsClient = if (has_tls) tls_mod.Client(SConn, Crypto, Rng, Mutex) else void;
-    const DnsResolver = dns_mod.Resolver(Socket, DomainResolver);
-
-    const CaStore = if (Crypto != void and @hasDecl(Crypto, "x509") and @hasDecl(Crypto.x509, "CaStore"))
-        Crypto.x509.CaStore
-    else
-        void;
+    const SConn = conn_mod.SocketConn(Runtime.Socket);
+    const TlsClient = if (has_tls) tls_client_mod.Client(SConn, Runtime) else void;
+    const DnsResolver = dns_mod.Resolver(Runtime, DomainResolver);
 
     return struct {
         const Self = @This();
@@ -152,17 +139,14 @@ pub fn Transport(
         allocator: std.mem.Allocator,
         dns_server: [4]u8 = dns_mod.Servers.alidns,
         dns_timeout_ms: u32 = 5000,
-        ca_store: if (CaStore != void) ?CaStore else void = if (CaStore != void) null else {},
         user_agent: []const u8 = "zig-http/0.1",
         custom_resolver: if (has_custom_resolver) ?*const DomainResolver else void =
             if (has_custom_resolver) null else {},
 
-        pub const CaStoreType = CaStore;
-
         pub fn roundTrip(self: *Self, req: RoundTripRequest, buffer: []u8) TransportError!RoundTripResponse {
             const addr = self.resolveHost(req.host) orelse return error.DnsResolveFailed;
 
-            var socket = Socket.tcp() catch return error.ConnectionFailed;
+            var socket = Runtime.Socket.tcp() catch return error.ConnectionFailed;
 
             socket.setRecvTimeout(req.timeout_ms);
             socket.setSendTimeout(req.timeout_ms);
@@ -182,7 +166,7 @@ pub fn Transport(
         }
 
         fn resolveHost(self: *const Self, host: []const u8) ?[4]u8 {
-            if (runtime.socket.parseIpv4(host)) |addr| return addr;
+            if (socket_mod.parseIpv4(host)) |addr| return addr;
 
             var resolver = DnsResolver{
                 .server = self.dns_server,
@@ -196,26 +180,22 @@ pub fn Transport(
             return resolver.resolve(host) catch null;
         }
 
-        fn roundTripPlain(socket: *Socket, req: RoundTripRequest, buffer: []u8) TransportError!RoundTripResponse {
+        fn roundTripPlain(socket: *Runtime.Socket, req: RoundTripRequest, buffer: []u8) TransportError!RoundTripResponse {
             defer socket.close();
 
             try sendHttpRequest(socket, req);
             return recvHttpResponse(socket, buffer);
         }
 
-        fn roundTripHttps(self: *Self, socket: *Socket, req: RoundTripRequest, buffer: []u8) TransportError!RoundTripResponse {
+        fn roundTripHttps(self: *Self, socket: *Runtime.Socket, req: RoundTripRequest, buffer: []u8) TransportError!RoundTripResponse {
             defer socket.close();
 
             var socket_conn = SConn.init(socket);
 
-            const skip_verify = if (CaStore != void) self.ca_store == null else true;
-            const ca_store_val = if (CaStore != void) self.ca_store else {};
-
             var tls_client = TlsClient.init(&socket_conn, .{
                 .allocator = self.allocator,
                 .hostname = req.host,
-                .skip_verify = skip_verify,
-                .ca_store = ca_store_val,
+                .skip_verify = true,
                 .timeout_ms = req.timeout_ms,
             }) catch return error.TlsError;
             defer tls_client.deinit();
@@ -242,14 +222,14 @@ pub fn Transport(
             return parseHttpResponse(buffer, total_received);
         }
 
-        fn sendHttpRequest(socket: *Socket, req: RoundTripRequest) TransportError!void {
+        fn sendHttpRequest(socket: *Runtime.Socket, req: RoundTripRequest) TransportError!void {
             var req_buf: [2048]u8 = undefined;
             const req_len = buildHttpRequest(&req_buf, req) catch return error.BufferTooSmall;
 
             _ = socket.send(req_buf[0..req_len]) catch return error.SendFailed;
         }
 
-        fn recvHttpResponse(socket: *Socket, buffer: []u8) TransportError!RoundTripResponse {
+        fn recvHttpResponse(socket: *Runtime.Socket, buffer: []u8) TransportError!RoundTripResponse {
             var total_received: usize = 0;
             while (total_received < buffer.len) {
                 const n = socket.recv(buffer[total_received..]) catch |err| {
@@ -409,11 +389,3 @@ pub fn requestFromUrl(url_str: []const u8) TransportError!RoundTripRequest {
         .path = path,
     };
 }
-
-// =========================================================================
-// Tests
-// =========================================================================
-
-// =========================================================================
-// Real network tests — Transport(Socket, void, void, void) for HTTP-only
-// =========================================================================

@@ -1,10 +1,9 @@
 const std = @import("std");
-pub const runtime = struct {
-    pub const std = @import("../../../runtime/std.zig");
-};
-pub const conn_mod = @import("../conn.zig");
-pub const client_mod = @import("client.zig");
-pub const common = @import("common.zig");
+const embed = @import("../../../mod.zig");
+const runtime_suite = embed.runtime;
+const conn_mod = embed.pkg.net.conn;
+const client_mod = @import("client.zig");
+const common = @import("common.zig");
 
 pub const Options = struct {
     skip_cert_verify: bool = false,
@@ -16,13 +15,18 @@ pub const Options = struct {
 ///
 /// This is the primary high-level API: create a `Stream`, call `handshake`,
 /// then use `read`/`write`/`close` like any other `Conn`.
-pub fn Stream(comptime Conn: type, comptime Crypto: type, comptime Rng: type, comptime Mutex: type) type {
+///
+/// Type parameters:
+///   - `Conn`:    underlying transport (must satisfy `net.conn` contract)
+///   - `Runtime`: sealed runtime suite (must satisfy `runtime.suite.is`)
+pub fn Stream(comptime Conn: type, comptime Runtime: type) type {
     comptime {
         _ = conn_mod.from(Conn);
+        _ = runtime_suite.is(Runtime);
     }
 
     return struct {
-        client: ?client_mod.Client(Conn, Crypto, Rng, Mutex),
+        client: ?client_mod.Client(Conn, Runtime),
         conn: *Conn,
         allocator: std.mem.Allocator,
         hostname: []const u8,
@@ -49,7 +53,7 @@ pub fn Stream(comptime Conn: type, comptime Crypto: type, comptime Rng: type, co
 
         /// Perform TLS handshake, upgrading the underlying Conn.
         pub fn handshake(self: *Self) !void {
-            self.client = try client_mod.Client(Conn, Crypto, Rng, Mutex).init(self.conn, .{
+            self.client = try client_mod.Client(Conn, Runtime).init(self.conn, .{
                 .allocator = self.allocator,
                 .hostname = self.hostname,
                 .skip_verify = self.options.skip_cert_verify,
@@ -87,18 +91,3 @@ pub fn Stream(comptime Conn: type, comptime Crypto: type, comptime Rng: type, co
         }
     };
 }
-
-pub const TestMockConn = struct {
-    const Self = @This();
-    closed: bool = false,
-
-    pub fn read(_: *Self, _: []u8) conn_mod.Error!usize {
-        return conn_mod.Error.ReadFailed;
-    }
-    pub fn write(_: *Self, _: []const u8) conn_mod.Error!usize {
-        return conn_mod.Error.WriteFailed;
-    }
-    pub fn close(self: *Self) void {
-        self.closed = true;
-    }
-};

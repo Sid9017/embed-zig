@@ -4,10 +4,7 @@
 //! HTTP, or other protocol layers — regardless of whether the underlying
 //! transport is a TCP socket, a serial port, a memory pipe, etc.
 
-const runtime = struct {
-    pub const socket = @import("../../runtime/socket.zig");
-    pub const std = @import("../../runtime/std.zig");
-};
+const embed = @import("../../mod.zig");
 
 /// Conn contract error set.
 pub const Error = error{

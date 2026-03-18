@@ -1,29 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.drivers.es7210;
-const Address = module.Address;
-const DEFAULT_ADDRESS = module.DEFAULT_ADDRESS;
-const Register = module.Register;
-const ResetReg = module.ResetReg;
-const ClockOff = module.ClockOff;
-const ModeConfig = module.ModeConfig;
-const SdpInterface1 = module.SdpInterface1;
-const SdpInterface2 = module.SdpInterface2;
-const TimeControl0 = module.TimeControl0;
-const AnalogReg = module.AnalogReg;
-const MicBias = module.MicBias;
-const MicPower = module.MicPower;
-const GainReg = module.GainReg;
-const HpfReg = module.HpfReg;
-const PowerDown = module.PowerDown;
-const MicSelect = module.MicSelect;
-const Gain = module.Gain;
-const I2sFormat = module.I2sFormat;
-const BitsPerSample = module.BitsPerSample;
-const MclkSource = module.MclkSource;
-const Config = module.Config;
-const Es7210 = module.Es7210;
+const es7210 = embed.pkg.drivers.es7210;
 
 // ============================================================================
 // Tests
@@ -54,7 +32,7 @@ const MockI2cSpec = struct {
 
 test "Es7210 basic operations" {
     var mock = MockI2c{};
-    var adc = Es7210(MockI2cSpec).init(&mock, .{
+    var adc = es7210.Es7210(MockI2cSpec).init(&mock, .{
         .mic_select = .{ .mic1 = true, .mic2 = true, .mic3 = true },
     });
 
@@ -67,17 +45,17 @@ test "Es7210 basic operations" {
 
     // Test set gain
     try adc.setGainAll(.@"24dB");
-    try std.testing.expectEqual(Gain.@"24dB", adc.gain);
+    try std.testing.expectEqual(es7210.Gain.@"24dB", adc.gain);
 }
 
 test "MicSelect operations" {
-    const mics = MicSelect{ .mic1 = true, .mic2 = true, .mic3 = false, .mic4 = false };
+    const mics = es7210.MicSelect{ .mic1 = true, .mic2 = true, .mic3 = false, .mic4 = false };
     try std.testing.expectEqual(@as(u8, 2), mics.count());
     try std.testing.expectEqual(@as(u8, 0b0011), mics.toU8());
 }
 
 test "Gain fromDb" {
-    try std.testing.expectEqual(Gain.@"0dB", Gain.fromDb(0));
-    try std.testing.expectEqual(Gain.@"30dB", Gain.fromDb(30));
-    try std.testing.expectEqual(Gain.@"37.5dB", Gain.fromDb(40));
+    try std.testing.expectEqual(es7210.Gain.@"0dB", es7210.Gain.fromDb(0));
+    try std.testing.expectEqual(es7210.Gain.@"30dB", es7210.Gain.fromDb(30));
+    try std.testing.expectEqual(es7210.Gain.@"37.5dB", es7210.Gain.fromDb(40));
 }

@@ -9,23 +9,10 @@
 //! consumer can afford to wait.
 
 const std = @import("std");
-pub const runtime = struct {
-    pub const sync = struct {
-        pub const mutex = @import("../../runtime/sync/mutex.zig");
-        pub const condition = @import("../../runtime/sync/condition.zig");
-        pub const isMutex = mutex.is;
-        pub const isCondition = condition.is;
-    };
-    pub const std = @import("../../runtime/std.zig");
-};
+const embed = @import("../../mod.zig");
 
-pub fn OverrideBuffer(
-    comptime T: type,
-    comptime Mutex: type,
-    comptime Cond: type,
-) type {
-    comptime _ = runtime.sync.isMutex(Mutex);
-    comptime _ = runtime.sync.isCondition(Cond);
+pub fn OverrideBuffer(comptime T: type, comptime Runtime: type) type {
+    comptime _ = embed.runtime.is(Runtime);
 
     return struct {
         const Self = @This();
@@ -37,16 +24,16 @@ pub fn OverrideBuffer(
         read_pos: usize = 0,
         len: usize = 0,
 
-        mutex: Mutex,
-        cond: Cond,
+        mutex: Runtime.Mutex,
+        cond: Runtime.Condition,
         closed: bool = false,
 
         pub fn init(buf: []T) Self {
             return .{
                 .buf = buf,
                 .capacity = buf.len,
-                .mutex = Mutex.init(),
-                .cond = Cond.init(),
+                .mutex = Runtime.Mutex.init(),
+                .cond = Runtime.Condition.init(),
             };
         }
 

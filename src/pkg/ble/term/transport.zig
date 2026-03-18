@@ -4,11 +4,14 @@
 //! GATT write handler pushes data into rx_queue; xfer's recv() blocks on it.
 //! xfer's send() calls the provided notify function.
 //!
-//! Parameterized on Mutex/Cond for runtime portability (std vs ESP).
+//! Parameterized on Runtime for portability (std vs ESP).
 
 const std = @import("std");
+const embed = @import("../../../mod.zig");
 
-pub fn GattTransport(comptime Mutex: type, comptime Cond: type) type {
+pub fn GattTransport(comptime Runtime: type) type {
+    comptime _ = embed.runtime.is(Runtime);
+
     return struct {
         const Self = @This();
 
@@ -30,8 +33,8 @@ pub fn GattTransport(comptime Mutex: type, comptime Cond: type) type {
         tail: usize = 0,
         len: usize = 0,
         closed: bool = false,
-        mutex: Mutex,
-        cond: Cond,
+        mutex: Runtime.Mutex,
+        cond: Runtime.Condition,
 
         pub fn init(
             notify_fn: *const fn (ctx: ?*anyopaque, data: []const u8) anyerror!void,
@@ -40,8 +43,8 @@ pub fn GattTransport(comptime Mutex: type, comptime Cond: type) type {
             return .{
                 .notify_fn = notify_fn,
                 .notify_ctx = notify_ctx,
-                .mutex = Mutex.init(),
-                .cond = Cond.init(),
+                .mutex = Runtime.Mutex.init(),
+                .cond = Runtime.Condition.init(),
             };
         }
 
@@ -113,46 +116,3 @@ pub fn GattTransport(comptime Mutex: type, comptime Cond: type) type {
         }
     };
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-const builtin = @import("builtin");
-
-pub const TestMutex = if (builtin.os.tag == .freestanding) void else struct {
-    raw: std.Thread.Mutex = .{},
-    pub fn init() @This() {
-        return .{};
-    }
-    pub fn deinit(_: *@This()) void {}
-    pub fn lock(self: *@This()) void {
-        self.raw.lock();
-    }
-    pub fn unlock(self: *@This()) void {
-        self.raw.unlock();
-    }
-};
-
-pub const TestCond = if (builtin.os.tag == .freestanding) void else struct {
-    raw: std.Thread.Condition = .{},
-    pub fn init() @This() {
-        return .{};
-    }
-    pub fn deinit(_: *@This()) void {}
-    pub fn wait(self: *@This(), mutex: *TestMutex) void {
-        self.raw.wait(&mutex.raw);
-    }
-    pub fn signal(self: *@This()) void {
-        self.raw.signal();
-    }
-    pub fn broadcast(self: *@This()) void {
-        self.raw.broadcast();
-    }
-    pub fn timedWait(self: *@This(), mutex: *TestMutex, timeout_ns: u64) enum { signaled, timed_out } {
-        self.raw.timedWait(&mutex.raw, timeout_ns) catch return .timed_out;
-        return .signaled;
-    }
-};
-
-pub fn testNotify(_: ?*anyopaque, _: []const u8) anyerror!void {}

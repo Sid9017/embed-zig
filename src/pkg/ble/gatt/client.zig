@@ -36,8 +36,9 @@
 //! ```
 
 const std = @import("std");
-const att = @import("../host/att/att.zig");
-const l2cap = @import("../host/l2cap/l2cap.zig");
+const embed = @import("../../../mod.zig");
+const att = embed.pkg.ble.host.att.att;
+const l2cap = embed.pkg.ble.host.l2cap.l2cap;
 
 // ============================================================================
 // ATT Response (passed through completion channel)

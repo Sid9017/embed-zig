@@ -30,9 +30,10 @@
 //! ```
 
 const std = @import("std");
-const hci = @import("../hci/hci.zig");
-const commands = @import("../hci/commands.zig");
-const events = @import("../hci/events.zig");
+const embed = @import("../../../../mod.zig");
+const hci = embed.pkg.ble.host.hci.hci;
+const commands = embed.pkg.ble.host.hci.commands;
+const events = embed.pkg.ble.host.hci.events;
 
 // ============================================================================
 // Types

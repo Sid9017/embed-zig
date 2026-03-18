@@ -6,8 +6,9 @@
 //! Platform compatibility: requires `<math.h>` and `<stdlib.h>`.
 //! Works on macOS/Linux (native libc), ESP32 (newlib), WASM (wasi-libc).
 
+const embed = @import("../../../../mod.zig");
 const font_mod = @import("font.zig");
-const c = @import("../../../../third_party/stb_truetype/src.zig").c;
+const c = embed.third_party.stb_truetype.c;
 
 pub const Glyph = struct {
     bitmap: [*]const u8,

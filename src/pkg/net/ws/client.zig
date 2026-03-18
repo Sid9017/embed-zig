@@ -24,6 +24,7 @@
 //! ```
 
 const Allocator = @import("std").mem.Allocator;
+const embed = @import("../../../mod.zig");
 const frame = @import("frame.zig");
 const handshake_mod = @import("handshake.zig");
 
@@ -318,60 +319,4 @@ pub fn writeAll(conn: anytype, data: []const u8) !void {
         if (n == 0) return error.Closed;
         sent += n;
     }
-}
-
-// ==========================================================================
-// Tests
-// ==========================================================================
-
-const std = @import("std");
-pub const conn_mod = @import("../conn.zig");
-
-pub const MockConn = struct {
-    recv_data: []const u8,
-    recv_pos: usize = 0,
-    sent_buf: [4096]u8 = undefined,
-    sent_len: usize = 0,
-
-    fn initMock(recv_data: []const u8) MockConn {
-        return .{ .recv_data = recv_data };
-    }
-
-    pub fn write(self: *MockConn, data: []const u8) conn_mod.Error!usize {
-        if (self.sent_len + data.len > self.sent_buf.len) return error.WriteFailed;
-        @memcpy(self.sent_buf[self.sent_len..][0..data.len], data);
-        self.sent_len += data.len;
-        return data.len;
-    }
-
-    pub fn read(self: *MockConn, buf: []u8) conn_mod.Error!usize {
-        if (self.recv_pos >= self.recv_data.len) return error.Closed;
-        const available = self.recv_data.len - self.recv_pos;
-        const n = @min(available, buf.len);
-        @memcpy(buf[0..n], self.recv_data[self.recv_pos..][0..n]);
-        self.recv_pos += n;
-        return n;
-    }
-
-    pub fn close(_: *MockConn) void {}
-
-    comptime {
-        _ = conn_mod.from(MockConn);
-    }
-};
-
-pub fn deterministicRng(buf: []u8) void {
-    for (buf, 0..) |*b, i| {
-        b.* = @intCast(i % 256);
-    }
-}
-
-pub fn buildServerFrame(allocator: std.mem.Allocator, opcode: frame.Opcode, payload: []const u8) ![]u8 {
-    var hdr_buf: [frame.MAX_HEADER_SIZE]u8 = undefined;
-    const hdr_len = frame.encodeHeader(&hdr_buf, opcode, payload.len, true, null);
-    const total = hdr_len + payload.len;
-    const buf = try allocator.alloc(u8, total);
-    @memcpy(buf[0..hdr_len], hdr_buf[0..hdr_len]);
-    @memcpy(buf[hdr_len..], payload);
-    return buf;
 }

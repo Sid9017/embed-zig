@@ -1,17 +1,12 @@
-const module = @import("embed").hal.audio_system;
-const Error = module.Error;
-const Config = module.Config;
-const Frame = module.Frame;
-const is = module.is;
-const from = module.from;
-const hal_marker = module.hal_marker;
-
 const std = @import("std");
 const testing = std.testing;
+const embed = @import("embed");
+
+const audio_system = embed.hal.audio_system;
 
 test "audio_system wrapper" {
     const mic_count = 2;
-    const FrameType = Frame(mic_count);
+    const FrameType = audio_system.Frame(mic_count);
 
     const MockDriver = struct {
         mic_buf: [mic_count][4]i16 = .{
@@ -29,35 +24,35 @@ test "audio_system wrapper" {
 
         pub fn deinit(_: *@This()) void {}
 
-        pub fn readFrame(self: *@This()) Error!FrameType {
+        pub fn readFrame(self: *@This()) audio_system.Error!FrameType {
             return .{
                 .mic = .{ &self.mic_buf[0], &self.mic_buf[1] },
                 .ref = &self.ref_buf,
             };
         }
 
-        pub fn writeSpk(self: *@This(), buffer: []const i16) Error!usize {
+        pub fn writeSpk(self: *@This(), buffer: []const i16) audio_system.Error!usize {
             self.wrote += buffer.len;
             return buffer.len;
         }
 
-        pub fn setMicGain(self: *@This(), index: u8, gain_db: i8) Error!void {
+        pub fn setMicGain(self: *@This(), index: u8, gain_db: i8) audio_system.Error!void {
             if (index >= mic_count) return error.InvalidState;
             self.mic_gains[index] = gain_db;
         }
 
-        pub fn setSpkGain(self: *@This(), gain_db: i8) Error!void {
+        pub fn setSpkGain(self: *@This(), gain_db: i8) audio_system.Error!void {
             self.spk_gain = gain_db;
         }
 
-        pub fn start(_: *@This()) Error!void {}
-        pub fn stop(_: *@This()) Error!void {}
+        pub fn start(_: *@This()) audio_system.Error!void {}
+        pub fn stop(_: *@This()) audio_system.Error!void {}
     };
 
-    const AudioSystem = from(struct {
+    const AudioSystem = audio_system.from(struct {
         pub const Driver = MockDriver;
         pub const meta = .{ .id = "audio_system.test" };
-        pub const config = Config{ .sample_rate = 16000, .mic_count = mic_count };
+        pub const config = audio_system.Config{ .sample_rate = 16000, .mic_count = mic_count };
     });
 
     var d = try MockDriver.init();
@@ -79,7 +74,7 @@ test "audio_system wrapper" {
     try sys.setSpkGain(3);
     try std.testing.expectEqual(@as(i8, 3), d.spk_gain);
 
-    try std.testing.expect(is(AudioSystem));
+    try std.testing.expect(audio_system.is(AudioSystem));
     try std.testing.expectEqual(@as(u32, 160), AudioSystem.samplesForMs(10));
     try std.testing.expectEqual(@as(u32, 10), AudioSystem.msForSamples(160));
 }

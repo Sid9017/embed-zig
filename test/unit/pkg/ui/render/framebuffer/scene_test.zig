@@ -1,19 +1,12 @@
-const embed = @import("embed");
-const module = embed.pkg.ui.render.scene;
-const Compositor = module.Compositor;
-const Region = module.Region;
-const SceneRenderer = module.SceneRenderer;
-const Rect = embed.pkg.ui.render.dirty.Rect;
-
-// ============================================================================
-// Tests
-// ============================================================================
-
 const std = @import("std");
 const testing = std.testing;
-const Framebuffer = embed.pkg.ui.render.framebuffer.Framebuffer;
 
-const TestFB = Framebuffer(240, 240, .rgb565);
+const embed = @import("embed");
+const scene = embed.pkg.ui.render.scene;
+const Dirty = embed.pkg.ui.render.dirty;
+const framebuffer = embed.pkg.ui.render.framebuffer;
+
+const TestFB = framebuffer.Framebuffer(240, 240, .rgb565);
 
 const GameState = struct {
     score: u32 = 0,
@@ -25,7 +18,7 @@ const GameState = struct {
 const HudScore = struct {
     const bg: u16 = 0x2104;
 
-    pub fn bounds(_: *const GameState) Rect {
+    pub fn bounds(_: *const GameState) Dirty.Rect {
         return .{ .x = 0, .y = 0, .w = 240, .h = 20 };
     }
 
@@ -44,7 +37,7 @@ const HudScore = struct {
 const HudTimer = struct {
     const bg: u16 = 0x2104;
 
-    pub fn bounds(_: *const GameState) Rect {
+    pub fn bounds(_: *const GameState) Dirty.Rect {
         return .{ .x = 180, .y = 0, .w = 60, .h = 20 };
     }
 
@@ -61,7 +54,7 @@ const HudTimer = struct {
 const PlayerCar = struct {
     const bg: u16 = 0x0000;
 
-    pub fn bounds(s: *const GameState) Rect {
+    pub fn bounds(s: *const GameState) Dirty.Rect {
         return .{ .x = s.player_x, .y = 180, .w = 30, .h = 45 };
     }
 
@@ -77,7 +70,7 @@ const PlayerCar = struct {
 const Obstacles = struct {
     const bg: u16 = 0x0000;
 
-    pub fn bounds(_: *const GameState) Rect {
+    pub fn bounds(_: *const GameState) Dirty.Rect {
         return .{ .x = 40, .y = 20, .w = 160, .h = 160 };
     }
 
@@ -92,7 +85,7 @@ const Obstacles = struct {
     }
 };
 
-const Game = Compositor(TestFB, GameState, .{ HudScore, HudTimer, PlayerCar, Obstacles });
+const Game = scene.Compositor(TestFB, GameState, .{ HudScore, HudTimer, PlayerCar, Obstacles });
 
 test "Compositor: first frame draws all" {
     var fb = TestFB.init(0);
@@ -172,7 +165,7 @@ const EdgeState = struct {
 
 const EdgeSprite = struct {
     const bg: u16 = 0x0000;
-    pub fn bounds(s: *const EdgeState) Rect {
+    pub fn bounds(s: *const EdgeState) Dirty.Rect {
         return .{ .x = s.x, .y = 220, .w = 30, .h = 30 };
     }
     pub fn changed(s: *const EdgeState, p: *const EdgeState) bool {
@@ -185,7 +178,7 @@ const EdgeSprite = struct {
     }
 };
 
-const EdgeScene = Compositor(TestFB, EdgeState, .{EdgeSprite});
+const EdgeScene = scene.Compositor(TestFB, EdgeState, .{EdgeSprite});
 
 test "edge: component partially off-screen right" {
     var fb = TestFB.init(0);
@@ -227,7 +220,7 @@ const OverlapState = struct {
 
 const BackPanel = struct {
     const bg: u16 = 0x0000;
-    pub fn bounds(_: *const OverlapState) Rect {
+    pub fn bounds(_: *const OverlapState) Dirty.Rect {
         return .{ .x = 50, .y = 50, .w = 100, .h = 100 };
     }
     pub fn changed(s: *const OverlapState, p: *const OverlapState) bool {
@@ -240,7 +233,7 @@ const BackPanel = struct {
 
 const FrontBadge = struct {
     const bg: u16 = 0x1111;
-    pub fn bounds(_: *const OverlapState) Rect {
+    pub fn bounds(_: *const OverlapState) Dirty.Rect {
         return .{ .x = 80, .y = 80, .w = 40, .h = 40 };
     }
     pub fn changed(s: *const OverlapState, p: *const OverlapState) bool {
@@ -251,7 +244,7 @@ const FrontBadge = struct {
     }
 };
 
-const OverlapScene = Compositor(TestFB, OverlapState, .{ BackPanel, FrontBadge });
+const OverlapScene = scene.Compositor(TestFB, OverlapState, .{ BackPanel, FrontBadge });
 
 test "edge: overlapping components both drawn on first frame" {
     var fb = TestFB.init(0);
@@ -317,7 +310,7 @@ test "edge: move by 1 pixel" {
     try testing.expect(dirty <= 30 * 45 * 2);
 }
 
-const SingleScene = Compositor(TestFB, GameState, .{HudScore});
+const SingleScene = scene.Compositor(TestFB, GameState, .{HudScore});
 
 test "edge: single component scene" {
     var fb = TestFB.init(0);
@@ -330,7 +323,7 @@ test "edge: single component scene" {
 }
 
 const NoBgComponent = struct {
-    pub fn bounds(_: *const GameState) Rect {
+    pub fn bounds(_: *const GameState) Dirty.Rect {
         return .{ .x = 10, .y = 10, .w = 20, .h = 20 };
     }
     pub fn changed(s: *const GameState, p: *const GameState) bool {
@@ -341,7 +334,7 @@ const NoBgComponent = struct {
     }
 };
 
-const NoBgScene = Compositor(TestFB, GameState, .{NoBgComponent});
+const NoBgScene = scene.Compositor(TestFB, GameState, .{NoBgComponent});
 
 test "edge: component without bg declaration uses black" {
     var fb = TestFB.init(0xFFFF);
@@ -369,7 +362,7 @@ test "edge: all 4 components change at once" {
 
 const PhantomComponent = struct {
     const bg: u16 = 0x0000;
-    pub fn bounds(_: *const GameState) Rect {
+    pub fn bounds(_: *const GameState) Dirty.Rect {
         return .{ .x = 0, .y = 0, .w = 10, .h = 10 };
     }
     pub fn changed(_: *const GameState, _: *const GameState) bool {
@@ -378,7 +371,7 @@ const PhantomComponent = struct {
     pub fn draw(_: *TestFB, _: *const GameState) void {}
 };
 
-const PhantomScene = Compositor(TestFB, GameState, .{PhantomComponent});
+const PhantomScene = scene.Compositor(TestFB, GameState, .{PhantomComponent});
 
 test "edge: always-dirty component with no-op draw" {
     var fb = TestFB.init(0xBBBB);

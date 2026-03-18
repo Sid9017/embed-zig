@@ -8,7 +8,7 @@ const Seal = struct {};
 
 /// Construct a sealed Rng wrapper from a backend Impl type.
 /// Impl must provide: fill(self: Impl, buf: []u8) Error!void
-pub fn Rng(comptime Impl: type) type {
+pub fn Make(comptime Impl: type) type {
     comptime {
         _ = @as(*const fn (Impl, []u8) Error!void, &Impl.fill);
     }
@@ -33,7 +33,7 @@ pub fn Rng(comptime Impl: type) type {
 pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: rng.Seal — use rng.Rng(Backend) to construct");
+            @compileError("Impl must have pub const seal: rng.Seal — use rng.Make(Backend) to construct");
         }
     }
     return Impl;

@@ -1,9 +1,8 @@
 const std = @import("std");
-const module = @import("embed").runtime.std.std_crypto_hash;
-const Sha256 = module.Sha256;
-const Sha384 = module.Sha384;
-const Sha512 = module.Sha512;
-const HashWrapper = module.HashWrapper;
+const Crypto = @import("embed").runtime.std.Crypto;
+const Sha256 = Crypto.Hash.Sha256();
+const Sha384 = Crypto.Hash.Sha384();
+const Sha512 = Crypto.Hash.Sha512();
 
 fn expectHex(actual: []const u8, comptime hex: []const u8) !void {
     var expected: [hex.len / 2]u8 = undefined;

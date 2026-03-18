@@ -6,10 +6,8 @@
 //! from a dedicated thread/task; call `stop()` to exit the loop.
 
 const std = @import("std");
-const hal = struct {
-    pub const imu = @import("../../../hal/imu.zig");
-};
-const bus_mod = @import("../bus.zig");
+const embed = @import("../../../mod.zig");
+const bus_mod = embed.pkg.event.bus;
 const detector_mod = @import("detector.zig");
 const motion_types = @import("types.zig");
 
@@ -21,10 +19,11 @@ pub const Config = struct {
 
 pub fn MotionPeripheral(
     comptime Sensor: type,
-    comptime Time: type,
+    comptime Runtime: type,
 ) type {
     comptime {
-        if (!hal.imu.is(Sensor)) @compileError("Sensor must be a hal.imu type");
+        _ = embed.runtime.is(Runtime);
+        if (!embed.hal.imu.is(Sensor)) @compileError("Sensor must be a hal.imu type");
     }
     const Det = detector_mod.Detector(Sensor);
     const Action = Det.ActionType;
@@ -37,13 +36,13 @@ pub fn MotionPeripheral(
         pub const Event = Action;
 
         sensor: *Sensor,
-        time: Time,
+        time: Runtime.Time,
         config: Config,
         injector: Injector,
         detector: Det,
         running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
-        pub fn init(sensor: *Sensor, time: Time, config: Config, injector: Injector) Self {
+        pub fn init(sensor: *Sensor, time: Runtime.Time, config: Config, injector: Injector) Self {
             return .{
                 .sensor = sensor,
                 .time = time,

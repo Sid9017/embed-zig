@@ -2,8 +2,8 @@ const std = @import("std");
 const embed = @import("embed");
 const runtime = embed.runtime;
 const websim = embed.websim;
-const Color = embed.hal.led_strip.Color;
-const Level = embed.hal.gpio.Level;
+const led_strip = embed.hal.led_strip;
+const gpio = embed.hal.gpio;
 const RemoteHal = websim.RemoteHal;
 const Gpio = websim.hal.Gpio;
 
@@ -93,12 +93,12 @@ pub const hw = struct {
                 return g.setMode(pin, mode);
             }
 
-            pub fn setLevel(self: *Self, pin: u8, level: Level) embed.hal.gpio.Error!void {
+            pub fn setLevel(self: *Self, pin: u8, level: gpio.Level) embed.hal.gpio.Error!void {
                 const g = self.inner orelse return error.GpioError;
                 return g.setLevel(pin, level);
             }
 
-            pub fn getLevel(self: *Self, pin: u8) embed.hal.gpio.Error!Level {
+            pub fn getLevel(self: *Self, pin: u8) embed.hal.gpio.Error!gpio.Level {
                 const g = self.inner orelse return error.GpioError;
                 return g.getLevel(pin);
             }
@@ -123,7 +123,7 @@ pub const hw = struct {
 
             pub fn deinit(_: *Self) void {}
 
-            pub fn setPixel(self: *Self, index: u32, color: Color) void {
+            pub fn setPixel(self: *Self, index: u32, color: led_strip.Color) void {
                 self.inner.setPixel(index, color);
             }
 

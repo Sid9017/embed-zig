@@ -1,29 +1,16 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.ble.host.gap.gap;
-const State = module.State;
-const GapEvent = module.GapEvent;
-const ConnectionInfo = module.ConnectionInfo;
-const DisconnectionInfo = module.DisconnectionInfo;
-const Role = module.Role;
-const AdvConfig = module.AdvConfig;
-const ScanConfig = module.ScanConfig;
-const ConnParams = module.ConnParams;
-const PendingCommand = module.PendingCommand;
-const Gap = module.Gap;
-const hci = module.hci;
-const commands = module.commands;
-const events = module.events;
+const gap_mod = embed.pkg.ble.host.gap.gap;
 
 test "GAP start advertising generates commands" {
-    var gap = Gap.init();
+    var gap = gap_mod.Gap.init();
 
     try gap.startAdvertising(.{
         .adv_data = &[_]u8{ 0x02, 0x01, 0x06, 0x04, 0x09, 'Z', 'i', 'g' },
     });
 
-    try std.testing.expectEqual(State.advertising, gap.state);
+    try std.testing.expectEqual(gap_mod.State.advertising, gap.state);
     try std.testing.expectEqual(@as(usize, 3), gap.pending_count);
 
     const cmd1 = gap.nextCommand() orelse unreachable;
@@ -34,11 +21,11 @@ test "GAP start advertising generates commands" {
 }
 
 test "GAP start scanning generates commands" {
-    var gap = Gap.init();
+    var gap = gap_mod.Gap.init();
 
     try gap.startScanning(.{});
 
-    try std.testing.expectEqual(State.scanning, gap.state);
+    try std.testing.expectEqual(gap_mod.State.scanning, gap.state);
     try std.testing.expectEqual(@as(usize, 2), gap.pending_count);
 
     // First: LE Set Scan Params
@@ -52,7 +39,7 @@ test "GAP start scanning generates commands" {
 }
 
 test "GAP connect from scanning" {
-    var gap = Gap.init();
+    var gap = gap_mod.Gap.init();
 
     try gap.startScanning(.{});
     while (gap.nextCommand()) |_| {} // drain
@@ -63,8 +50,8 @@ test "GAP connect from scanning" {
         .{},
     );
 
-    try std.testing.expectEqual(State.connecting, gap.state);
-    // Should have 2 commands: stop scan + create connection
+    try std.testing.expectEqual(gap_mod.State.connecting, gap.state);
+    // Should have 2 gap_mod.commands: stop scan + create connection
     try std.testing.expectEqual(@as(usize, 2), gap.pending_count);
 
     // First: disable scanning
@@ -77,7 +64,7 @@ test "GAP connect from scanning" {
 }
 
 test "GAP handle LE Connection Complete (peripheral)" {
-    var gap = Gap.init();
+    var gap = gap_mod.Gap.init();
 
     try gap.startAdvertising(.{});
     while (gap.nextCommand()) |_| {}
@@ -93,7 +80,7 @@ test "GAP handle LE Connection Complete (peripheral)" {
         .supervision_timeout = 0x00C8,
     } });
 
-    try std.testing.expectEqual(State.connected, gap.state);
+    try std.testing.expectEqual(gap_mod.State.connected, gap.state);
     try std.testing.expectEqual(@as(?u16, 0x0040), gap.conn_handle);
 
     const evt1 = gap.pollEvent() orelse unreachable;
@@ -102,7 +89,7 @@ test "GAP handle LE Connection Complete (peripheral)" {
     const evt2 = gap.pollEvent() orelse unreachable;
     switch (evt2) {
         .connected => |info| {
-            try std.testing.expectEqual(Role.peripheral, info.role);
+            try std.testing.expectEqual(gap_mod.Role.peripheral, info.role);
             try std.testing.expectEqual(@as(u16, 0x0006), info.conn_interval);
         },
         else => unreachable,
@@ -110,7 +97,7 @@ test "GAP handle LE Connection Complete (peripheral)" {
 }
 
 test "GAP handle LE Connection Complete (central)" {
-    var gap = Gap.init();
+    var gap = gap_mod.Gap.init();
 
     gap.state = .connecting;
 
@@ -127,12 +114,12 @@ test "GAP handle LE Connection Complete (central)" {
         },
     });
 
-    try std.testing.expectEqual(State.connected, gap.state);
+    try std.testing.expectEqual(gap_mod.State.connected, gap.state);
 
     const evt = gap.pollEvent() orelse unreachable;
     switch (evt) {
         .connected => |info| {
-            try std.testing.expectEqual(Role.central, info.role);
+            try std.testing.expectEqual(gap_mod.Role.central, info.role);
             try std.testing.expectEqual(@as(u16, 0x0041), info.conn_handle);
         },
         else => unreachable,
@@ -140,7 +127,7 @@ test "GAP handle LE Connection Complete (central)" {
 }
 
 test "GAP request DLE and PHY" {
-    var gap = Gap.init();
+    var gap = gap_mod.Gap.init();
     gap.state = .connected;
     gap.conn_handle = 0x0040;
 
@@ -160,7 +147,7 @@ test "GAP request DLE and PHY" {
 }
 
 test "GAP handle PHY Update Complete event" {
-    var gap = Gap.init();
+    var gap = gap_mod.Gap.init();
     gap.state = .connected;
 
     gap.handleEvent(.{ .le_phy_update_complete = .{
@@ -181,7 +168,7 @@ test "GAP handle PHY Update Complete event" {
 }
 
 test "GAP handle Data Length Change event" {
-    var gap = Gap.init();
+    var gap = gap_mod.Gap.init();
     gap.state = .connected;
 
     gap.handleEvent(.{ .le_data_length_change = .{
@@ -203,7 +190,7 @@ test "GAP handle Data Length Change event" {
 }
 
 test "GAP handle Disconnection Complete" {
-    var gap = Gap.init();
+    var gap = gap_mod.Gap.init();
     gap.state = .connected;
     gap.conn_handle = 0x0040;
 
@@ -213,7 +200,7 @@ test "GAP handle Disconnection Complete" {
         .reason = 0x13,
     } });
 
-    try std.testing.expectEqual(State.idle, gap.state);
+    try std.testing.expectEqual(gap_mod.State.idle, gap.state);
     try std.testing.expect(gap.conn_handle == null);
 
     const evt = gap.pollEvent() orelse unreachable;
@@ -226,7 +213,7 @@ test "GAP handle Disconnection Complete" {
 }
 
 test "GAP state validation" {
-    var gap = Gap.init();
+    var gap = gap_mod.Gap.init();
 
     try std.testing.expectError(error.InvalidState, gap.stopAdvertising());
     try std.testing.expectError(error.InvalidState, gap.stopScanning());

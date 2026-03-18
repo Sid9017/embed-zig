@@ -1,12 +1,8 @@
-const module = @import("embed").hal.speaker;
-const Error = module.Error;
-const Config = module.Config;
-const is = module.is;
-const from = module.from;
-const hal_marker = module.hal_marker;
-
 const std = @import("std");
 const testing = std.testing;
+const embed = @import("embed");
+
+const speaker = embed.hal.speaker;
 
 test "speaker wrapper" {
     const MockDriver = struct {
@@ -14,21 +10,21 @@ test "speaker wrapper" {
         vol: u8 = 0,
         mute: bool = false,
 
-        pub fn write(self: *@This(), buffer: []const i16) Error!usize {
+        pub fn write(self: *@This(), buffer: []const i16) speaker.Error!usize {
             self.wrote += buffer.len;
             return buffer.len;
         }
 
-        pub fn setVolume(self: *@This(), volume: u8) Error!void {
+        pub fn setVolume(self: *@This(), volume: u8) speaker.Error!void {
             self.vol = volume;
         }
 
-        pub fn setMute(self: *@This(), muted: bool) Error!void {
+        pub fn setMute(self: *@This(), muted: bool) speaker.Error!void {
             self.mute = muted;
         }
     };
 
-    const Speaker = from(struct {
+    const Speaker = speaker.from(struct {
         pub const Driver = MockDriver;
         pub const meta = .{ .id = "speaker.test" };
     });

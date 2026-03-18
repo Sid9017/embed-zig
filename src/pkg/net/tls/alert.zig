@@ -1,9 +1,9 @@
 const std = @import("std");
 const common = @import("common.zig");
 
-pub const Alert = common.Alert;
-pub const AlertLevel = common.AlertLevel;
-pub const AlertDescription = common.AlertDescription;
+const Alert = common.Alert;
+const AlertLevel = common.AlertLevel;
+const AlertDescription = common.AlertDescription;
 
 pub const AlertError = error{
     CloseNotify,

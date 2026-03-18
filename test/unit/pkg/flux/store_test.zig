@@ -1,13 +1,11 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.flux.store;
-const Store = module.Store;
+const store_mod = embed.pkg.flux.store;
 
 // ============================================================================
 // Tests
 // ============================================================================
-
 
 const TestState = struct {
     count: u32 = 0,
@@ -33,13 +31,13 @@ fn testReducer(state: *TestState, event: TestEvent) void {
 }
 
 test "init sets dirty for first frame" {
-    const store = Store(TestState, TestEvent).init(.{}, testReducer);
+    const store = store_mod.Store(TestState, TestEvent).init(.{}, testReducer);
     try testing.expect(store.isDirty());
     try testing.expectEqual(@as(u32, 0), store.getState().count);
 }
 
 test "dispatch modifies state and marks dirty" {
-    var store = Store(TestState, TestEvent).init(.{}, testReducer);
+    var store = store_mod.Store(TestState, TestEvent).init(.{}, testReducer);
     store.commitFrame(); // clear initial dirty
     try testing.expect(!store.isDirty());
 
@@ -49,7 +47,7 @@ test "dispatch modifies state and marks dirty" {
 }
 
 test "commitFrame snapshots prev and clears dirty" {
-    var store = Store(TestState, TestEvent).init(.{}, testReducer);
+    var store = store_mod.Store(TestState, TestEvent).init(.{}, testReducer);
     store.dispatch(.increment);
     store.dispatch(.increment);
     try testing.expectEqual(@as(u32, 2), store.getState().count);
@@ -62,7 +60,7 @@ test "commitFrame snapshots prev and clears dirty" {
 }
 
 test "dispatchBatch applies multiple events" {
-    var store = Store(TestState, TestEvent).init(.{}, testReducer);
+    var store = store_mod.Store(TestState, TestEvent).init(.{}, testReducer);
     store.commitFrame();
 
     const events = [_]TestEvent{ .increment, .increment, .{ .add = 10 }, .decrement };
@@ -74,7 +72,7 @@ test "dispatchBatch applies multiple events" {
 }
 
 test "dispatchBatch with empty slice does not mark dirty" {
-    var store = Store(TestState, TestEvent).init(.{}, testReducer);
+    var store = store_mod.Store(TestState, TestEvent).init(.{}, testReducer);
     store.commitFrame();
 
     store.dispatchBatch(&[_]TestEvent{});
@@ -82,7 +80,7 @@ test "dispatchBatch with empty slice does not mark dirty" {
 }
 
 test "prev tracks across multiple frames" {
-    var store = Store(TestState, TestEvent).init(.{}, testReducer);
+    var store = store_mod.Store(TestState, TestEvent).init(.{}, testReducer);
 
     // Frame 1: count goes 0 → 3
     store.dispatch(.{ .add = 3 });
@@ -98,7 +96,7 @@ test "prev tracks across multiple frames" {
 }
 
 test "reset via dispatch" {
-    var store = Store(TestState, TestEvent).init(.{}, testReducer);
+    var store = store_mod.Store(TestState, TestEvent).init(.{}, testReducer);
     store.dispatch(.{ .add = 100 });
     store.dispatch(.reset);
     try testing.expectEqual(@as(u32, 0), store.getState().count);

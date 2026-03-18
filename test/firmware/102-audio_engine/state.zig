@@ -10,7 +10,7 @@
 
 const std = @import("std");
 const embed = @import("embed");
-const button = embed.pkg.event.button;
+const event = embed.pkg.event;
 const songs = @import("songs.zig");
 
 pub const State = struct {
@@ -24,15 +24,15 @@ pub const State = struct {
 };
 
 pub const InputSpec = .{
-    .adc_btn = button.RawEvent,
+    .adc_btn = event.button.RawEvent,
 };
 
 pub const OutputSpec = .{
-    .gesture = button.GestureEvent,
+    .gesture = event.button.GestureEvent,
 };
 
-/// Handle a gesture event identified by button id.
-pub fn handleGesture(state: *State, id: []const u8, g: button.GestureEvent) void {
+/// Handle a gesture event identified by event.button id.
+pub fn handleGesture(state: *State, id: []const u8, g: event.button.GestureEvent) void {
     switch (g) {
         .click => |count| handleClick(state, id, count),
         .long_press => |_| {

@@ -49,16 +49,7 @@
 //! ```
 
 const std = @import("std");
-const runtime = struct {
-    pub const sync = struct {
-        pub const mutex = @import("../../../runtime/sync/mutex.zig");
-        pub const condition = @import("../../../runtime/sync/condition.zig");
-        pub const isMutex = mutex.is;
-        pub const isCondition = condition.is;
-    };
-    pub const thread = @import("../../../runtime/thread.zig");
-    pub const std = @import("../../../runtime/std.zig");
-};
+const embed = @import("../../../mod.zig");
 
 const hci_mod = @import("hci/hci.zig");
 const acl_mod = @import("hci/acl.zig");
@@ -67,8 +58,8 @@ const events_mod = @import("hci/events.zig");
 const l2cap_mod = @import("l2cap/l2cap.zig");
 const att_mod = @import("att/att.zig");
 const gap_mod = @import("gap/gap.zig");
-const gatt_server = @import("../gatt/server.zig");
-const gatt_client = @import("../gatt/client.zig");
+const gatt_server = embed.pkg.ble.gatt.server;
+const gatt_client = embed.pkg.ble.gatt.client;
 
 // ============================================================================
 // TX Packet
@@ -105,20 +96,20 @@ pub const TxPacket = struct {
 // ACL Credits — counting semaphore for HCI flow control
 // ============================================================================
 
-/// Counting semaphore for HCI flow control, parameterized on runtime sync types.
-pub fn AclCredits(comptime Mutex: type, comptime Cond: type) type {
+/// Counting semaphore for HCI flow control, parameterized on Runtime.
+pub fn AclCredits(comptime Runtime: type) type {
     return struct {
         const Self = @This();
 
-        mutex: Mutex,
-        cond: Cond,
+        mutex: Runtime.Mutex,
+        cond: Runtime.Condition,
         count: u32,
         closed: bool,
 
         pub fn init(initial: u32) Self {
             return .{
-                .mutex = Mutex.init(),
-                .cond = Cond.init(),
+                .mutex = Runtime.Mutex.init(),
+                .cond = Runtime.Condition.init(),
                 .count = initial,
                 .closed = false,
             };
@@ -172,20 +163,14 @@ pub fn AclCredits(comptime Mutex: type, comptime Cond: type) type {
 // ============================================================================
 
 pub fn Host(
-    comptime Mutex: type,
-    comptime Cond: type,
-    comptime Thread: type,
+    comptime Runtime: type,
     comptime HciTransport: type,
     comptime service_table: []const gatt_server.ServiceDef,
 ) type {
-    comptime {
-        _ = runtime.sync.isMutex(Mutex);
-        _ = runtime.sync.isCondition(Cond);
-        _ = runtime.thread.is(Thread);
-    }
+    comptime _ = embed.runtime.is(Runtime);
 
-    const Credits = AclCredits(Mutex, Cond);
-    const GattServerType = gatt_server.GattServer(Thread, service_table);
+    const Credits = AclCredits(Runtime);
+    const GattServerType = gatt_server.GattServer(Runtime, service_table);
 
     return struct {
         const Self = @This();
@@ -193,15 +178,15 @@ pub fn Host(
         pub const NotificationFn = *const fn (conn_handle: u16, attr_handle: u16, data: []const u8) void;
 
         const ResponseSlot = struct {
-            mutex: Mutex,
-            cond: Cond,
+            mutex: Runtime.Mutex,
+            cond: Runtime.Condition,
             value: ?gatt_client.AttResponse = null,
             closed: bool = false,
 
             fn init() ResponseSlot {
                 return .{
-                    .mutex = Mutex.init(),
-                    .cond = Cond.init(),
+                    .mutex = Runtime.Mutex.init(),
+                    .cond = Runtime.Condition.init(),
                 };
             }
 
@@ -329,15 +314,15 @@ pub fn Host(
                 tail: usize = 0,
                 len: usize = 0,
                 closed: bool = false,
-                mutex: Mutex,
-                not_empty: Cond,
-                not_full: Cond,
+                mutex: Runtime.Mutex,
+                not_empty: Runtime.Condition,
+                not_full: Runtime.Condition,
 
                 fn init() QSelf {
                     return .{
-                        .mutex = Mutex.init(),
-                        .not_empty = Cond.init(),
-                        .not_full = Cond.init(),
+                        .mutex = Runtime.Mutex.init(),
+                        .not_empty = Runtime.Condition.init(),
+                        .not_full = Runtime.Condition.init(),
                     };
                 }
 
@@ -417,8 +402,8 @@ pub fn Host(
         acl_credits: Credits,
         cmd_credits: Credits,
         cancelled: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-        read_thread: ?Thread = null,
-        write_thread: ?Thread = null,
+        read_thread: ?Runtime.Thread = null,
+        write_thread: ?Runtime.Thread = null,
 
         // ================================================================
         // Protocol layers (owned by readLoop)
@@ -587,13 +572,13 @@ pub fn Host(
 
             // --- 8. Spawn loops ---
             self.cancelled.store(false, .release);
-            const spawn_cfg: runtime.thread.SpawnConfig = .{
+            const spawn_cfg: embed.runtime.thread.SpawnConfig = .{
                 .allocator = self.allocator,
                 .stack_size = 8192,
                 .name = "ble-host",
             };
-            self.read_thread = try Thread.spawn(spawn_cfg, readLoopEntry, @ptrCast(self));
-            self.write_thread = try Thread.spawn(spawn_cfg, writeLoopEntry, @ptrCast(self));
+            self.read_thread = try Runtime.Thread.spawn(spawn_cfg, readLoopEntry, @ptrCast(self));
+            self.write_thread = try Runtime.Thread.spawn(spawn_cfg, writeLoopEntry, @ptrCast(self));
         }
 
         pub fn stop(self: *Self) void {
@@ -1253,115 +1238,6 @@ pub fn Host(
 
                 _ = self.hci.write(pkt.slice()) catch {};
             }
-        }
-    };
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-// Shared mock HCI for tests
-pub fn MockHci() type {
-    return struct {
-        const Self = @This();
-        const HciError = error{ WouldBlock, HciError };
-
-        const PollFlags = packed struct {
-            readable: bool = false,
-            writable: bool = false,
-            _padding: u6 = 0,
-        };
-
-        written_count: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
-        rx_queue: [16][64]u8 = undefined,
-        rx_lens: [16]usize = [_]usize{0} ** 16,
-        rx_head: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
-        rx_tail: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
-
-        pub fn read(self: *Self, buf: []u8) HciError!usize {
-            const head = self.rx_head.load(.acquire);
-            const tail = self.rx_tail.load(.acquire);
-            if (head == tail) return error.WouldBlock;
-
-            const idx = tail % 16;
-            const n = @min(buf.len, self.rx_lens[idx]);
-            @memcpy(buf[0..n], self.rx_queue[idx][0..n]);
-            self.rx_tail.store(tail + 1, .release);
-            return n;
-        }
-
-        pub fn write(self: *Self, buf: []const u8) HciError!usize {
-            _ = self.written_count.fetchAdd(1, .acq_rel);
-            return buf.len;
-        }
-
-        pub fn poll(self: *Self, flags: PollFlags, _: i32) PollFlags {
-            return .{
-                .readable = flags.readable and (self.rx_head.load(.acquire) != self.rx_tail.load(.acquire)),
-                .writable = flags.writable,
-            };
-        }
-
-        pub fn injectPacket(self: *Self, data: []const u8) void {
-            const head = self.rx_head.load(.acquire);
-            const idx = head % 16;
-            @memcpy(self.rx_queue[idx][0..data.len], data);
-            self.rx_lens[idx] = data.len;
-            self.rx_head.store(head + 1, .release);
-        }
-
-        /// Inject full init sequence responses
-        pub fn injectInitSequence(self: *Self) void {
-            // 1. HCI Reset Command Complete
-            self.injectPacket(&[_]u8{
-                @intFromEnum(hci_mod.PacketType.event),
-                0x0E,
-                0x04,
-                0x01,
-                0x03,
-                0x0C,
-                0x00,
-            });
-            // 2. LE Read Buffer Size Command Complete (ACL_len=251, num=12)
-            self.injectPacket(&[_]u8{
-                @intFromEnum(hci_mod.PacketType.event),
-                0x0E,
-                0x07,
-                0x01,
-                0x02,
-                0x20,
-                0x00,
-                0xFB,
-                0x00,
-                12,
-            });
-            // 3. Read BD_ADDR Command Complete (addr = 98:88:E0:11:5C:52)
-            self.injectPacket(&[_]u8{
-                @intFromEnum(hci_mod.PacketType.event),
-                0x0E, 0x0A, 0x01, 0x09, 0x10, 0x00, // CC for 0x1009, status=0
-                0x52, 0x5C, 0x11, 0xE0, 0x88, 0x98, // BD_ADDR (little-endian)
-            });
-            // 4. Set Event Mask CC
-            self.injectPacket(&[_]u8{
-                @intFromEnum(hci_mod.PacketType.event),
-                0x0E,
-                0x04,
-                0x01,
-                0x01,
-                0x0C,
-                0x00,
-            });
-            // 5. LE Set Event Mask CC
-            self.injectPacket(&[_]u8{
-                @intFromEnum(hci_mod.PacketType.event),
-                0x0E,
-                0x04,
-                0x01,
-                0x01,
-                0x20,
-                0x00,
-            });
         }
     };
 }

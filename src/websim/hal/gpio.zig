@@ -1,11 +1,7 @@
 const std = @import("std");
-const embed = struct {
-    pub const hal = struct {
-        pub const gpio = @import("../../hal/gpio.zig");
-    };
-};
+const embed = @import("../../mod.zig");
 const gpio_hal = embed.hal.gpio;
-const RemoteHal = @import("../remote_hal.zig").RemoteHal;
+const RemoteHal = embed.websim.RemoteHal;
 
 const Error = gpio_hal.Error;
 const Level = gpio_hal.Level;

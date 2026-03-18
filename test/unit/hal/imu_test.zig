@@ -1,32 +1,26 @@
-const module = @import("embed").hal.imu;
-const Error = module.Error;
-const AccelData = module.AccelData;
-const GyroData = module.GyroData;
-const MagData = module.MagData;
-const is = module.is;
-const from = module.from;
-const hal_marker = module.hal_marker;
-
 const std = @import("std");
 const testing = std.testing;
+const embed = @import("embed");
+
+const imu_mod = embed.hal.imu;
 
 test "imu 6-axis wrapper" {
     const Mock = struct {
-        pub fn readAccel(_: *@This()) Error!AccelData {
+        pub fn readAccel(_: *@This()) imu_mod.Error!imu_mod.AccelData {
             return .{ .x = 0.1, .y = 0.2, .z = 1.0 };
         }
-        pub fn readGyro(_: *@This()) Error!GyroData {
+        pub fn readGyro(_: *@This()) imu_mod.Error!imu_mod.GyroData {
             return .{ .x = 10, .y = 20, .z = 30 };
         }
-        pub fn readMag(_: *@This()) Error!MagData {
+        pub fn readMag(_: *@This()) imu_mod.Error!imu_mod.MagData {
             return .{ .x = 1, .y = 2, .z = 3 };
         }
-        pub fn isDataReady(_: *@This()) Error!bool {
+        pub fn isDataReady(_: *@This()) imu_mod.Error!bool {
             return true;
         }
     };
 
-    const Imu = from(struct {
+    const Imu = imu_mod.from(struct {
         pub const Driver = Mock;
         pub const meta = .{ .id = "imu.test" };
     });

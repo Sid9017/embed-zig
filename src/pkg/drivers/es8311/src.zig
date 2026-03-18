@@ -18,7 +18,7 @@
 //!   try codec.setMicGain(.@"24dB");
 
 const std = @import("std");
-const i2c = @import("../../../hal/i2c.zig");
+const embed = @import("../../../mod.zig");
 
 /// ES8311 I2C address (7-bit, depends on AD0 pin)
 pub const Address = enum(u7) {
@@ -315,7 +315,7 @@ pub const Config = struct {
 /// Generic over I2C spec type for platform independence.
 /// I2cSpec must satisfy the hal.i2c.from() contract (Driver + meta).
 pub fn Es8311(comptime I2cSpec: type) type {
-    const I2c = i2c.from(I2cSpec);
+    const I2c = embed.hal.i2c.from(I2cSpec);
 
     return struct {
         const Self = @This();

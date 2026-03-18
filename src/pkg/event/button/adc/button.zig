@@ -11,15 +11,13 @@
 //! from a dedicated thread/task; call `requestStop()` to exit the loop.
 
 const std = @import("std");
-const hal = struct {
-    pub const adc = @import("../../../../hal/adc.zig");
-};
-const bus_mod = @import("../../bus.zig");
-const button_event = @import("../event.zig");
+const embed = @import("../../../../mod.zig");
+const bus_mod = embed.pkg.event.bus;
+const button_event = embed.pkg.event.button.events;
 
-pub const Event = button_event.RawEvent;
-pub const Code = button_event.RawEventCode;
-pub const Injector = bus_mod.EventInjector(Event);
+const Event = button_event.RawEvent;
+const Code = button_event.RawEventCode;
+const Injector = bus_mod.EventInjector(Event);
 
 pub const Range = struct {
     id: []const u8,
@@ -38,17 +36,18 @@ pub const Config = struct {
 
 pub fn AdcButtonSet(
     comptime Adc: type,
-    comptime Time: type,
+    comptime Runtime: type,
 ) type {
     comptime {
-        if (!hal.adc.is(Adc)) @compileError("Adc must be a hal.adc type");
+        _ = embed.runtime.is(Runtime);
+        if (!embed.hal.adc.is(Adc)) @compileError("Adc must be a hal.adc type");
     }
 
     return struct {
         const Self = @This();
 
         adc: *Adc,
-        time: Time,
+        time: Runtime.Time,
         config: Config,
         injector: Injector,
         running: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
@@ -57,7 +56,7 @@ pub fn AdcButtonSet(
         stable_count: u8 = 0,
         pending_button: ?usize = null,
 
-        pub fn init(adc: *Adc, time: Time, config: Config, injector: Injector) Self {
+        pub fn init(adc: *Adc, time: Runtime.Time, config: Config, injector: Injector) Self {
             return .{
                 .adc = adc,
                 .time = time,

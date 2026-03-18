@@ -1,7 +1,7 @@
 //! bleterm — BLE Terminal CLI tool (macOS)
 //!
 //! Connects to a BLE device running the term server and sends commands
-//! via the xfer protocol over GATT.
+//! via the Ble.xfer protocol over GATT.
 //!
 //! Usage:
 //!   bleterm scan                         Scan for devices
@@ -12,7 +12,7 @@
 const std = @import("std");
 const ble = @import("ble.zig");
 const embed = @import("embed");
-const xfer = embed.pkg.ble.xfer;
+const Ble = embed.pkg.ble;
 
 fn writeOut(bytes: []const u8) void {
     std.fs.File.stdout().writeAll(bytes) catch {};
@@ -135,7 +135,7 @@ fn cmdExec(cmd: []const u8, args: []const []const u8) void {
         std.process.exit(1);
     };
 
-    var rx = xfer.ReadX(ble.BleTransport).init(&conn.transport, cmd_json, .{
+    var rx = Ble.xfer.ReadX(ble.BleTransport).init(&conn.transport, cmd_json, .{
         .mtu = conn.mtu,
         .send_redundancy = 2,
     });
@@ -145,7 +145,7 @@ fn cmdExec(cmd: []const u8, args: []const []const u8) void {
     };
 
     var recv_buf: [16384]u8 = undefined;
-    var wx = xfer.WriteX(ble.BleTransport).init(&conn.transport, &recv_buf, .{
+    var wx = Ble.xfer.WriteX(ble.BleTransport).init(&conn.transport, &recv_buf, .{
         .mtu = conn.mtu,
     });
     const result = wx.run() catch |e| {
@@ -207,7 +207,7 @@ fn cmdShell(args: []const []const u8) void {
         var cmd_buf: [1024]u8 = undefined;
         const cmd_json = std.fmt.bufPrint(&cmd_buf, "{{\"cmd\":\"{s}\",\"id\":{d}}}", .{ line, id }) catch continue;
 
-        var rx = xfer.ReadX(ble.BleTransport).init(&conn.transport, cmd_json, .{
+        var rx = Ble.xfer.ReadX(ble.BleTransport).init(&conn.transport, cmd_json, .{
             .mtu = conn.mtu,
             .send_redundancy = 2,
         });
@@ -217,7 +217,7 @@ fn cmdShell(args: []const []const u8) void {
         };
 
         var recv_buf: [16384]u8 = undefined;
-        var wx = xfer.WriteX(ble.BleTransport).init(&conn.transport, &recv_buf, .{
+        var wx = Ble.xfer.WriteX(ble.BleTransport).init(&conn.transport, &recv_buf, .{
             .mtu = conn.mtu,
         });
         const result = wx.run() catch |e| {

@@ -4,11 +4,12 @@
 //! descriptors. Also re-exports the core bitmap font helpers from the
 //! framebuffer font module.
 
-const fb_font = @import("../framebuffer/font.zig");
+const embed = @import("../../../../mod.zig");
+const fb_font = embed.pkg.ui.render.fb_font;
 
-pub const BitmapFont = fb_font.BitmapFont;
-pub const asciiLookup = fb_font.asciiLookup;
-pub const decodeUtf8 = fb_font.decodeUtf8;
+const BitmapFont = fb_font.BitmapFont;
+const asciiLookup = fb_font.asciiLookup;
+const decodeUtf8 = fb_font.decodeUtf8;
 
 pub const Error = error{
     TooShort,
@@ -122,43 +123,4 @@ inline fn readCp(table: []const u8, idx: usize) u32 {
         (@as(u32, table[off + 1]) << 8) |
         (@as(u32, table[off + 2]) << 16) |
         (@as(u32, table[off + 3]) << 24);
-}
-
-const std = @import("std");
-const testing = std.testing;
-
-pub fn TestBin(
-    comptime glyph_w: u8,
-    comptime glyph_h: u8,
-    comptime codepoints: []const u32,
-) type {
-    const char_count: u16 = @intCast(codepoints.len);
-    const bytes_per_row = (@as(usize, glyph_w) + 7) / 8;
-    const glyph_size = bytes_per_row * @as(usize, glyph_h);
-    const bitmap_size = @as(usize, char_count) * glyph_size;
-    const total = header_size + @as(usize, char_count) * 4 + bitmap_size;
-
-    return struct {
-        pub const data: [total]u8 = blk: {
-            var buf: [total]u8 = undefined;
-            buf[0] = glyph_w;
-            buf[1] = glyph_h;
-            buf[2] = @truncate(char_count);
-            buf[3] = @truncate(char_count >> 8);
-
-            for (codepoints, 0..) |cp, i| {
-                const off = header_size + i * 4;
-                buf[off] = @truncate(cp);
-                buf[off + 1] = @truncate(cp >> 8);
-                buf[off + 2] = @truncate(cp >> 16);
-                buf[off + 3] = @truncate(cp >> 24);
-            }
-
-            for (header_size + @as(usize, char_count) * 4..total) |j| {
-                buf[j] = @truncate(j & 0xFF);
-            }
-
-            break :blk buf;
-        };
-    };
 }

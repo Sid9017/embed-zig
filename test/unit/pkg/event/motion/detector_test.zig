@@ -1,67 +1,57 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.event.motion.detector;
-const Detector = module.Detector;
-const types = module.types;
-const AccelData = module.AccelData;
-const GyroData = module.GyroData;
-const SensorSample = module.SensorSample;
-const MotionAction = module.MotionAction;
-const Thresholds = module.Thresholds;
-const Axis = module.Axis;
-const Orientation = module.Orientation;
-const hasMethod = module.hasMethod;
-const hasExpectedFields = module.hasExpectedFields;
+const detector = embed.pkg.event.motion.detector;
+const motion_types = embed.pkg.event.motion.motion_types;
 
 // ============================================================================
 // Tests
 // ============================================================================
 
-// Mock sensor types for testing
+// Mock sensor detector.types for testing
 const MockAccelOnlySensor = struct {
-    pub fn readAccel(_: *@This()) !AccelData {
+    pub fn readAccel(_: *@This()) !motion_types.AccelData {
         return .{ .x = 0, .y = 0, .z = 1.0 };
     }
 };
 
 const MockImuSensor = struct {
-    pub fn readAccel(_: *@This()) !AccelData {
+    pub fn readAccel(_: *@This()) !motion_types.AccelData {
         return .{ .x = 0, .y = 0, .z = 1.0 };
     }
-    pub fn readGyro(_: *@This()) !GyroData {
+    pub fn readGyro(_: *@This()) !motion_types.GyroData {
         return .{ .x = 0, .y = 0, .z = 0 };
     }
 };
 
 test "hasMethod detection" {
-    try std.testing.expect(hasMethod(MockImuSensor, "readGyro", GyroData));
-    try std.testing.expect(hasMethod(MockImuSensor, "readAccel", AccelData));
-    try std.testing.expect(!hasMethod(MockAccelOnlySensor, "readGyro", GyroData));
-    try std.testing.expect(hasMethod(MockAccelOnlySensor, "readAccel", AccelData));
+    try std.testing.expect(detector.hasMethod(MockImuSensor, "readGyro", motion_types.GyroData));
+    try std.testing.expect(detector.hasMethod(MockImuSensor, "readAccel", motion_types.AccelData));
+    try std.testing.expect(!detector.hasMethod(MockAccelOnlySensor, "readGyro", motion_types.GyroData));
+    try std.testing.expect(detector.hasMethod(MockAccelOnlySensor, "readAccel", motion_types.AccelData));
 }
 
 test "Detector capability detection" {
-    const ImuDetector = Detector(MockImuSensor);
-    const AccelDetector = Detector(MockAccelOnlySensor);
+    const ImuDetector = detector.Detector(MockImuSensor);
+    const AccelDetector = detector.Detector(MockAccelOnlySensor);
 
     try std.testing.expect(ImuDetector.has_gyroscope);
     try std.testing.expect(!AccelDetector.has_gyroscope);
 }
 
 test "Detector initialization" {
-    const det = Detector(MockImuSensor).initDefault();
+    const det = detector.Detector(MockImuSensor).initDefault();
     try std.testing.expectEqual(@as(f32, 1.5), det.thresholds.shake_threshold);
 }
 
 test "Detector shake detection" {
-    var det = Detector(MockImuSensor).init(.{
+    var det = detector.Detector(MockImuSensor).init(.{
         .shake_threshold = 1.0,
         .shake_min_duration = 50,
         .shake_max_duration = 500,
     });
 
-    const Sample = Detector(MockImuSensor).SampleType;
+    const Sample = detector.Detector(MockImuSensor).SampleType;
 
     // Simulate shake sequence
     var t: u64 = 0;
@@ -86,12 +76,12 @@ test "Detector shake detection" {
 }
 
 test "Detector tilt detection" {
-    var det = Detector(MockAccelOnlySensor).init(.{
+    var det = detector.Detector(MockAccelOnlySensor).init(.{
         .tilt_threshold = 5.0,
         .tilt_debounce = 0,
     });
 
-    const Sample = Detector(MockAccelOnlySensor).SampleType;
+    const Sample = detector.Detector(MockAccelOnlySensor).SampleType;
 
     // Initial flat position
     _ = det.update(Sample{ .accel = .{ .x = 0, .y = 0, .z = 1.0 }, .gyro = {}, .timestamp_ms = 0 });
@@ -115,8 +105,8 @@ test "Detector tilt detection" {
 
 test "Detector with accel-only sensor" {
     // Should compile without gyro features
-    var det = Detector(MockAccelOnlySensor).initDefault();
-    const Sample = Detector(MockAccelOnlySensor).SampleType;
+    var det = detector.Detector(MockAccelOnlySensor).initDefault();
+    const Sample = detector.Detector(MockAccelOnlySensor).SampleType;
 
     _ = det.update(Sample{ .accel = .{ .x = 0, .y = 0, .z = 1.0 }, .gyro = {}, .timestamp_ms = 0 });
 }

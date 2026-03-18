@@ -1,15 +1,11 @@
 const std = @import("std");
 const testing = std.testing;
-const module = @import("embed").pkg.ui.render.fb_font;
-const BitmapFont = module.BitmapFont;
-const asciiLookup = module.asciiLookup;
-const Utf8Result = module.Utf8Result;
-const decodeUtf8 = module.decodeUtf8;
+const embed = @import("embed");
+const fb_font = embed.pkg.ui.render.fb_font;
 
 // ============================================================================
 // Tests
 // ============================================================================
-
 
 const test_font_data = [_]u8{
     // A
@@ -25,7 +21,7 @@ fn testLookup(cp: u21) ?u32 {
     return null;
 }
 
-const test_font = BitmapFont{
+const test_font = fb_font.BitmapFont{
     .glyph_w = 4,
     .glyph_h = 4,
     .data = &test_font_data,
@@ -61,7 +57,7 @@ test "BitmapFont.textWidth" {
 }
 
 test "asciiLookup: printable ASCII" {
-    const lookup = asciiLookup(32, 95);
+    const lookup = fb_font.asciiLookup(32, 95);
     try testing.expectEqual(@as(?u32, 0), lookup(' '));
     try testing.expectEqual(@as(?u32, 33), lookup('A'));
     try testing.expectEqual(@as(?u32, 94), lookup('~'));
@@ -70,37 +66,37 @@ test "asciiLookup: printable ASCII" {
 }
 
 test "decodeUtf8: ASCII" {
-    const r = decodeUtf8("Hello");
+    const r = fb_font.decodeUtf8("Hello");
     try testing.expectEqual(@as(?u21, 'H'), r.codepoint);
     try testing.expectEqual(@as(usize, 1), r.len);
 }
 
 test "decodeUtf8: 2-byte (Latin)" {
-    const r = decodeUtf8("\xC3\xA9");
+    const r = fb_font.decodeUtf8("\xC3\xA9");
     try testing.expectEqual(@as(?u21, 0xE9), r.codepoint);
     try testing.expectEqual(@as(usize, 2), r.len);
 }
 
 test "decodeUtf8: 3-byte (CJK)" {
-    const r = decodeUtf8("\xE4\xB8\xAD");
+    const r = fb_font.decodeUtf8("\xE4\xB8\xAD");
     try testing.expectEqual(@as(?u21, 0x4E2D), r.codepoint);
     try testing.expectEqual(@as(usize, 3), r.len);
 }
 
 test "decodeUtf8: 4-byte (emoji)" {
-    const r = decodeUtf8("\xF0\x9F\x98\x80");
+    const r = fb_font.decodeUtf8("\xF0\x9F\x98\x80");
     try testing.expectEqual(@as(?u21, 0x1F600), r.codepoint);
     try testing.expectEqual(@as(usize, 4), r.len);
 }
 
 test "decodeUtf8: invalid byte" {
-    const r = decodeUtf8("\xFF\x00");
+    const r = fb_font.decodeUtf8("\xFF\x00");
     try testing.expectEqual(@as(?u21, null), r.codepoint);
     try testing.expectEqual(@as(usize, 1), r.len);
 }
 
 test "decodeUtf8: empty" {
-    const r = decodeUtf8("");
+    const r = fb_font.decodeUtf8("");
     try testing.expectEqual(@as(?u21, null), r.codepoint);
     try testing.expectEqual(@as(usize, 0), r.len);
 }

@@ -1,8 +1,8 @@
 const std = @import("std");
 const embed = @import("embed");
-const module = embed.pkg.audio.override_buffer;
-const OverrideBuffer = module.OverrideBuffer;
-const runtime = module.runtime;
+const override_buffer = embed.pkg.audio.override_buffer;
+
+const StdRuntime = embed.runtime.std;
 
 // ============================================================================
 // Tests
@@ -10,12 +10,8 @@ const runtime = module.runtime;
 
 const testing = std.testing;
 
-const TestMutex = runtime.std.Mutex;
-const TestCondition = runtime.std.Condition;
-const TestThread = runtime.std.Thread;
-const test_time: runtime.std.Time = .{};
-
-const Buffer = OverrideBuffer(u8, TestMutex, TestCondition);
+const Buffer = override_buffer.OverrideBuffer(u8, StdRuntime);
+const test_time: StdRuntime.Time = .{};
 
 test "OverrideBuffer: basic write then read" {
     var storage: [8]u8 = undefined;
@@ -123,7 +119,7 @@ test "OverrideBuffer: blocking read wakes on write from another thread" {
     var buf = Buffer.init(&storage);
     defer buf.deinit();
 
-    var th = try TestThread.spawn(.{}, writerTask, @ptrCast(&buf));
+    var th = try StdRuntime.Thread.spawn(.{}, writerTask, @ptrCast(&buf));
 
     var out: [4]u8 = undefined;
     const n = buf.read(&out);
@@ -144,7 +140,7 @@ test "OverrideBuffer: close unblocks waiting reader" {
     var buf = Buffer.init(&storage);
     defer buf.deinit();
 
-    var th = try TestThread.spawn(.{}, closerTask, @ptrCast(&buf));
+    var th = try StdRuntime.Thread.spawn(.{}, closerTask, @ptrCast(&buf));
 
     var out: [4]u8 = undefined;
     const n = buf.read(&out);
@@ -160,7 +156,7 @@ fn closerTask(ctx: ?*anyopaque) void {
 }
 
 test "OverrideBuffer: comptime with i16 type" {
-    const I16Buffer = OverrideBuffer(i16, TestMutex, TestCondition);
+    const I16Buffer = override_buffer.OverrideBuffer(i16, StdRuntime);
     var storage: [8]i16 = undefined;
     var buf = I16Buffer.init(&storage);
     defer buf.deinit();

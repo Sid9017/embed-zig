@@ -1,7 +1,5 @@
 const std = @import("std");
-const runtime = struct {
-    pub const socket = @import("../socket.zig");
-};
+const embed = @import("../../mod.zig");
 
 pub const Socket = struct {
     fd: ?std.posix.fd_t = null,
@@ -9,14 +7,14 @@ pub const Socket = struct {
     recv_timeout_ms: u32 = 0,
     send_timeout_ms: u32 = 0,
 
-    pub fn tcp() runtime.socket.Error!@This() {
+    pub fn tcp() embed.runtime.socket.Error!@This() {
         const fd = std.posix.socket(std.posix.AF.INET, std.posix.SOCK.STREAM, std.posix.IPPROTO.TCP) catch {
             return error.CreateFailed;
         };
         return .{ .fd = fd, .is_udp = false };
     }
 
-    pub fn udp() runtime.socket.Error!@This() {
+    pub fn udp() embed.runtime.socket.Error!@This() {
         const fd = std.posix.socket(std.posix.AF.INET, std.posix.SOCK.DGRAM, std.posix.IPPROTO.UDP) catch {
             return error.CreateFailed;
         };
@@ -30,7 +28,7 @@ pub const Socket = struct {
         }
     }
 
-    pub fn connect(self: *@This(), addr: runtime.socket.Ipv4Address, port: u16) runtime.socket.Error!void {
+    pub fn connect(self: *@This(), addr: embed.runtime.socket.Ipv4Address, port: u16) embed.runtime.socket.Error!void {
         const fd = try self.requireFd();
         var net_addr = std.net.Address.initIp4(addr, port);
         std.posix.connect(fd, &net_addr.any, net_addr.getOsSockLen()) catch |err| switch (err) {
@@ -39,7 +37,7 @@ pub const Socket = struct {
         };
     }
 
-    pub fn send(self: *@This(), data: []const u8) runtime.socket.Error!usize {
+    pub fn send(self: *@This(), data: []const u8) embed.runtime.socket.Error!usize {
         const fd = try self.requireFd();
         if (self.send_timeout_ms > 0 and !waitForFd(fd, std.posix.POLL.OUT, self.send_timeout_ms)) {
             return error.Timeout;
@@ -51,7 +49,7 @@ pub const Socket = struct {
         };
     }
 
-    pub fn recv(self: *@This(), buf: []u8) runtime.socket.Error!usize {
+    pub fn recv(self: *@This(), buf: []u8) embed.runtime.socket.Error!usize {
         const fd = try self.requireFd();
         if (self.recv_timeout_ms > 0 and !waitForFd(fd, std.posix.POLL.IN, self.recv_timeout_ms)) {
             return error.Timeout;
@@ -79,7 +77,7 @@ pub const Socket = struct {
         std.posix.setsockopt(fd, std.posix.IPPROTO.TCP, std.posix.TCP.NODELAY, std.mem.asBytes(&v)) catch {};
     }
 
-    pub fn sendTo(self: *@This(), addr: runtime.socket.Ipv4Address, port: u16, data: []const u8) runtime.socket.Error!usize {
+    pub fn sendTo(self: *@This(), addr: embed.runtime.socket.Ipv4Address, port: u16, data: []const u8) embed.runtime.socket.Error!usize {
         const fd = try self.requireFd();
         var net_addr = std.net.Address.initIp4(addr, port);
 
@@ -93,7 +91,7 @@ pub const Socket = struct {
         };
     }
 
-    pub fn recvFrom(self: *@This(), buf: []u8) runtime.socket.Error!runtime.socket.RecvFromResult {
+    pub fn recvFrom(self: *@This(), buf: []u8) embed.runtime.socket.Error!embed.runtime.socket.RecvFromResult {
         const fd = try self.requireFd();
         if (self.recv_timeout_ms > 0 and !waitForFd(fd, std.posix.POLL.IN, self.recv_timeout_ms)) {
             return error.Timeout;
@@ -117,7 +115,7 @@ pub const Socket = struct {
         };
     }
 
-    pub fn bind(self: *@This(), addr: runtime.socket.Ipv4Address, port: u16) runtime.socket.Error!void {
+    pub fn bind(self: *@This(), addr: embed.runtime.socket.Ipv4Address, port: u16) embed.runtime.socket.Error!void {
         const fd = try self.requireFd();
         var net_addr = std.net.Address.initIp4(addr, port);
         std.posix.bind(fd, &net_addr.any, net_addr.getOsSockLen()) catch {
@@ -125,7 +123,7 @@ pub const Socket = struct {
         };
     }
 
-    pub fn getBoundPort(self: *@This()) runtime.socket.Error!u16 {
+    pub fn getBoundPort(self: *@This()) embed.runtime.socket.Error!u16 {
         const fd = try self.requireFd();
         var local: std.net.Address = undefined;
         var local_len: std.posix.socklen_t = @sizeOf(std.net.Address);
@@ -136,14 +134,14 @@ pub const Socket = struct {
         return local.getPort();
     }
 
-    pub fn listen(self: *@This()) runtime.socket.Error!void {
+    pub fn listen(self: *@This()) embed.runtime.socket.Error!void {
         const fd = try self.requireFd();
         std.posix.listen(fd, 128) catch {
             return error.ListenFailed;
         };
     }
 
-    pub fn accept(self: *@This()) runtime.socket.Error!@This() {
+    pub fn accept(self: *@This()) embed.runtime.socket.Error!@This() {
         const fd = try self.requireFd();
         var peer: std.net.Address = undefined;
         var peer_len: std.posix.socklen_t = @sizeOf(std.net.Address);
@@ -157,7 +155,7 @@ pub const Socket = struct {
         return if (self.fd) |fd| @intCast(fd) else -1;
     }
 
-    pub fn setNonBlocking(self: *@This(), enabled: bool) runtime.socket.Error!void {
+    pub fn setNonBlocking(self: *@This(), enabled: bool) embed.runtime.socket.Error!void {
         const fd = try self.requireFd();
         var fl_flags = std.posix.fcntl(fd, std.posix.F.GETFL, 0) catch return error.SetOptionFailed;
         const mask: usize = @as(usize, 1) << @bitOffsetOf(std.posix.O, "NONBLOCK");
@@ -169,7 +167,7 @@ pub const Socket = struct {
         _ = std.posix.fcntl(fd, std.posix.F.SETFL, fl_flags) catch return error.SetOptionFailed;
     }
 
-    fn requireFd(self: *@This()) runtime.socket.Error!std.posix.fd_t {
+    fn requireFd(self: *@This()) embed.runtime.socket.Error!std.posix.fd_t {
         return self.fd orelse error.Closed;
     }
 

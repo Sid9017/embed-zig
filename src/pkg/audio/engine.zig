@@ -24,23 +24,13 @@
 //!   [speaker_ring]  (OverrideBuffer — circular overwrite, also serves as ref)
 
 const std = @import("std");
-pub const mixer_mod = @import("mixer.zig");
-pub const obuf_mod = @import("override_buffer.zig");
-pub const resampler_mod = @import("resampler.zig");
-pub const runtime = struct {
-    pub const sync = struct {
-        pub const mutex = @import("../../runtime/sync/mutex.zig");
-        pub const condition = @import("../../runtime/sync/condition.zig");
-        pub const isMutex = mutex.is;
-        pub const isCondition = condition.is;
-    };
-    pub const thread = @import("../../runtime/thread.zig");
-    pub const time = @import("../../runtime/time.zig");
-    pub const std = @import("../../runtime/std.zig");
-};
+const embed = @import("../../mod.zig");
+const mixer_mod = @import("mixer.zig");
+const obuf_mod = @import("override_buffer.zig");
+const resampler_mod = @import("resampler.zig");
 
-pub const Allocator = std.mem.Allocator;
-pub const Format = resampler_mod.Format;
+const Allocator = std.mem.Allocator;
+const Format = resampler_mod.Format;
 
 // ---------------------------------------------------------------------------
 // Vtable: Beamformer — multi-mic matrix → mono
@@ -101,16 +91,13 @@ pub const Processor = struct {
 // Engine
 // ---------------------------------------------------------------------------
 
-pub fn Engine(comptime Mutex: type, comptime Cond: type, comptime Thread: type, comptime Time: type) type {
-    comptime _ = runtime.sync.isMutex(Mutex);
-    comptime _ = runtime.sync.isCondition(Cond);
-    comptime _ = runtime.thread.is(Thread);
-    comptime _ = runtime.time.is(Time);
+pub fn Engine(comptime Runtime: type) type {
+    comptime _ = embed.runtime.is(Runtime);
 
-    const MixerType = mixer_mod.Mixer(Mutex, Cond);
-    const InputBuf = obuf_mod.OverrideBuffer(InputFrame, Mutex, Cond);
-    const OutputBuf = obuf_mod.OverrideBuffer(i16, Mutex, Cond);
-    const SpeakerBuf = obuf_mod.OverrideBuffer(i16, Mutex, Cond);
+    const MixerType = mixer_mod.Mixer(Runtime);
+    const InputBuf = obuf_mod.OverrideBuffer(InputFrame, Runtime);
+    const OutputBuf = obuf_mod.OverrideBuffer(i16, Runtime);
+    const SpeakerBuf = obuf_mod.OverrideBuffer(i16, Runtime);
 
     return struct {
         const Self = @This();
@@ -139,8 +126,8 @@ pub fn Engine(comptime Mutex: type, comptime Cond: type, comptime Thread: type, 
         allocator: Allocator,
         config: Config,
         state: std.atomic.Value(u32),
-        mutex: Mutex,
-        time: Time,
+        mutex: Runtime.Mutex,
+        time: Runtime.Time,
 
         beamformer: ?Beamformer,
         processor: ?Processor,
@@ -155,12 +142,12 @@ pub fn Engine(comptime Mutex: type, comptime Cond: type, comptime Thread: type, 
         output_storage: []i16,
         speaker_storage: []i16,
 
-        capture_thread: ?Thread,
-        speaker_thread: ?Thread,
+        capture_thread: ?Runtime.Thread,
+        speaker_thread: ?Runtime.Thread,
 
         // -- lifecycle -------------------------------------------------------
 
-        pub fn init(allocator: Allocator, config: Config, mutex: Mutex, time: Time) !Self {
+        pub fn init(allocator: Allocator, config: Config, mutex: Runtime.Mutex, time: Runtime.Time) !Self {
             const input_storage = try allocator.alloc(InputFrame, config.input_queue_frames);
             errdefer allocator.free(input_storage);
 
@@ -180,7 +167,7 @@ pub fn Engine(comptime Mutex: type, comptime Cond: type, comptime Thread: type, 
                 .processor = null,
                 .mixer = MixerType.init(allocator, .{
                     .output = .{ .rate = config.sample_rate, .channels = .mono },
-                }, Mutex.init()),
+                }, Runtime.Mutex.init()),
                 .input_queue = InputBuf.init(input_storage),
                 .output_queue = OutputBuf.init(output_storage),
                 .speaker_ring = SpeakerBuf.init(speaker_storage),
@@ -233,13 +220,13 @@ pub fn Engine(comptime Mutex: type, comptime Cond: type, comptime Thread: type, 
 
             self.state.store(@intFromEnum(State.running), .release);
 
-            self.capture_thread = try Thread.spawn(
+            self.capture_thread = try Runtime.Thread.spawn(
                 .{ .name = "engine.capture", .stack_size = 64 * 1024 },
                 captureTaskEntry,
                 @ptrCast(self),
             );
 
-            self.speaker_thread = try Thread.spawn(
+            self.speaker_thread = try Runtime.Thread.spawn(
                 .{ .name = "engine.speaker" },
                 speakerTaskEntry,
                 @ptrCast(self),

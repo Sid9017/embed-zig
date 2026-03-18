@@ -1,5 +1,6 @@
 const std = @import("std");
-const condition_contract = @import("../../sync/condition.zig");
+const embed = @import("../../../mod.zig");
+const condition_contract = embed.runtime.sync;
 const Mutex = @import("mutex.zig").Mutex;
 
 pub const Condition = struct {

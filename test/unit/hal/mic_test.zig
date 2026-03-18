@@ -1,33 +1,27 @@
-const module = @import("embed").hal.mic;
-const Error = module.Error;
-const SampleFormat = module.SampleFormat;
-const Config = module.Config;
-const Frame = module.Frame;
-const is = module.is;
-const from = module.from;
-const hal_marker = module.hal_marker;
-
 const std = @import("std");
 const testing = std.testing;
+const embed = @import("embed");
+
+const mic_mod = embed.hal.mic;
 
 test "mic wrapper" {
     const MockDriver = struct {
         sample_value: i16 = 1234,
 
-        pub fn read(self: *@This(), buffer: []i16) Error!usize {
+        pub fn read(self: *@This(), buffer: []i16) mic_mod.Error!usize {
             for (buffer) |*s| s.* = self.sample_value;
             return buffer.len;
         }
 
-        pub fn setGain(_: *@This(), _: i8) Error!void {}
-        pub fn start(_: *@This()) Error!void {}
-        pub fn stop(_: *@This()) Error!void {}
+        pub fn setGain(_: *@This(), _: i8) mic_mod.Error!void {}
+        pub fn start(_: *@This()) mic_mod.Error!void {}
+        pub fn stop(_: *@This()) mic_mod.Error!void {}
     };
 
-    const Mic = from(struct {
+    const Mic = mic_mod.from(struct {
         pub const Driver = MockDriver;
         pub const meta = .{ .id = "mic.test" };
-        pub const config = Config{ .sample_rate = 16000 };
+        pub const config = mic_mod.Config{ .sample_rate = 16000 };
     });
 
     var d = MockDriver{};

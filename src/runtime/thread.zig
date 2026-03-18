@@ -22,7 +22,7 @@ const Seal = struct {};
 ///
 /// The returned type is both the factory and instance type: spawn returns @This(),
 /// so callers can store the result and call join/detach on it.
-pub fn Thread(comptime Impl: type) type {
+pub fn Make(comptime Impl: type) type {
     comptime {
         _ = @as(*const fn (SpawnConfig, TaskFn, ?*anyopaque) anyerror!Impl, &Impl.spawn);
         _ = @as(*const fn (*Impl) void, &Impl.join);
@@ -52,7 +52,7 @@ pub fn Thread(comptime Impl: type) type {
 pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: thread.Seal — use thread.Thread(Backend) to construct");
+            @compileError("Impl must have pub const seal: thread.Seal — use thread.Make(Backend) to construct");
         }
     }
 

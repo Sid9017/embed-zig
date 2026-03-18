@@ -1,13 +1,8 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.ui.render.anim;
 const framebuffer_mod = embed.pkg.ui.render.framebuffer;
-const AnimHeader = module.AnimHeader;
-const AnimRect = module.AnimRect;
-const AnimFrame = module.AnimFrame;
-const AnimPlayer = module.AnimPlayer;
-const blitAnimFrame = module.blitAnimFrame;
+const anim = embed.pkg.ui.render.anim;
 
 // ============================================================================
 // Tests
@@ -46,7 +41,7 @@ test "AnimPlayer: parse header" {
     data[28] = 0;
     data[29] = 1;
 
-    var player = AnimPlayer.init(&data) orelse return error.TestUnexpectedResult;
+    var player = anim.AnimPlayer.init(&data) orelse return error.TestUnexpectedResult;
 
     try testing.expectEqual(@as(u16, 2), player.header.display_w);
     try testing.expectEqual(@as(u16, 1), player.header.frame_w);
@@ -58,7 +53,7 @@ test "AnimPlayer: parse header" {
     try testing.expectEqual(@as(usize, 1), frame.rects.len);
     try testing.expectEqual(@as(u16, 0xFFFF), frame.rects[0].pixels[0]);
 
-    try testing.expectEqual(@as(?AnimFrame, null), player.nextFrame());
+    try testing.expectEqual(@as(?anim.AnimFrame, null), player.nextFrame());
     try testing.expect(player.isDone());
 }
 
@@ -97,7 +92,7 @@ test "AnimPlayer: RLE decode multiple runs" {
     data[30] = 1;
     data[31] = 1;
 
-    var player = AnimPlayer.init(&data).?;
+    var player = anim.AnimPlayer.init(&data).?;
     const frame = player.nextFrame().?;
 
     try testing.expectEqual(@as(u16, 0x0000), frame.rects[0].pixels[0]);
@@ -158,7 +153,7 @@ fn buildMultiFrameAnim() [14 + 4 + 3 * (2 + 8 + 2 * 2)]u8 {
 
 test "T1: multi-frame playback" {
     var data = buildMultiFrameAnim();
-    var player = AnimPlayer.init(&data).?;
+    var player = anim.AnimPlayer.init(&data).?;
 
     try testing.expectEqual(@as(u16, 3), player.header.frame_count);
     try testing.expect(!player.isDone());
@@ -184,7 +179,7 @@ test "T1: multi-frame playback" {
 
 test "T2: loop playback — reset replays from frame 0" {
     var data = buildMultiFrameAnim();
-    var player = AnimPlayer.init(&data).?;
+    var player = anim.AnimPlayer.init(&data).?;
 
     _ = player.nextFrame().?;
     _ = player.nextFrame().?;
@@ -204,15 +199,15 @@ test "T2: loop playback — reset replays from frame 0" {
     try testing.expectEqual(@as(u16, 1), f1.frame_index);
 }
 
-test "T3: blitAnimFrame writes correct pixels to framebuffer" {
+test "T3: anim.blitAnimFrame writes correct pixels to framebuffer" {
     var data = buildMultiFrameAnim();
-    var player = AnimPlayer.init(&data).?;
+    var player = anim.AnimPlayer.init(&data).?;
 
     const FB = framebuffer_mod.Framebuffer(4, 4, .rgb565);
     var fb = FB.init(0x1234);
 
     const frame = player.nextFrame().?;
-    blitAnimFrame(4, 4, .rgb565, &fb, frame, 1);
+    anim.blitAnimFrame(4, 4, .rgb565, &fb, frame, 1);
 
     try testing.expectEqual(@as(u16, 0x0000), fb.getPixel(0, 0));
     try testing.expectEqual(@as(u16, 0xFFFF), fb.getPixel(1, 0));
@@ -220,7 +215,7 @@ test "T3: blitAnimFrame writes correct pixels to framebuffer" {
     try testing.expectEqual(@as(u16, 0x1234), fb.getPixel(0, 1));
 
     var fb2 = FB.init(0x1234);
-    blitAnimFrame(4, 4, .rgb565, &fb2, frame, 2);
+    anim.blitAnimFrame(4, 4, .rgb565, &fb2, frame, 2);
 
     try testing.expectEqual(@as(u16, 0x0000), fb2.getPixel(0, 0));
     try testing.expectEqual(@as(u16, 0x0000), fb2.getPixel(1, 0));
@@ -233,13 +228,13 @@ test "T3: blitAnimFrame writes correct pixels to framebuffer" {
 }
 
 test "T4: malformed data does not crash" {
-    try testing.expect(AnimPlayer.init(&[_]u8{}) == null);
-    try testing.expect(AnimPlayer.init(&[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }) == null);
+    try testing.expect(anim.AnimPlayer.init(&[_]u8{}) == null);
+    try testing.expect(anim.AnimPlayer.init(&[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }) == null);
 
     var short: [14]u8 = undefined;
     @memset(&short, 0);
     short[12] = 100;
-    try testing.expect(AnimPlayer.init(&short) == null);
+    try testing.expect(anim.AnimPlayer.init(&short) == null);
 
     var zero_frames: [14 + 4]u8 = undefined;
     @memset(&zero_frames, 0);
@@ -248,7 +243,7 @@ test "T4: malformed data does not crash" {
     zero_frames[15] = 0xBB;
     zero_frames[16] = 0xCC;
     zero_frames[17] = 0xDD;
-    var player = AnimPlayer.init(&zero_frames).?;
+    var player = anim.AnimPlayer.init(&zero_frames).?;
     try testing.expect(player.isDone());
     try testing.expect(player.nextFrame() == null);
 
@@ -258,6 +253,6 @@ test "T4: malformed data does not crash" {
     trunc[12] = 2;
     trunc[18] = 1;
     trunc[19] = 0;
-    var player2 = AnimPlayer.init(&trunc).?;
+    var player2 = anim.AnimPlayer.init(&trunc).?;
     try testing.expect(player2.nextFrame() == null);
 }

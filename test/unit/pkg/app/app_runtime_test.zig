@@ -1,10 +1,9 @@
 const std = @import("std");
 const embed = @import("embed");
-const module = embed.pkg.app;
-const AppRuntime = module.AppRuntime;
+const app = embed.pkg.app;
 
 const testing = std.testing;
-const StdChannel = embed.runtime.std.ChannelFactory;
+const Std = embed.runtime.std;
 
 const TestApp = struct {
     pub const State = struct {
@@ -19,7 +18,7 @@ const TestApp = struct {
         .doubled = u32,
     };
 
-    const BusType = embed.pkg.event.Bus(InputSpec, OutputSpec, StdChannel);
+    const BusType = embed.pkg.event.Bus(InputSpec, OutputSpec, Std);
 
     pub fn reduce(state: *State, ev: BusType.BusEvent) void {
         switch (ev) {
@@ -32,7 +31,7 @@ const TestApp = struct {
     }
 };
 
-const TestRuntime = AppRuntime(TestApp, StdChannel);
+const TestRuntime = app.AppRuntime(TestApp, Std);
 
 test "AppRuntime: inject dispatches through bus to reducer" {
     var rt = try TestRuntime.init(testing.allocator, 16, .{});

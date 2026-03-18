@@ -12,22 +12,25 @@
 //!   bus.use(gp);
 
 const button_event = @import("event.zig");
+const embed = @import("../../../mod.zig");
 
-pub const RawEvent = button_event.RawEvent;
-pub const RawEventCode = button_event.RawEventCode;
-pub const GestureEvent = button_event.GestureEvent;
+const RawEvent = button_event.RawEvent;
+const RawEventCode = button_event.RawEventCode;
+const GestureEvent = button_event.GestureEvent;
 
 pub const GestureConfig = struct {
     long_press_ms: u64 = 500,
     multi_click_window_ms: u64 = 300,
 };
 
-pub fn ButtonGesture(comptime Time: type, comptime config: GestureConfig) type {
+pub fn ButtonGesture(comptime Runtime: type, comptime config: GestureConfig) type {
+    comptime _ = embed.runtime.is(Runtime);
+
     return struct {
         const Self = @This();
         const YieldFn = *const fn (?*anyopaque, GestureEvent) void;
 
-        time: Time,
+        time: Runtime.Time,
         current_id: []const u8 = "",
         pending_press: ?PendingPress = null,
         pending_clicks: ?PendingClicks = null,

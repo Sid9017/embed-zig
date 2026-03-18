@@ -1,37 +1,14 @@
 const std = @import("std");
 const testing = std.testing;
-const module = @import("embed").hal.wifi;
-const Error = module.Error;
-const IpAddress = module.IpAddress;
-const Mac = module.Mac;
-const State = module.State;
-const DisconnectReason = module.DisconnectReason;
-const FailReason = module.FailReason;
-const AuthMode = module.AuthMode;
-const PhyMode = module.PhyMode;
-const ScanType = module.ScanType;
-const ScanDoneInfo = module.ScanDoneInfo;
-const ConnectConfig = module.ConnectConfig;
-const ScanConfig = module.ScanConfig;
-const ApInfo = module.ApInfo;
-const PowerSaveMode = module.PowerSaveMode;
-const RoamingConfig = module.RoamingConfig;
-const ApConfig = module.ApConfig;
-const StaInfo = module.StaInfo;
-const Protocol = module.Protocol;
-const Bandwidth = module.Bandwidth;
-const WifiEvent = module.WifiEvent;
-const Status = module.Status;
-const is = module.is;
-const from = module.from;
-const hal_marker = module.hal_marker;
+const embed = @import("embed");
+const wifi_mod = embed.hal.wifi;
 
 test "wifi event-driven operations" {
     const MockDriver = struct {
         connected: bool = false,
-        pending_event: ?WifiEvent = null,
+        pending_event: ?wifi_mod.WifiEvent = null,
         ssid: ?[]const u8 = null,
-        ps: PowerSaveMode = .none,
+        ps: wifi_mod.PowerSaveMode = .none,
         tx_power: i8 = 20,
         ap_running: bool = false,
         country: [2]u8 = "01".*,
@@ -41,7 +18,7 @@ test "wifi event-driven operations" {
             self.ssid = ssid;
             self.pending_event = .{ .connected = {} };
         }
-        pub fn connectWithConfig(self: *@This(), config: ConnectConfig) void {
+        pub fn connectWithConfig(self: *@This(), config: wifi_mod.ConnectConfig) void {
             self.connect(config.ssid, config.password);
         }
         pub fn disconnect(self: *@This()) void {
@@ -54,7 +31,7 @@ test "wifi event-driven operations" {
         pub fn isConnected(self: *const @This()) bool {
             return self.connected;
         }
-        pub fn pollEvent(self: *@This()) ?WifiEvent {
+        pub fn pollEvent(self: *@This()) ?wifi_mod.WifiEvent {
             const ev = self.pending_event;
             self.pending_event = null;
             return ev;
@@ -62,7 +39,7 @@ test "wifi event-driven operations" {
         pub fn getRssi(_: *const @This()) ?i8 {
             return -60;
         }
-        pub fn getMac(_: *const @This()) ?Mac {
+        pub fn getMac(_: *const @This()) ?wifi_mod.Mac {
             return .{ 1, 2, 3, 4, 5, 6 };
         }
         pub fn getChannel(_: *const @This()) ?u8 {
@@ -71,20 +48,20 @@ test "wifi event-driven operations" {
         pub fn getSsid(self: *const @This()) ?[]const u8 {
             return self.ssid;
         }
-        pub fn getBssid(_: *const @This()) ?Mac {
+        pub fn getBssid(_: *const @This()) ?wifi_mod.Mac {
             return .{ 6, 5, 4, 3, 2, 1 };
         }
-        pub fn getPhyMode(_: *const @This()) ?PhyMode {
+        pub fn getPhyMode(_: *const @This()) ?wifi_mod.PhyMode {
             return .@"11n";
         }
-        pub fn scanStart(_: *@This(), _: ScanConfig) Error!void {}
-        pub fn setPowerSave(self: *@This(), mode: PowerSaveMode) void {
+        pub fn scanStart(_: *@This(), _: wifi_mod.ScanConfig) wifi_mod.Error!void {}
+        pub fn setPowerSave(self: *@This(), mode: wifi_mod.PowerSaveMode) void {
             self.ps = mode;
         }
-        pub fn getPowerSave(self: *const @This()) PowerSaveMode {
+        pub fn getPowerSave(self: *const @This()) wifi_mod.PowerSaveMode {
             return self.ps;
         }
-        pub fn setRoaming(_: *@This(), _: RoamingConfig) void {}
+        pub fn setRoaming(_: *@This(), _: wifi_mod.RoamingConfig) void {}
         pub fn setRssiThreshold(_: *@This(), _: i8) void {}
         pub fn setTxPower(self: *@This(), power: i8) void {
             self.tx_power = power;
@@ -92,7 +69,7 @@ test "wifi event-driven operations" {
         pub fn getTxPower(self: *const @This()) ?i8 {
             return self.tx_power;
         }
-        pub fn startAp(self: *@This(), _: ApConfig) Error!void {
+        pub fn startAp(self: *@This(), _: wifi_mod.ApConfig) wifi_mod.Error!void {
             self.ap_running = true;
         }
         pub fn stopAp(self: *@This()) void {
@@ -101,12 +78,12 @@ test "wifi event-driven operations" {
         pub fn isApRunning(self: *const @This()) bool {
             return self.ap_running;
         }
-        pub fn getStaList(_: *const @This()) []const StaInfo {
-            return &[_]StaInfo{};
+        pub fn getStaList(_: *const @This()) []const wifi_mod.StaInfo {
+            return &[_]wifi_mod.StaInfo{};
         }
-        pub fn deauthSta(_: *@This(), _: Mac) void {}
-        pub fn setProtocol(_: *@This(), _: Protocol) void {}
-        pub fn setBandwidth(_: *@This(), _: Bandwidth) void {}
+        pub fn deauthSta(_: *@This(), _: wifi_mod.Mac) void {}
+        pub fn setProtocol(_: *@This(), _: wifi_mod.Protocol) void {}
+        pub fn setBandwidth(_: *@This(), _: wifi_mod.Bandwidth) void {}
         pub fn setCountryCode(self: *@This(), code: [2]u8) void {
             self.country = code;
         }
@@ -115,7 +92,7 @@ test "wifi event-driven operations" {
         }
     };
 
-    const Wifi = from(struct {
+    const Wifi = wifi_mod.from(struct {
         pub const Driver = MockDriver;
         pub const meta = .{ .id = "wifi.test" };
     });
@@ -123,13 +100,13 @@ test "wifi event-driven operations" {
     var d = MockDriver{};
     var wifi = Wifi.init(&d);
     wifi.connect("Test", "pw");
-    try std.testing.expectEqual(State.connecting, wifi.getState());
+    try std.testing.expectEqual(wifi_mod.State.connecting, wifi.getState());
     const ev = wifi.pollEvent() orelse return error.ExpectedEvent;
-    try std.testing.expectEqual(WifiEvent{ .connected = {} }, ev);
-    try std.testing.expectEqual(State.connected, wifi.getState());
+    try std.testing.expectEqual(wifi_mod.WifiEvent{ .connected = {} }, ev);
+    try std.testing.expectEqual(wifi_mod.State.connected, wifi.getState());
 
     wifi.disconnect();
-    try std.testing.expectEqual(State.disconnected, wifi.getState());
+    try std.testing.expectEqual(wifi_mod.State.disconnected, wifi.getState());
     try std.testing.expectEqual(@as(?[]const u8, null), wifi.getSsid());
 }
 
@@ -139,19 +116,19 @@ test "wifi signal quality" {
         country: [2]u8 = "01".*,
 
         pub fn connect(_: *@This(), _: []const u8, _: []const u8) void {}
-        pub fn connectWithConfig(_: *@This(), _: ConnectConfig) void {}
+        pub fn connectWithConfig(_: *@This(), _: wifi_mod.ConnectConfig) void {}
         pub fn disconnect(_: *@This()) void {}
         pub fn reconnect(_: *@This()) void {}
         pub fn isConnected(_: *const @This()) bool {
             return true;
         }
-        pub fn pollEvent(_: *@This()) ?WifiEvent {
+        pub fn pollEvent(_: *@This()) ?wifi_mod.WifiEvent {
             return null;
         }
         pub fn getRssi(self: *const @This()) ?i8 {
             return self.rssi;
         }
-        pub fn getMac(_: *const @This()) ?Mac {
+        pub fn getMac(_: *const @This()) ?wifi_mod.Mac {
             return null;
         }
         pub fn getChannel(_: *const @This()) ?u8 {
@@ -160,34 +137,34 @@ test "wifi signal quality" {
         pub fn getSsid(_: *const @This()) ?[]const u8 {
             return null;
         }
-        pub fn getBssid(_: *const @This()) ?Mac {
+        pub fn getBssid(_: *const @This()) ?wifi_mod.Mac {
             return null;
         }
-        pub fn getPhyMode(_: *const @This()) ?PhyMode {
+        pub fn getPhyMode(_: *const @This()) ?wifi_mod.PhyMode {
             return null;
         }
-        pub fn scanStart(_: *@This(), _: ScanConfig) Error!void {}
-        pub fn setPowerSave(_: *@This(), _: PowerSaveMode) void {}
-        pub fn getPowerSave(_: *const @This()) PowerSaveMode {
+        pub fn scanStart(_: *@This(), _: wifi_mod.ScanConfig) wifi_mod.Error!void {}
+        pub fn setPowerSave(_: *@This(), _: wifi_mod.PowerSaveMode) void {}
+        pub fn getPowerSave(_: *const @This()) wifi_mod.PowerSaveMode {
             return .none;
         }
-        pub fn setRoaming(_: *@This(), _: RoamingConfig) void {}
+        pub fn setRoaming(_: *@This(), _: wifi_mod.RoamingConfig) void {}
         pub fn setRssiThreshold(_: *@This(), _: i8) void {}
         pub fn setTxPower(_: *@This(), _: i8) void {}
         pub fn getTxPower(_: *const @This()) ?i8 {
             return null;
         }
-        pub fn startAp(_: *@This(), _: ApConfig) Error!void {}
+        pub fn startAp(_: *@This(), _: wifi_mod.ApConfig) wifi_mod.Error!void {}
         pub fn stopAp(_: *@This()) void {}
         pub fn isApRunning(_: *const @This()) bool {
             return false;
         }
-        pub fn getStaList(_: *const @This()) []const StaInfo {
-            return &[_]StaInfo{};
+        pub fn getStaList(_: *const @This()) []const wifi_mod.StaInfo {
+            return &[_]wifi_mod.StaInfo{};
         }
-        pub fn deauthSta(_: *@This(), _: Mac) void {}
-        pub fn setProtocol(_: *@This(), _: Protocol) void {}
-        pub fn setBandwidth(_: *@This(), _: Bandwidth) void {}
+        pub fn deauthSta(_: *@This(), _: wifi_mod.Mac) void {}
+        pub fn setProtocol(_: *@This(), _: wifi_mod.Protocol) void {}
+        pub fn setBandwidth(_: *@This(), _: wifi_mod.Bandwidth) void {}
         pub fn setCountryCode(self: *@This(), code: [2]u8) void {
             self.country = code;
         }
@@ -196,7 +173,7 @@ test "wifi signal quality" {
         }
     };
 
-    const Wifi = from(struct {
+    const Wifi = wifi_mod.from(struct {
         pub const Driver = MockDriver;
         pub const meta = .{ .id = "wifi.quality" };
     });

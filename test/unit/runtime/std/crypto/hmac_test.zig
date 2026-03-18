@@ -1,9 +1,8 @@
 const std = @import("std");
-const module = @import("embed").runtime.std.std_crypto_hmac;
-const HmacSha256 = module.HmacSha256;
-const HmacSha384 = module.HmacSha384;
-const HmacSha512 = module.HmacSha512;
-const HmacWrapper = module.HmacWrapper;
+const Crypto = @import("embed").runtime.std.Crypto;
+const HmacSha256 = Crypto.Hmac.Sha256();
+const HmacSha384 = Crypto.Hmac.Sha384();
+const HmacSha512 = Crypto.Hmac.Sha512();
 
 fn expectHex(actual: []const u8, comptime hex: []const u8) !void {
     var expected: [hex.len / 2]u8 = undefined;

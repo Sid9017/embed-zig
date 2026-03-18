@@ -13,34 +13,55 @@ const testing = std.testing;
 const embed = @import("embed");
 const bus_mod = embed.pkg.event.bus;
 const Bus = bus_mod.Bus;
-const button = embed.pkg.event.button;
-const StdChannel = embed.runtime.std.ChannelFactory;
+const event = embed.pkg.event;
+const Std = embed.runtime.std;
 
-const RawEvent = button.RawEvent;
-const GestureEvent = button.GestureEvent;
-const GestureConfig = button.GestureConfig;
+const RawEvent = event.button.RawEvent;
+const GestureEvent = event.button.GestureEvent;
+const GestureConfig = event.button.GestureConfig;
+
+var fake_time_ms: u64 = 0;
 
 const FakeTime = struct {
-    ms: u64 = 0,
-
-    pub fn nowMs(self: *const FakeTime) u64 {
-        return self.ms;
+    pub fn nowMs(_: FakeTime) u64 {
+        return fake_time_ms;
+    }
+    pub fn sleepMs(_: FakeTime, _: u32) void {}
+    pub fn setMs(val: u64) void {
+        fake_time_ms = val;
     }
 };
+
+const runtime_suite = embed.runtime.suite;
+const FakeRuntime = runtime_suite.Make(struct {
+    pub const Time = FakeTime;
+    pub const Log = @import("../../../../src/runtime/std/log.zig").Log;
+    pub const Rng = @import("../../../../src/runtime/std/rng.zig").Rng;
+    pub const Mutex = @import("../../../../src/runtime/std/sync/mutex.zig").Mutex;
+    pub const Condition = @import("../../../../src/runtime/std/sync/condition.zig").Condition;
+    pub const Notify = @import("../../../../src/runtime/std/sync/notify.zig").Notify;
+    pub const Thread = @import("../../../../src/runtime/std/thread.zig").Thread;
+    pub const System = @import("../../../../src/runtime/std/system.zig").System;
+    pub const Fs = @import("../../../../src/runtime/std/fs.zig").Fs;
+    pub const ChannelFactory = @import("../../../../src/runtime/std/channel_factory.zig").ChannelFactory;
+    pub const Socket = @import("../../../../src/runtime/std/socket.zig").Socket;
+    pub const OtaBackend = @import("../../../../src/runtime/std/ota_backend.zig").OtaBackend;
+    pub const Crypto = @import("../../../../src/runtime/std/crypto/suite.zig");
+});
 
 const AppBus = Bus(.{
     .btn_ok = RawEvent,
     .btn_vol = RawEvent,
 }, .{
     .gesture = GestureEvent,
-}, StdChannel);
+}, Std);
 
-const Gesture = button.ButtonGesture(FakeTime, .{
+const Gesture = event.button.ButtonGesture(FakeRuntime, .{
     .multi_click_window_ms = 200,
     .long_press_ms = 500,
 });
 
-test "complete pipeline: button press/release → gesture click via Processor" {
+test "complete pipeline: event.button press/release → gesture click via Processor" {
     var bus = try AppBus.init(testing.allocator, 16);
     defer bus.deinit();
 
@@ -53,13 +74,13 @@ test "complete pipeline: button press/release → gesture click via Processor" {
     _ = try bus.inject(.btn_ok, .{ .code = .press });
 
     const gp_impl: *Gesture = &gp.impl;
-    gp_impl.time.ms = 40;
+    FakeTime.setMs(40);
 
     _ = try bus.inject(.btn_ok, .{ .code = .release });
 
-    gp_impl.time.ms = 400;
+    FakeTime.setMs(400);
 
-    _ = try bus.inject(.tick, gp_impl.time.ms);
+    _ = try bus.inject(.tick, gp_impl.time.nowMs());
 
     const r = try bus.recv();
     try testing.expect(r.ok);
@@ -151,11 +172,11 @@ test "chained Processor + Middleware" {
     _ = try bus.inject(.btn_ok, .{ .code = .press });
 
     const gp_impl: *Gesture = &gp.impl;
-    gp_impl.time.ms = 40;
+    FakeTime.setMs(40);
     _ = try bus.inject(.btn_ok, .{ .code = .release });
 
-    gp_impl.time.ms = 400;
-    _ = try bus.inject(.tick, gp_impl.time.ms);
+    FakeTime.setMs(400);
+    _ = try bus.inject(.tick, gp_impl.time.nowMs());
 
     const r = try bus.recv();
     try testing.expect(r.ok);

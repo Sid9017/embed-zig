@@ -1,34 +1,29 @@
 const std = @import("std");
 const embed = @import("embed");
-const module = embed.pkg.audio.resampler;
-const Format = module.Format;
-const stereoToMono = module.stereoToMono;
-const monoToStereo = module.monoToStereo;
-const Resampler = module.Resampler;
-const speexdsp = module.speexdsp;
+const resampler = embed.pkg.audio.resampler;
 
 test "format helpers and conversions" {
     const testing = std.testing;
-    const mono = Format{ .rate = 16000, .channels = .mono };
-    const stereo = Format{ .rate = 48000, .channels = .stereo };
+    const mono = resampler.Format{ .rate = 16000, .channels = .mono };
+    const stereo = resampler.Format{ .rate = 48000, .channels = .stereo };
     try testing.expectEqual(@as(usize, 2), mono.sampleBytes());
     try testing.expectEqual(@as(usize, 4), stereo.sampleBytes());
 
     var interleaved = [_]i16{ 100, 300, 200, 400 };
-    const mono_n = stereoToMono(&interleaved);
+    const mono_n = resampler.stereoToMono(&interleaved);
     try testing.expectEqual(@as(usize, 2), mono_n);
     try testing.expectEqual(@as(i16, 200), interleaved[0]);
     try testing.expectEqual(@as(i16, 300), interleaved[1]);
 
     const mono_samples = [_]i16{ 5, 10 };
     var stereo_out: [4]i16 = undefined;
-    _ = monoToStereo(&mono_samples, &stereo_out);
+    _ = resampler.monoToStereo(&mono_samples, &stereo_out);
     try testing.expectEqualSlices(i16, &[_]i16{ 5, 5, 10, 10 }, &stereo_out);
 }
 
 test "resampler same rate copy" {
     const testing = std.testing;
-    var rs = try Resampler.init(testing.allocator, .{
+    var rs = try resampler.Resampler.init(testing.allocator, .{
         .channels = 1,
         .in_rate = 16000,
         .out_rate = 16000,

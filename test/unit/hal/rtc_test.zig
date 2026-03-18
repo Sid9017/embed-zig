@@ -1,23 +1,16 @@
 const std = @import("std");
 const testing = std.testing;
-const module = @import("embed").hal.rtc;
-const WriterError = module.WriterError;
-const Timestamp = module.Timestamp;
-const Datetime = module.Datetime;
-const reader = module.reader;
-const writer = module.writer;
-const hal_marker = module.hal_marker;
-const msToSecsFloor = module.msToSecsFloor;
-const secsToMs = module.secsToMs;
+const embed = @import("embed");
+const rtc = embed.hal.rtc;
 
 test "rtc conversion" {
     const epoch: i64 = 1769427296;
-    const dt = Timestamp.fromEpoch(epoch).toDatetime();
+    const dt = rtc.Timestamp.fromEpoch(epoch).toDatetime();
     try std.testing.expectEqual(@as(u16, 2026), dt.year);
     try std.testing.expectEqual(epoch, dt.toEpoch());
 }
 
-test "rtc nowMs and Timestamp second semantics" {
+test "rtc nowMs and rtc.Timestamp second semantics" {
     const MockDriver = struct {
         pub fn uptime(_: *@This()) u64 {
             return 1;
@@ -27,7 +20,7 @@ test "rtc nowMs and Timestamp second semantics" {
         }
     };
 
-    const Reader = reader.from(struct {
+    const Reader = rtc.reader.from(struct {
         pub const Driver = MockDriver;
         pub const meta = .{ .id = "rtc.reader" };
     });
@@ -39,22 +32,22 @@ test "rtc nowMs and Timestamp second semantics" {
     try std.testing.expectEqual(@as(i64, 1_769_427_296_987), r.nowMs().?);
 }
 
-test "rtc writer converts seconds to milliseconds" {
+test "rtc rtc.writer converts seconds to milliseconds" {
     const MockDriver = struct {
         stored_ms: ?i64 = null,
 
-        pub fn setNowMs(self: *@This(), epoch_ms: i64) WriterError!void {
+        pub fn setNowMs(self: *@This(), epoch_ms: i64) rtc.WriterError!void {
             self.stored_ms = epoch_ms;
         }
     };
 
-    const Writer = writer.from(struct {
+    const Writer = rtc.writer.from(struct {
         pub const Driver = MockDriver;
         pub const meta = .{ .id = "rtc.writer" };
     });
 
     var d = MockDriver{};
     var w = Writer.init(&d);
-    try w.setTimestamp(Timestamp.fromEpoch(1_700_000_000));
+    try w.setTimestamp(rtc.Timestamp.fromEpoch(1_700_000_000));
     try std.testing.expectEqual(@as(?i64, 1_700_000_000_000), d.stored_ms);
 }

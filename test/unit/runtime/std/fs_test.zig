@@ -1,9 +1,10 @@
 const std = @import("std");
 const embed = @import("embed");
-const time = embed.runtime.std.std_time;
-const fs = embed.runtime.std.std_fs;
+const Std = embed.runtime.std;
+const Time = Std.Time;
+const Fs = Std.Fs;
 
-const std_time: time.Time = .{};
+const std_time: Time = .{};
 var unique_counter = std.atomic.Value(u64).init(0);
 
 fn makeTmpPath(comptime tag: []const u8, comptime suffix: []const u8, buf: []u8) []const u8 {
@@ -12,7 +13,7 @@ fn makeTmpPath(comptime tag: []const u8, comptime suffix: []const u8, buf: []u8)
 }
 
 test "std fs read/write roundtrip" {
-    var fs_impl = fs.Fs{};
+    var fs_impl = Fs.init();
 
     var path_buf: [256]u8 = undefined;
     const path = makeTmpPath("fs", ".bin", &path_buf);

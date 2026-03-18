@@ -50,9 +50,7 @@
 //!   const r = try bus.recv();
 
 const std = @import("std");
-const log_mod = @import("../../runtime/log.zig");
-const time_mod = @import("../../runtime/time.zig");
-const channel_factory_mod = @import("../../runtime/channel_factory.zig");
+const embed = @import("../../mod.zig");
 
 /// Type-erased callback for injecting a single event type into the bus.
 /// Peripherals receive an EventInjector from `bus.Injector(.tag)` and call
@@ -73,14 +71,14 @@ pub fn EventInjector(comptime T: type) type {
 /// `input` spec defines peripheral input events (e.g. `.btn = RawEvent`).
 /// `.tick = u64` is automatically appended to the input union.
 /// `output` spec defines middleware output events (e.g. `.gesture = GestureEvent`).
-/// `ChannelFactory` is the runtime channel factory (sealed by channel_factory.ChannelFactory).
+/// `Runtime` is the sealed runtime suite (provides ChannelFactory, Log, Time).
 ///
 /// The bus generates `InputEvent` (from input) and `BusEvent` (`{ .input } ∪ output`),
 /// then drives events through a registered middleware chain: in_ch → middlewares → out_ch.
 pub fn Bus(
     comptime input: anytype,
     comptime output: anytype,
-    comptime ChannelFactory: type,
+    comptime Runtime: type,
 ) type {
     const input_info = @typeInfo(@TypeOf(input)).@"struct";
     const output_info = @typeInfo(@TypeOf(output)).@"struct";
@@ -88,7 +86,7 @@ pub fn Bus(
     if (output_info.fields.len == 0) @compileError("Bus output spec must have at least one field");
 
     comptime {
-        _ = channel_factory_mod.is(ChannelFactory);
+        _ = embed.runtime.is(Runtime);
         for (input_info.fields) |f| {
             if (std.mem.eql(u8, f.name, "tick")) {
                 @compileError("Bus input spec must not contain .tick — it is added automatically");
@@ -244,12 +242,10 @@ pub fn Bus(
         }
 
         /// Built-in logger middleware. Logs all BusEvents then yields unchanged.
-        /// Log must satisfy the runtime.log contract.
-        pub fn Logger(comptime Log: type) type {
-            const LogType = log_mod.is(Log);
-
+        /// Uses Runtime.Log from the Bus's Runtime.
+        pub fn Logger() type {
             return Middleware(struct {
-                const log: LogType = .{};
+                const log: Runtime.Log = .{};
 
                 pub fn init() @This() {
                     return .{};
@@ -378,10 +374,9 @@ pub fn Bus(
         }
 
         /// Blocking tick loop: periodically injects `.tick` events into in_ch.
-        /// `time` must satisfy the runtime time contract (nowMs, sleepMs).
+        /// `time` must be Runtime.Time (nowMs, sleepMs).
         /// Returns when stop() is called.
-        pub fn tick(self: *Self, time: anytype, interval_ms: u32) void {
-            _ = time_mod.is(@TypeOf(time));
+        pub fn tick(self: *Self, time: Runtime.Time, interval_ms: u32) void {
             self.ticking.store(true, .release);
             defer {
                 self.ticking.store(false, .release);
@@ -424,9 +419,9 @@ pub fn Bus(
 
         // --- private types ---
 
-        const InputChannel = ChannelFactory.Channel(InputEvent);
-        const BusChannel = ChannelFactory.Channel(BusEvent);
-        const DoneChannel = ChannelFactory.Channel(void);
+        const InputChannel = Runtime.ChannelFactory.Channel(InputEvent);
+        const BusChannel = Runtime.ChannelFactory.Channel(BusEvent);
+        const DoneChannel = Runtime.ChannelFactory.Channel(void);
         const YieldFn = *const fn (ctx: ?*anyopaque, ev: BusEvent) void;
         const ProcessFn = *const fn (ctx: ?*anyopaque, ev: BusEvent, yield_ctx: ?*anyopaque, yield: YieldFn) void;
         const MiddlewareSeal = struct {};

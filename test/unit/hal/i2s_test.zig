@@ -1,41 +1,33 @@
 const std = @import("std");
 const testing = std.testing;
-const module = @import("embed").hal.i2s;
-const Error = module.Error;
-const Role = module.Role;
-const Mode = module.Mode;
-const SlotMode = module.SlotMode;
-const BitsPerSample = module.BitsPerSample;
-const Direction = module.Direction;
-const BusConfig = module.BusConfig;
-const EndpointConfig = module.EndpointConfig;
-const from = module.from;
+const embed = @import("embed");
+const i2s = embed.hal.i2s;
 
 test "i2s bus + endpoint wrapper" {
     const Mock = struct {
         pub const EndpointHandle = u8;
 
-        pub fn initBus(_: BusConfig) Error!@This() {
+        pub fn initBus(_: i2s.BusConfig) i2s.Error!@This() {
             return .{};
         }
         pub fn deinitBus(_: *@This()) void {}
-        pub fn registerEndpoint(_: *@This(), cfg: EndpointConfig) Error!EndpointHandle {
+        pub fn registerEndpoint(_: *@This(), cfg: i2s.EndpointConfig) i2s.Error!EndpointHandle {
             return switch (cfg.direction) {
                 .rx => 1,
                 .tx => 2,
             };
         }
-        pub fn unregisterEndpoint(_: *@This(), _: EndpointHandle) Error!void {}
-        pub fn read(_: *@This(), _: EndpointHandle, out: []u8) Error!usize {
+        pub fn unregisterEndpoint(_: *@This(), _: EndpointHandle) i2s.Error!void {}
+        pub fn read(_: *@This(), _: EndpointHandle, out: []u8) i2s.Error!usize {
             if (out.len > 0) out[0] = 0x2A;
             return if (out.len > 0) 1 else 0;
         }
-        pub fn write(_: *@This(), _: EndpointHandle, input: []const u8) Error!usize {
+        pub fn write(_: *@This(), _: EndpointHandle, input: []const u8) i2s.Error!usize {
             return input.len;
         }
     };
 
-    const I2s = from(struct {
+    const I2s = i2s.from(struct {
         pub const Driver = Mock;
         pub const EndpointHandle = Mock.EndpointHandle;
         pub const meta = .{ .id = "i2s.test" };

@@ -1,10 +1,7 @@
 const std = @import("std");
-const testing = std.testing;
-const module = @import("embed").runtime.std.std_crypto_aead;
-const Aes128Gcm = module.Aes128Gcm;
-const Aes256Gcm = module.Aes256Gcm;
-const ChaCha20Poly1305 = module.ChaCha20Poly1305;
-const AeadWrapper = module.AeadWrapper;
+const Crypto = @import("embed").runtime.std.Crypto;
+const Aes128Gcm = Crypto.Aead.Aes128Gcm();
+const ChaCha20Poly1305 = Crypto.Aead.ChaCha20Poly1305();
 
 test "aead aes128gcm roundtrip" {
     const key: [16]u8 = [_]u8{0x11} ** 16;

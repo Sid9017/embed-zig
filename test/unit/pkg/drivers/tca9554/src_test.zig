@@ -1,15 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.drivers.tca9554;
-const Register = module.Register;
-const Defaults = module.Defaults;
-const Address = module.Address;
-const PinMask = module.PinMask;
-const Pin = module.Pin;
-const Direction = module.Direction;
-const Level = module.Level;
-const Tca9554 = module.Tca9554;
+const tca9554 = embed.pkg.drivers.tca9554;
 
 // ============================================================================
 // Tests
@@ -43,29 +35,29 @@ const MockI2c = struct {
 
 test "Tca9554 basic operations" {
     var mock = MockI2c{};
-    var gpio = Tca9554(*MockI2c).init(&mock, 0x20);
+    var gpio = tca9554.Tca9554(*MockI2c).init(&mock, 0x20);
 
     try gpio.setDirection(.pin6, .output);
-    try std.testing.expectEqual(@as(u8, 0xBF), mock.registers[@intFromEnum(Register.config)]);
+    try std.testing.expectEqual(@as(u8, 0xBF), mock.registers[@intFromEnum(tca9554.Register.config)]);
 
     try gpio.write(.pin6, .high);
-    try std.testing.expectEqual(@as(u8, 0xFF), mock.registers[@intFromEnum(Register.output)]);
+    try std.testing.expectEqual(@as(u8, 0xFF), mock.registers[@intFromEnum(tca9554.Register.output)]);
 
     try gpio.write(.pin6, .low);
-    try std.testing.expectEqual(@as(u8, 0xBF), mock.registers[@intFromEnum(Register.output)]);
+    try std.testing.expectEqual(@as(u8, 0xBF), mock.registers[@intFromEnum(tca9554.Register.output)]);
 }
 
 test "Tca9554 configure output" {
     var mock = MockI2c{};
-    var gpio = Tca9554(*MockI2c).init(&mock, 0x20);
+    var gpio = tca9554.Tca9554(*MockI2c).init(&mock, 0x20);
 
     try gpio.configureOutput(.pin7, .low);
-    try std.testing.expectEqual(@as(u8, 0x7F), mock.registers[@intFromEnum(Register.output)]);
-    try std.testing.expectEqual(@as(u8, 0x7F), mock.registers[@intFromEnum(Register.config)]);
+    try std.testing.expectEqual(@as(u8, 0x7F), mock.registers[@intFromEnum(tca9554.Register.output)]);
+    try std.testing.expectEqual(@as(u8, 0x7F), mock.registers[@intFromEnum(tca9554.Register.config)]);
 }
 
 test "Pin mask" {
-    try std.testing.expectEqual(@as(u8, 0x01), Pin.pin0.mask());
-    try std.testing.expectEqual(@as(u8, 0x40), Pin.pin6.mask());
-    try std.testing.expectEqual(@as(u8, 0x80), Pin.pin7.mask());
+    try std.testing.expectEqual(@as(u8, 0x01), tca9554.Pin.pin0.mask());
+    try std.testing.expectEqual(@as(u8, 0x40), tca9554.Pin.pin6.mask());
+    try std.testing.expectEqual(@as(u8, 0x80), tca9554.Pin.pin7.mask());
 }

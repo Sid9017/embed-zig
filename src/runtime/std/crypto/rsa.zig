@@ -1,63 +1,59 @@
 const std = @import("std");
+const embed = @import("../../../mod.zig");
+const rsa_contract = embed.runtime.crypto.rsa;
 
-pub const rsa = struct {
-    const StdRsa = std.crypto.Certificate.rsa;
+const StdRsa = std.crypto.Certificate.rsa;
 
-    pub const HashType = enum { sha256, sha384, sha512 };
-
-    pub const PublicKey = struct {
-        n: []const u8,
-        e: []const u8,
-
-        pub const ParseDerError = error{CertificatePublicKeyInvalid};
-
-        pub fn parseDer(pub_key: []const u8) ParseDerError!struct { modulus: []const u8, exponent: []const u8 } {
-            const result = StdRsa.PublicKey.parseDer(pub_key) catch return error.CertificatePublicKeyInvalid;
-            return .{ .modulus = result.modulus, .exponent = result.exponent };
-        }
-
-        pub fn fromBytes(exponent: []const u8, modulus: []const u8) !PublicKey {
-            return PublicKey{ .n = modulus, .e = exponent };
-        }
+fn StdHash(comptime ht: rsa_contract.HashType) type {
+    return switch (ht) {
+        .sha256 => std.crypto.hash.sha2.Sha256,
+        .sha384 => std.crypto.hash.sha2.Sha384,
+        .sha512 => std.crypto.hash.sha2.Sha512,
     };
+}
 
-    pub const PKCS1v1_5Signature = struct {
-        pub fn verify(
-            comptime modulus_len: usize,
-            sig: [modulus_len]u8,
-            msg: []const u8,
-            pk: PublicKey,
-            comptime hash_type: HashType,
-        ) !void {
-            const Hash = switch (hash_type) {
-                .sha256 => std.crypto.hash.sha2.Sha256,
-                .sha384 => std.crypto.hash.sha2.Sha384,
-                .sha512 => std.crypto.hash.sha2.Sha512,
-            };
-            const std_pk = StdRsa.PublicKey.fromBytes(pk.e, pk.n) catch
-                return error.CertificatePublicKeyInvalid;
-            StdRsa.PKCS1v1_5Signature.verify(modulus_len, sig, msg, std_pk, Hash) catch
-                return error.SignatureVerificationFailed;
-        }
-    };
+fn resolveKey(pk_der: []const u8) !StdRsa.PublicKey {
+    const parsed = StdRsa.PublicKey.parseDer(pk_der) catch return error.CertificatePublicKeyInvalid;
+    return StdRsa.PublicKey.fromBytes(parsed.exponent, parsed.modulus) catch return error.CertificatePublicKeyInvalid;
+}
 
-    pub const PSSSignature = struct {
-        pub fn verify(
-            comptime modulus_len: usize,
-            sig: [modulus_len]u8,
-            msg: []const u8,
-            pk: PublicKey,
-            comptime hash_type: HashType,
-        ) !void {
-            const Hash = switch (hash_type) {
-                .sha256 => std.crypto.hash.sha2.Sha256,
-                .sha384 => std.crypto.hash.sha2.Sha384,
-                .sha512 => std.crypto.hash.sha2.Sha512,
-            };
-            const std_pk = StdRsa.PublicKey.fromBytes(pk.e, pk.n) catch
-                return error.CertificatePublicKeyInvalid;
-            StdRsa.PSSSignature.verify(modulus_len, sig, msg, std_pk, Hash) catch
-                return error.SignatureVerificationFailed;
-        }
-    };
-};
+pub fn verifyPKCS1v1_5(sig: []const u8, msg: []const u8, pk_der: []const u8, hash_type: rsa_contract.HashType) anyerror!void {
+    const pk = try resolveKey(pk_der);
+    switch (hash_type) {
+        inline else => |ht| {
+            const Hash = StdHash(ht);
+            switch (sig.len) {
+                128 => StdRsa.PKCS1v1_5Signature.verify(128, sig[0..128].*, msg, pk, Hash) catch
+                    return error.SignatureVerificationFailed,
+                256 => StdRsa.PKCS1v1_5Signature.verify(256, sig[0..256].*, msg, pk, Hash) catch
+                    return error.SignatureVerificationFailed,
+                512 => StdRsa.PKCS1v1_5Signature.verify(512, sig[0..512].*, msg, pk, Hash) catch
+                    return error.SignatureVerificationFailed,
+                else => return error.UnsupportedModulusLength,
+            }
+        },
+    }
+}
+
+pub fn verifyPSS(sig: []const u8, msg: []const u8, pk_der: []const u8, hash_type: rsa_contract.HashType) anyerror!void {
+    const pk = try resolveKey(pk_der);
+    switch (hash_type) {
+        inline else => |ht| {
+            const Hash = StdHash(ht);
+            switch (sig.len) {
+                128 => StdRsa.PSSSignature.verify(128, sig[0..128].*, msg, pk, Hash) catch
+                    return error.SignatureVerificationFailed,
+                256 => StdRsa.PSSSignature.verify(256, sig[0..256].*, msg, pk, Hash) catch
+                    return error.SignatureVerificationFailed,
+                512 => StdRsa.PSSSignature.verify(512, sig[0..512].*, msg, pk, Hash) catch
+                    return error.SignatureVerificationFailed,
+                else => return error.UnsupportedModulusLength,
+            }
+        },
+    }
+}
+
+pub fn parseDer(pub_key: []const u8) anyerror!rsa_contract.DerKey {
+    const result = StdRsa.PublicKey.parseDer(pub_key) catch return error.CertificatePublicKeyInvalid;
+    return .{ .modulus = result.modulus, .exponent = result.exponent };
+}

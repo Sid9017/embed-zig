@@ -7,8 +7,9 @@ const mixer_mod = embed.pkg.audio.mixer;
 const songs = @import("songs.zig");
 const processor_mod = @import("processor.zig");
 
-const EngineType = engine_mod.Engine(runtime.std.Mutex, runtime.std.Condition, runtime.std.Thread, runtime.std.Time);
-const MixerType = mixer_mod.Mixer(runtime.std.Mutex, runtime.std.Condition);
+const StdRuntime = runtime.std;
+const EngineType = engine_mod.Engine(StdRuntime);
+const MixerType = mixer_mod.Mixer(StdRuntime);
 const Format = MixerType.Format;
 
 pub const Config = struct {
@@ -37,7 +38,7 @@ pub fn run(allocator: std.mem.Allocator, cfg: Config) !void {
         .speaker_ring_capacity = cfg.sample_rate * 2,
         .output_queue_capacity = cfg.sample_rate * 2,
         .input_queue_frames = 20,
-    }, runtime.std.Mutex.init(), runtime.std.Time{});
+    }, StdRuntime.Mutex.init(), StdRuntime.Time{});
     defer eng.deinit();
 
     eng.setProcessor(aec_ns.processor());

@@ -1,12 +1,12 @@
 const std = @import("std");
-pub const common = @import("common.zig");
+const common = @import("common.zig");
 
-pub const ExtensionType = common.ExtensionType;
-pub const NamedGroup = common.NamedGroup;
-pub const SignatureScheme = common.SignatureScheme;
-pub const ProtocolVersion = common.ProtocolVersion;
-pub const CipherSuite = common.CipherSuite;
-pub const PskKeyExchangeMode = common.PskKeyExchangeMode;
+const ExtensionType = common.ExtensionType;
+const NamedGroup = common.NamedGroup;
+const SignatureScheme = common.SignatureScheme;
+const ProtocolVersion = common.ProtocolVersion;
+const CipherSuite = common.CipherSuite;
+const PskKeyExchangeMode = common.PskKeyExchangeMode;
 
 pub const ExtensionError = error{
     BufferTooSmall,

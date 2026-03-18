@@ -1,28 +1,19 @@
 const std = @import("std");
 const embed = @import("embed");
-const module = embed.pkg.audio.engine;
-const Beamformer = module.Beamformer;
-const Processor = module.Processor;
-const Engine = module.Engine;
-const InputFrame = module.InputFrame;
-const PassthroughBeamformer = module.PassthroughBeamformer;
-const PassthroughProcessor = module.PassthroughProcessor;
-const mixer_mod = module.mixer_mod;
-const obuf_mod = module.obuf_mod;
-const resampler_mod = module.resampler_mod;
-const runtime = module.runtime;
-const Allocator = module.Allocator;
-const Format = module.Format;
+const engine = embed.pkg.audio.engine;
+const resampler = embed.pkg.audio.resampler;
+
+const StdRuntime = embed.runtime.std;
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
-const TestEngine = Engine(runtime.std.Mutex, runtime.std.Condition, runtime.std.Thread, runtime.std.Time);
+const TestEngine = engine.Engine(StdRuntime);
 
 fn newEngine(config: TestEngine.Config) !TestEngine {
-    return TestEngine.init(testing.allocator, config, runtime.std.Mutex.init(), runtime.std.Time{});
+    return TestEngine.init(testing.allocator, config, StdRuntime.Mutex.init(), StdRuntime.Time{});
 }
 
 const test_frame_size: u32 = 8;
@@ -113,7 +104,7 @@ test "engine with passthrough beamformer takes first mic" {
     var eng = try newEngine(testConfig());
     defer eng.deinit();
 
-    var bf = PassthroughBeamformer{};
+    var bf = engine.PassthroughBeamformer{};
     eng.setBeamformer(bf.beamformer());
 
     try eng.start();
@@ -138,7 +129,7 @@ test "engine with passthrough processor copies mic to output" {
     var eng = try newEngine(testConfig());
     defer eng.deinit();
 
-    var proc = PassthroughProcessor{};
+    var proc = engine.PassthroughProcessor{};
     eng.setProcessor(proc.processor());
 
     try eng.start();
@@ -174,7 +165,7 @@ test "engine speaker ring receives mixer output" {
     var eng = try newEngine(testConfig());
     defer eng.deinit();
 
-    const fmt = Format{ .rate = 16000, .channels = .mono };
+    const fmt = resampler.Format{ .rate = 16000, .channels = .mono };
     const h = try eng.createTrack(.{});
     const samples = [_]i16{ 500, 600, 700, 800, 500, 600, 700, 800 };
     try h.track.write(fmt, &samples);

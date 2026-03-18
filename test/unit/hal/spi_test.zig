@@ -1,23 +1,19 @@
 const std = @import("std");
 const testing = std.testing;
-const module = @import("embed").hal.spi;
-const Error = module.Error;
-const DeviceConfig = module.DeviceConfig;
-const is = module.is;
-const from = module.from;
-const hal_marker = module.hal_marker;
+const embed = @import("embed");
+const spi = embed.hal.spi;
 
 test "spi wrapper" {
     const Mock = struct {
-        pub fn write(_: *@This(), _: []const u8) Error!void {}
-        pub fn transfer(_: *@This(), tx: []const u8, rx: []u8) Error!void {
+        pub fn write(_: *@This(), _: []const u8) spi.Error!void {}
+        pub fn transfer(_: *@This(), tx: []const u8, rx: []u8) spi.Error!void {
             const n = @min(tx.len, rx.len);
             @memcpy(rx[0..n], tx[0..n]);
         }
-        pub fn read(_: *@This(), _: []u8) Error!void {}
+        pub fn read(_: *@This(), _: []u8) spi.Error!void {}
     };
 
-    const Dev = from(struct {
+    const Dev = spi.from(struct {
         pub const Driver = Mock;
         pub const meta = .{ .id = "spi.test" };
     });
@@ -33,19 +29,19 @@ test "spi wrapper with device model" {
     const Mock = struct {
         pub const DeviceHandle = u8;
 
-        pub fn registerDevice(_: *@This(), _: DeviceConfig) Error!DeviceHandle {
+        pub fn registerDevice(_: *@This(), _: spi.DeviceConfig) spi.Error!DeviceHandle {
             return 1;
         }
-        pub fn unregisterDevice(_: *@This(), _: DeviceHandle) Error!void {}
-        pub fn write(_: *@This(), _: DeviceHandle, _: []const u8) Error!void {}
-        pub fn transfer(_: *@This(), _: DeviceHandle, tx: []const u8, rx: []u8) Error!void {
+        pub fn unregisterDevice(_: *@This(), _: DeviceHandle) spi.Error!void {}
+        pub fn write(_: *@This(), _: DeviceHandle, _: []const u8) spi.Error!void {}
+        pub fn transfer(_: *@This(), _: DeviceHandle, tx: []const u8, rx: []u8) spi.Error!void {
             const n = @min(tx.len, rx.len);
             @memcpy(rx[0..n], tx[0..n]);
         }
-        pub fn read(_: *@This(), _: DeviceHandle, _: []u8) Error!void {}
+        pub fn read(_: *@This(), _: DeviceHandle, _: []u8) spi.Error!void {}
     };
 
-    const Dev = from(struct {
+    const Dev = spi.from(struct {
         pub const Driver = Mock;
         pub const DeviceHandle = Mock.DeviceHandle;
         pub const meta = .{ .id = "spi.test.device" };

@@ -11,9 +11,9 @@
 //! | 0x02      | Bidirectional     | acl      |
 //! | 0x04      | Controller → Host | events   |
 
-pub const commands = @import("commands.zig");
-pub const events = @import("events.zig");
-pub const acl = @import("acl.zig");
+const commands = @import("commands.zig");
+const events = @import("events.zig");
+const acl = @import("acl.zig");
 
 // ============================================================================
 // Common Types
@@ -65,8 +65,3 @@ pub const Status = enum(u8) {
         return self == .success;
     }
 };
-
-// ============================================================================
-// Tests
-// ============================================================================
-

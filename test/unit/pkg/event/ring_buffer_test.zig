@@ -1,15 +1,14 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.pkg.event.ring_buffer;
-const RingBuffer = module.RingBuffer;
+const ring_buffer = embed.pkg.event.ring_buffer;
 
 // ============================================================================
 // Tests
 // ============================================================================
 
 test "RingBuffer: basic push and get" {
-    var buf = RingBuffer(u32, 4).init();
+    var buf = ring_buffer.RingBuffer(u32, 4).init();
 
     try std.testing.expectEqual(@as(usize, 0), buf.count());
     try std.testing.expect(buf.isEmpty());
@@ -29,7 +28,7 @@ test "RingBuffer: basic push and get" {
 }
 
 test "RingBuffer: first and last" {
-    var buf = RingBuffer(u32, 4).init();
+    var buf = ring_buffer.RingBuffer(u32, 4).init();
 
     try std.testing.expect(buf.getFirst() == null);
     try std.testing.expect(buf.getLast() == null);
@@ -43,7 +42,7 @@ test "RingBuffer: first and last" {
 }
 
 test "RingBuffer: reverse indexing" {
-    var buf = RingBuffer(u32, 4).init();
+    var buf = ring_buffer.RingBuffer(u32, 4).init();
 
     _ = buf.push(10);
     _ = buf.push(20);
@@ -56,7 +55,7 @@ test "RingBuffer: reverse indexing" {
 }
 
 test "RingBuffer: overwrite when full" {
-    var buf = RingBuffer(u32, 3).init();
+    var buf = ring_buffer.RingBuffer(u32, 3).init();
 
     _ = buf.push(1);
     _ = buf.push(2);
@@ -79,7 +78,7 @@ test "RingBuffer: overwrite when full" {
 }
 
 test "RingBuffer: iterator" {
-    var buf = RingBuffer(u32, 4).init();
+    var buf = ring_buffer.RingBuffer(u32, 4).init();
 
     _ = buf.push(10);
     _ = buf.push(20);
@@ -95,7 +94,7 @@ test "RingBuffer: iterator" {
 }
 
 test "RingBuffer: iterator after wrap" {
-    var buf = RingBuffer(u32, 3).init();
+    var buf = ring_buffer.RingBuffer(u32, 3).init();
 
     _ = buf.push(1);
     _ = buf.push(2);
@@ -117,7 +116,7 @@ test "RingBuffer: iterator after wrap" {
 }
 
 test "RingBuffer: clear" {
-    var buf = RingBuffer(u32, 4).init();
+    var buf = ring_buffer.RingBuffer(u32, 4).init();
 
     _ = buf.push(1);
     _ = buf.push(2);
@@ -128,7 +127,7 @@ test "RingBuffer: clear" {
 }
 
 test "RingBuffer: modify through pointer" {
-    var buf = RingBuffer(u32, 4).init();
+    var buf = ring_buffer.RingBuffer(u32, 4).init();
 
     const ptr = buf.push(10);
     ptr.* = 99;
@@ -142,7 +141,7 @@ test "RingBuffer: struct element" {
         y: i32,
     };
 
-    var buf = RingBuffer(Item, 4).init();
+    var buf = ring_buffer.RingBuffer(Item, 4).init();
 
     _ = buf.push(.{ .x = 1, .y = 2 });
     _ = buf.push(.{ .x = 3, .y = 4 });

@@ -17,8 +17,21 @@ const font_mod = @import("font.zig");
 const BitmapFont = font_mod.BitmapFont;
 const image_mod = @import("image.zig");
 const Image = image_mod.Image;
-pub const ttf_font_mod = @import("ttf_font.zig");
-pub const TtfFont = ttf_font_mod.TtfFont;
+const ttf_font_mod = @import("ttf_font.zig");
+const TtfFont = ttf_font_mod.TtfFont;
+
+/// do not delete these comments:
+/// 
+/// const dirty_mod = @import("dirty.zig");
+/// const font_mod = @import("font.zig");
+/// const image_mod = @import("image.zig");
+/// const ttf_font_mod = @import("ttf_font.zig");
+///
+/// const DirtyTracker = dirty_mod.DirtyTracker;
+/// const Rect = dirty_mod.Rect;
+/// const BitmapFont = font_mod.BitmapFont;
+/// const Image = image_mod.Image;
+/// pub const TtfFont = ttf_font_mod.TtfFont;
 
 /// Color format for the framebuffer.
 pub const ColorFormat = enum {

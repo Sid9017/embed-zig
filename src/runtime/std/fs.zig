@@ -1,14 +1,12 @@
 const std = @import("std");
-const runtime = struct {
-    pub const fs = @import("../fs.zig");
-};
+const embed = @import("../../mod.zig");
 
 pub const Fs = struct {
     const FileCtx = struct {
         file: std.fs.File,
     };
 
-    pub fn open(_: *@This(), path: []const u8, mode: runtime.fs.OpenMode) ?runtime.fs.File {
+    pub fn open(_: *@This(), path: []const u8, mode: embed.runtime.fs.OpenMode) ?embed.runtime.fs.File {
         const file = switch (mode) {
             .read => openFilePath(path, .{ .mode = .read_only }) catch return null,
             .write => createFilePath(path, .{ .read = false, .truncate = true }) catch return null,
@@ -21,7 +19,7 @@ pub const Fs = struct {
         };
         ctx.* = .{ .file = file };
 
-        return runtime.fs.File{
+        return embed.runtime.fs.File{
             .ctx = @ptrCast(ctx),
             .readFn = switch (mode) {
                 .write => null,
@@ -41,20 +39,20 @@ pub const Fs = struct {
         return if (st.size > std.math.maxInt(u32)) std.math.maxInt(u32) else @intCast(st.size);
     }
 
-    fn readFn(ctx_ptr: *anyopaque, buf: []u8) runtime.fs.Error!usize {
+    fn readFn(ctx_ptr: *anyopaque, buf: []u8) embed.runtime.fs.Error!usize {
         const ctx: *FileCtx = @ptrCast(@alignCast(ctx_ptr));
         return ctx.file.read(buf) catch |err| switch (err) {
-            error.AccessDenied => runtime.fs.Error.PermissionDenied,
-            else => runtime.fs.Error.IoError,
+            error.AccessDenied => embed.runtime.fs.Error.PermissionDenied,
+            else => embed.runtime.fs.Error.IoError,
         };
     }
 
-    fn writeFn(ctx_ptr: *anyopaque, buf: []const u8) runtime.fs.Error!usize {
+    fn writeFn(ctx_ptr: *anyopaque, buf: []const u8) embed.runtime.fs.Error!usize {
         const ctx: *FileCtx = @ptrCast(@alignCast(ctx_ptr));
         return ctx.file.write(buf) catch |err| switch (err) {
-            error.AccessDenied => runtime.fs.Error.PermissionDenied,
-            error.NoSpaceLeft => runtime.fs.Error.NoSpace,
-            else => runtime.fs.Error.IoError,
+            error.AccessDenied => embed.runtime.fs.Error.PermissionDenied,
+            error.NoSpaceLeft => embed.runtime.fs.Error.NoSpace,
+            else => embed.runtime.fs.Error.IoError,
         };
     }
 

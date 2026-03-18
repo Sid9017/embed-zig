@@ -18,7 +18,7 @@
 //!   try adc.setGain(.@"30dB");
 
 const std = @import("std");
-const i2c = @import("../../../hal/i2c.zig");
+const embed = @import("../../../mod.zig");
 const es7210 = @This();
 
 /// ES7210 I2C address (7-bit, depends on AD1/AD0 pins)
@@ -320,7 +320,7 @@ pub const Config = struct {
 /// `I2cBus` must provide `write(addr: u7, data: []const u8) !void`
 /// and `writeRead(addr: u7, data: []const u8, out: []u8) !void`.
 pub fn Es7210(comptime I2cSpec: type) type {
-    const I2c = i2c.from(I2cSpec);
+    const I2c = embed.hal.i2c.from(I2cSpec);
 
     return struct {
         const Self = @This();

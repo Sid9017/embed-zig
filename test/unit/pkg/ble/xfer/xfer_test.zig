@@ -1,15 +1,13 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const chunk = embed.pkg.ble.xfer.chunk;
-const read_x = embed.pkg.ble.xfer.read_x;
-const write_x = embed.pkg.ble.xfer.write_x;
+const xfer = embed.pkg.ble.xfer;
 
 fn ReadX(comptime T: type) type {
-    return read_x.ReadX(T);
+    return xfer.read_x.ReadX(T);
 }
 fn WriteX(comptime T: type) type {
-    return write_x.WriteX(T);
+    return xfer.write_x.WriteX(T);
 }
 
 const MockTransport = struct {
@@ -84,10 +82,10 @@ const MockTransport = struct {
 };
 
 fn buildChunkPacket(buf: []u8, total: u16, seq: u16, payload: []const u8) []u8 {
-    const hdr = (chunk.Header{ .total = total, .seq = seq }).encode();
+    const hdr = (xfer.chunk.Header{ .total = total, .seq = seq }).encode();
     @memcpy(buf[0..chunk.header_size], &hdr);
-    @memcpy(buf[chunk.header_size .. chunk.header_size + payload.len], payload);
-    return buf[0 .. chunk.header_size + payload.len];
+    @memcpy(buf[xfer.chunk.header_size .. xfer.chunk.header_size + payload.len], payload);
+    return buf[0 .. xfer.chunk.header_size + payload.len];
 }
 
 // ============================================================================
@@ -96,8 +94,8 @@ fn buildChunkPacket(buf: []u8, total: u16, seq: u16, payload: []const u8) []u8 {
 
 test "ReadX: basic transfer with immediate ACK" {
     var mock = MockTransport{};
-    mock.scriptRecv(&chunk.start_magic);
-    mock.scriptRecv(&chunk.ack_signal);
+    mock.scriptRecv(&xfer.chunk.start_magic);
+    mock.scriptRecv(&xfer.chunk.ack_signal);
 
     const data = "Hello, BLE World!";
     var rx = ReadX(MockTransport).init(&mock, data, .{
@@ -106,12 +104,12 @@ test "ReadX: basic transfer with immediate ACK" {
     });
     try rx.run();
 
-    const dcs = chunk.dataChunkSize(50);
-    const expected_chunks = chunk.chunksNeeded(data.len, 50);
+    const dcs = xfer.chunk.dataChunkSize(50);
+    const expected_chunks = xfer.chunk.chunksNeeded(data.len, 50);
     try std.testing.expectEqual(expected_chunks, mock.sent_count);
 
     const first_sent = mock.getSent(0);
-    const hdr = chunk.Header.decode(first_sent[0..chunk.header_size]);
+    const hdr = xfer.chunk.Header.decode(first_sent[0..chunk.header_size]);
     try std.testing.expectEqual(@as(u16, @intCast(expected_chunks)), hdr.total);
     try std.testing.expectEqual(@as(u16, 1), hdr.seq);
 
@@ -119,19 +117,19 @@ test "ReadX: basic transfer with immediate ACK" {
     try std.testing.expectEqualSlices(
         u8,
         data[0..expected_payload_len],
-        first_sent[chunk.header_size..],
+        first_sent[xfer.chunk.header_size..],
     );
 }
 
 test "ReadX: transfer with retransmission" {
     var mock = MockTransport{};
-    mock.scriptRecv(&chunk.start_magic);
+    mock.scriptRecv(&xfer.chunk.start_magic);
 
     var loss_buf: [2]u8 = undefined;
-    _ = chunk.encodeLossList(&.{2}, &loss_buf);
+    _ = xfer.chunk.encodeLossList(&.{2}, &loss_buf);
     mock.scriptRecv(&loss_buf);
 
-    mock.scriptRecv(&chunk.ack_signal);
+    mock.scriptRecv(&xfer.chunk.ack_signal);
 
     const data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnop";
     const mtu: u16 = 30;
@@ -141,18 +139,18 @@ test "ReadX: transfer with retransmission" {
     });
     try rx.run();
 
-    const total = chunk.chunksNeeded(data.len, mtu);
+    const total = xfer.chunk.chunksNeeded(data.len, mtu);
     try std.testing.expectEqual(total + 1, mock.sent_count);
 
     const retransmit = mock.getSent(total);
-    const hdr = chunk.Header.decode(retransmit[0..chunk.header_size]);
+    const hdr = xfer.chunk.Header.decode(retransmit[0..chunk.header_size]);
     try std.testing.expectEqual(@as(u16, 2), hdr.seq);
 }
 
-test "ReadX: send redundancy sends each chunk N times" {
+test "ReadX: send redundancy sends each xfer.chunk N times" {
     var mock = MockTransport{};
-    mock.scriptRecv(&chunk.start_magic);
-    mock.scriptRecv(&chunk.ack_signal);
+    mock.scriptRecv(&xfer.chunk.start_magic);
+    mock.scriptRecv(&xfer.chunk.ack_signal);
 
     const data = "Short";
     var rx = ReadX(MockTransport).init(&mock, data, .{
@@ -200,15 +198,15 @@ test "ReadX: empty data returns error" {
 
 test "WriteX: basic receive with immediate ACK" {
     const mtu: u16 = 50;
-    const dcs = chunk.dataChunkSize(mtu);
+    const dcs = xfer.chunk.dataChunkSize(mtu);
     const data = "Hello from client! This is chunked data.";
-    const total: u16 = @intCast(chunk.chunksNeeded(data.len, mtu));
+    const total: u16 = @intCast(xfer.chunk.chunksNeeded(data.len, mtu));
 
     var mock = MockTransport{};
 
     var i: u16 = 0;
     while (i < total) : (i += 1) {
-        var pkt: [chunk.max_mtu]u8 = undefined;
+        var pkt: [xfer.chunk.max_mtu]u8 = undefined;
         const seq: u16 = i + 1;
         const offset: usize = @as(usize, i) * dcs;
         const remaining = data.len - offset;
@@ -223,20 +221,20 @@ test "WriteX: basic receive with immediate ACK" {
 
     try std.testing.expectEqualSlices(u8, data, result.data);
     try std.testing.expectEqual(@as(usize, 1), mock.sent_count);
-    try std.testing.expectEqualSlices(u8, &chunk.ack_signal, mock.getSent(0));
+    try std.testing.expectEqualSlices(u8, &xfer.chunk.ack_signal, mock.getSent(0));
 }
 
 test "WriteX: receive with timeout and loss list" {
     const mtu: u16 = 30;
-    const dcs = chunk.dataChunkSize(mtu);
+    const dcs = xfer.chunk.dataChunkSize(mtu);
     const data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklm";
-    const total: u16 = @intCast(chunk.chunksNeeded(data.len, mtu));
+    const total: u16 = @intCast(xfer.chunk.chunksNeeded(data.len, mtu));
     try std.testing.expect(total >= 2);
 
     var mock = MockTransport{};
 
     {
-        var pkt: [chunk.max_mtu]u8 = undefined;
+        var pkt: [xfer.chunk.max_mtu]u8 = undefined;
         const payload_len: usize = @min(data.len, dcs);
         const pkt_slice = buildChunkPacket(&pkt, total, 1, data[0..payload_len]);
         mock.scriptRecv(pkt_slice);
@@ -246,7 +244,7 @@ test "WriteX: receive with timeout and loss list" {
 
     var seq: u16 = 2;
     while (seq <= total) : (seq += 1) {
-        var pkt: [chunk.max_mtu]u8 = undefined;
+        var pkt: [xfer.chunk.max_mtu]u8 = undefined;
         const offset: usize = @as(usize, seq - 1) * dcs;
         const remaining = data.len - offset;
         const payload_len: usize = @min(remaining, dcs);
@@ -264,24 +262,24 @@ test "WriteX: receive with timeout and loss list" {
     const loss_msg = mock.getSent(0);
     try std.testing.expect(loss_msg.len >= 2);
     var decoded_seqs: [16]u16 = undefined;
-    const decoded_count = chunk.decodeLossList(loss_msg, &decoded_seqs);
+    const decoded_count = xfer.chunk.decodeLossList(loss_msg, &decoded_seqs);
     try std.testing.expect(decoded_count >= 1);
     try std.testing.expectEqual(@as(u16, 2), decoded_seqs[0]);
 
-    try std.testing.expectEqualSlices(u8, &chunk.ack_signal, mock.getSent(mock.sent_count - 1));
+    try std.testing.expectEqualSlices(u8, &xfer.chunk.ack_signal, mock.getSent(mock.sent_count - 1));
 }
 
 test "WriteX: out-of-order chunks" {
     const mtu: u16 = 30;
-    const dcs = chunk.dataChunkSize(mtu);
+    const dcs = xfer.chunk.dataChunkSize(mtu);
     const data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklm";
-    const total: u16 = @intCast(chunk.chunksNeeded(data.len, mtu));
+    const total: u16 = @intCast(xfer.chunk.chunksNeeded(data.len, mtu));
 
     var mock = MockTransport{};
 
     var seq: u16 = total;
     while (seq >= 1) : (seq -= 1) {
-        var pkt: [chunk.max_mtu]u8 = undefined;
+        var pkt: [xfer.chunk.max_mtu]u8 = undefined;
         const offset: usize = @as(usize, seq - 1) * dcs;
         const remaining = data.len - offset;
         const payload_len: usize = @min(remaining, dcs);
@@ -313,14 +311,14 @@ test "WriteX: timeout gives up after max retries" {
 
 test "WriteX: duplicate chunks are handled idempotently" {
     const mtu: u16 = 50;
-    const dcs = chunk.dataChunkSize(mtu);
+    const dcs = xfer.chunk.dataChunkSize(mtu);
     const data = "Hello duplicate world!";
-    const total: u16 = @intCast(chunk.chunksNeeded(data.len, mtu));
+    const total: u16 = @intCast(xfer.chunk.chunksNeeded(data.len, mtu));
 
     var mock = MockTransport{};
 
     for (0..3) |_| {
-        var pkt: [chunk.max_mtu]u8 = undefined;
+        var pkt: [xfer.chunk.max_mtu]u8 = undefined;
         const payload_len: usize = @min(data.len, dcs);
         const pkt_slice = buildChunkPacket(&pkt, total, 1, data[0..payload_len]);
         mock.scriptRecv(pkt_slice);
@@ -328,7 +326,7 @@ test "WriteX: duplicate chunks are handled idempotently" {
 
     var seq: u16 = 2;
     while (seq <= total) : (seq += 1) {
-        var pkt: [chunk.max_mtu]u8 = undefined;
+        var pkt: [xfer.chunk.max_mtu]u8 = undefined;
         const offset: usize = @as(usize, seq - 1) * dcs;
         const remaining = data.len - offset;
         const payload_len: usize = @min(remaining, dcs);
@@ -349,29 +347,29 @@ test "WriteX: duplicate chunks are handled idempotently" {
 
 test "ReadX: single byte data produces exactly one chunk" {
     var mock = MockTransport{};
-    mock.scriptRecv(&chunk.start_magic);
-    mock.scriptRecv(&chunk.ack_signal);
+    mock.scriptRecv(&xfer.chunk.start_magic);
+    mock.scriptRecv(&xfer.chunk.ack_signal);
 
     var rx = ReadX(MockTransport).init(&mock, "X", .{ .mtu = 247, .send_redundancy = 1 });
     try rx.run();
 
     try std.testing.expectEqual(@as(usize, 1), mock.sent_count);
     const sent = mock.getSent(0);
-    const hdr = chunk.Header.decode(sent[0..chunk.header_size]);
+    const hdr = xfer.chunk.Header.decode(sent[0..chunk.header_size]);
     try std.testing.expectEqual(@as(u16, 1), hdr.total);
     try std.testing.expectEqual(@as(u16, 1), hdr.seq);
-    try std.testing.expectEqualSlices(u8, "X", sent[chunk.header_size..]);
+    try std.testing.expectEqualSlices(u8, "X", sent[xfer.chunk.header_size..]);
 }
 
-test "ReadX: data exactly fills one chunk (MTU boundary)" {
+test "ReadX: data exactly fills one xfer.chunk (MTU boundary)" {
     const mtu: u16 = 30;
-    const dcs = comptime chunk.dataChunkSize(30);
+    const dcs = comptime xfer.chunk.dataChunkSize(30);
     var data: [dcs]u8 = undefined;
     for (&data, 0..) |*b, i| b.* = @intCast(i % 256);
 
     var mock = MockTransport{};
-    mock.scriptRecv(&chunk.start_magic);
-    mock.scriptRecv(&chunk.ack_signal);
+    mock.scriptRecv(&xfer.chunk.start_magic);
+    mock.scriptRecv(&xfer.chunk.ack_signal);
 
     var rx = ReadX(MockTransport).init(&mock, &data, .{ .mtu = mtu, .send_redundancy = 1 });
     try rx.run();
@@ -379,15 +377,15 @@ test "ReadX: data exactly fills one chunk (MTU boundary)" {
     try std.testing.expectEqual(@as(usize, 1), mock.sent_count);
 }
 
-test "ReadX: data one byte over chunk boundary produces two chunks" {
+test "ReadX: data one byte over xfer.chunk boundary produces two chunks" {
     const mtu: u16 = 30;
-    const dcs = comptime chunk.dataChunkSize(30);
+    const dcs = comptime xfer.chunk.dataChunkSize(30);
     var data: [dcs + 1]u8 = undefined;
     for (&data, 0..) |*b, i| b.* = @intCast(i % 256);
 
     var mock = MockTransport{};
-    mock.scriptRecv(&chunk.start_magic);
-    mock.scriptRecv(&chunk.ack_signal);
+    mock.scriptRecv(&xfer.chunk.start_magic);
+    mock.scriptRecv(&xfer.chunk.ack_signal);
 
     var rx = ReadX(MockTransport).init(&mock, &data, .{ .mtu = mtu, .send_redundancy = 1 });
     try rx.run();
@@ -395,12 +393,12 @@ test "ReadX: data one byte over chunk boundary produces two chunks" {
     try std.testing.expectEqual(@as(usize, 2), mock.sent_count);
 
     const last = mock.getSent(1);
-    try std.testing.expectEqual(@as(usize, chunk.header_size + 1), last.len);
+    try std.testing.expectEqual(@as(usize, xfer.chunk.header_size + 1), last.len);
 }
 
 test "ReadX: ACK timeout after sending chunks" {
     var mock = MockTransport{};
-    mock.scriptRecv(&chunk.start_magic);
+    mock.scriptRecv(&xfer.chunk.start_magic);
     mock.scriptTimeout();
 
     const data = "test data";
@@ -412,7 +410,7 @@ test "ReadX: ACK timeout after sending chunks" {
 
 test "ReadX: empty loss list from client is rejected" {
     var mock = MockTransport{};
-    mock.scriptRecv(&chunk.start_magic);
+    mock.scriptRecv(&xfer.chunk.start_magic);
     mock.scriptRecv(&[_]u8{});
 
     const data = "test data for invalid response";
@@ -422,37 +420,37 @@ test "ReadX: empty loss list from client is rejected" {
 
 test "ReadX: multiple retransmission rounds" {
     var mock = MockTransport{};
-    mock.scriptRecv(&chunk.start_magic);
+    mock.scriptRecv(&xfer.chunk.start_magic);
 
     var loss1: [2]u8 = undefined;
-    _ = chunk.encodeLossList(&.{2}, &loss1);
+    _ = xfer.chunk.encodeLossList(&.{2}, &loss1);
     mock.scriptRecv(&loss1);
 
     var loss2: [2]u8 = undefined;
-    _ = chunk.encodeLossList(&.{3}, &loss2);
+    _ = xfer.chunk.encodeLossList(&.{3}, &loss2);
     mock.scriptRecv(&loss2);
 
-    mock.scriptRecv(&chunk.ack_signal);
+    mock.scriptRecv(&xfer.chunk.ack_signal);
 
     const data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz01234567";
     const mtu: u16 = 30;
     var rx = ReadX(MockTransport).init(&mock, data, .{ .mtu = mtu, .send_redundancy = 1 });
     try rx.run();
 
-    const total = chunk.chunksNeeded(data.len, mtu);
+    const total = xfer.chunk.chunksNeeded(data.len, mtu);
     try std.testing.expectEqual(total + 2, mock.sent_count);
 }
 
 test "ReadX: minimum MTU (7) still works" {
     var mock = MockTransport{};
-    mock.scriptRecv(&chunk.start_magic);
-    mock.scriptRecv(&chunk.ack_signal);
+    mock.scriptRecv(&xfer.chunk.start_magic);
+    mock.scriptRecv(&xfer.chunk.ack_signal);
 
     const data = "ABCDE";
     var rx = ReadX(MockTransport).init(&mock, data, .{ .mtu = 7, .send_redundancy = 1 });
     try rx.run();
 
-    try std.testing.expectEqual(chunk.chunksNeeded(data.len, 7), mock.sent_count);
+    try std.testing.expectEqual(xfer.chunk.chunksNeeded(data.len, 7), mock.sent_count);
 }
 
 // ============================================================================
@@ -463,7 +461,7 @@ test "WriteX: single byte transfer" {
     const mtu: u16 = 247;
     var mock = MockTransport{};
 
-    var pkt: [chunk.max_mtu]u8 = undefined;
+    var pkt: [xfer.chunk.max_mtu]u8 = undefined;
     const pkt_slice = buildChunkPacket(&pkt, 1, 1, "Z");
     mock.scriptRecv(pkt_slice);
 
@@ -483,11 +481,11 @@ test "WriteX: packet too short (below header size)" {
     try std.testing.expectError(error.InvalidPacket, wx.run());
 }
 
-test "WriteX: chunk exceeds MTU" {
+test "WriteX: xfer.chunk exceeds MTU" {
     const mtu: u16 = 10;
 
     var mock = MockTransport{};
-    var pkt_buf: [chunk.max_mtu]u8 = undefined;
+    var pkt_buf: [xfer.chunk.max_mtu]u8 = undefined;
     var payload: [32]u8 = undefined;
     @memset(&payload, 0xAB);
     const pkt_slice = buildChunkPacket(&pkt_buf, 1, 1, &payload);
@@ -502,7 +500,7 @@ test "WriteX: recv buffer too small" {
     const mtu: u16 = 50;
 
     var mock = MockTransport{};
-    var pkt: [chunk.max_mtu]u8 = undefined;
+    var pkt: [xfer.chunk.max_mtu]u8 = undefined;
     var payload: [20]u8 = undefined;
     @memset(&payload, 0xCC);
     const pkt_slice = buildChunkPacket(&pkt, 100, 1, &payload);
@@ -520,13 +518,13 @@ test "WriteX: total mismatch between chunks" {
 
     var payload1: [10]u8 = undefined;
     @memset(&payload1, 0xAA);
-    var pkt1: [chunk.max_mtu]u8 = undefined;
+    var pkt1: [xfer.chunk.max_mtu]u8 = undefined;
     const slice1 = buildChunkPacket(&pkt1, 5, 1, &payload1);
     mock.scriptRecv(slice1);
 
     var payload2: [10]u8 = undefined;
     @memset(&payload2, 0xBB);
-    var pkt2: [chunk.max_mtu]u8 = undefined;
+    var pkt2: [xfer.chunk.max_mtu]u8 = undefined;
     const slice2 = buildChunkPacket(&pkt2, 10, 2, &payload2);
     mock.scriptRecv(slice2);
 
@@ -537,7 +535,7 @@ test "WriteX: total mismatch between chunks" {
 
 test "WriteX: invalid header (seq=0)" {
     var mock = MockTransport{};
-    var pkt: [chunk.max_mtu]u8 = undefined;
+    var pkt: [xfer.chunk.max_mtu]u8 = undefined;
     const pkt_slice = buildChunkPacket(&pkt, 5, 0, "data");
     mock.scriptRecv(pkt_slice);
 
@@ -548,7 +546,7 @@ test "WriteX: invalid header (seq=0)" {
 
 test "WriteX: invalid header (seq > total)" {
     var mock = MockTransport{};
-    var pkt: [chunk.max_mtu]u8 = undefined;
+    var pkt: [xfer.chunk.max_mtu]u8 = undefined;
     const pkt_slice = buildChunkPacket(&pkt, 3, 4, "data");
     mock.scriptRecv(pkt_slice);
 
@@ -557,13 +555,13 @@ test "WriteX: invalid header (seq > total)" {
     try std.testing.expectError(error.InvalidHeader, wx.run());
 }
 
-test "WriteX: timeout before any chunk then retry succeeds" {
+test "WriteX: timeout before any xfer.chunk then retry succeeds" {
     const mtu: u16 = 50;
     var mock = MockTransport{};
 
     mock.scriptTimeout();
 
-    var pkt: [chunk.max_mtu]u8 = undefined;
+    var pkt: [xfer.chunk.max_mtu]u8 = undefined;
     const pkt_slice = buildChunkPacket(&pkt, 1, 1, "hello");
     mock.scriptRecv(pkt_slice);
 
@@ -574,16 +572,16 @@ test "WriteX: timeout before any chunk then retry succeeds" {
     try std.testing.expectEqualSlices(u8, "hello", result.data);
 }
 
-test "WriteX: data exactly fills chunk boundary" {
+test "WriteX: data exactly fills xfer.chunk boundary" {
     const mtu: u16 = 30;
-    const dcs = comptime chunk.dataChunkSize(30);
+    const dcs = comptime xfer.chunk.dataChunkSize(30);
     var data: [dcs * 2]u8 = undefined;
     for (&data, 0..) |*b, i| b.* = @intCast(i % 256);
 
     var mock = MockTransport{};
     var i: u16 = 0;
     while (i < 2) : (i += 1) {
-        var pkt: [chunk.max_mtu]u8 = undefined;
+        var pkt: [xfer.chunk.max_mtu]u8 = undefined;
         const offset: usize = @as(usize, i) * dcs;
         const pkt_slice = buildChunkPacket(&pkt, 2, i + 1, data[offset .. offset + dcs]);
         mock.scriptRecv(pkt_slice);
@@ -615,8 +613,8 @@ test "end-to-end: ReadX chunks → WriteX reassembly" {
     const data = "The quick brown fox jumps over the lazy dog. 0123456789!";
 
     var read_mock = MockTransport{};
-    read_mock.scriptRecv(&chunk.start_magic);
-    read_mock.scriptRecv(&chunk.ack_signal);
+    read_mock.scriptRecv(&xfer.chunk.start_magic);
+    read_mock.scriptRecv(&xfer.chunk.ack_signal);
 
     var rx = ReadX(MockTransport).init(&read_mock, data, .{
         .mtu = mtu,
@@ -646,8 +644,8 @@ test "end-to-end: large data with multiple MTU sizes" {
     const mtus = [_]u16{ 23, 30, 50, 100, 247 };
     for (mtus) |mtu| {
         var read_mock = MockTransport{};
-        read_mock.scriptRecv(&chunk.start_magic);
-        read_mock.scriptRecv(&chunk.ack_signal);
+        read_mock.scriptRecv(&xfer.chunk.start_magic);
+        read_mock.scriptRecv(&xfer.chunk.ack_signal);
 
         var rx = ReadX(MockTransport).init(&read_mock, &data, .{
             .mtu = mtu,
@@ -672,8 +670,8 @@ test "end-to-end: large data with multiple MTU sizes" {
 test "end-to-end: single byte" {
     const mtu: u16 = 247;
     var read_mock = MockTransport{};
-    read_mock.scriptRecv(&chunk.start_magic);
-    read_mock.scriptRecv(&chunk.ack_signal);
+    read_mock.scriptRecv(&xfer.chunk.start_magic);
+    read_mock.scriptRecv(&xfer.chunk.ack_signal);
 
     var rx = ReadX(MockTransport).init(&read_mock, "A", .{ .mtu = mtu, .send_redundancy = 1 });
     try rx.run();
@@ -692,13 +690,13 @@ test "end-to-end: single byte" {
 
 test "end-to-end: exact MTU boundary data" {
     const mtu: u16 = 30;
-    const dcs = comptime chunk.dataChunkSize(30);
+    const dcs = comptime xfer.chunk.dataChunkSize(30);
     var data: [dcs * 3]u8 = undefined;
     for (&data, 0..) |*b, i| b.* = @intCast(i % 256);
 
     var read_mock = MockTransport{};
-    read_mock.scriptRecv(&chunk.start_magic);
-    read_mock.scriptRecv(&chunk.ack_signal);
+    read_mock.scriptRecv(&xfer.chunk.start_magic);
+    read_mock.scriptRecv(&xfer.chunk.ack_signal);
 
     var rx = ReadX(MockTransport).init(&read_mock, &data, .{ .mtu = mtu, .send_redundancy = 1 });
     try rx.run();
@@ -722,8 +720,8 @@ test "end-to-end: minimum MTU (7)" {
     const data = "Hello!";
 
     var read_mock = MockTransport{};
-    read_mock.scriptRecv(&chunk.start_magic);
-    read_mock.scriptRecv(&chunk.ack_signal);
+    read_mock.scriptRecv(&xfer.chunk.start_magic);
+    read_mock.scriptRecv(&xfer.chunk.ack_signal);
 
     var rx = ReadX(MockTransport).init(&read_mock, data, .{ .mtu = mtu, .send_redundancy = 1 });
     try rx.run();
@@ -745,13 +743,13 @@ test "end-to-end: redundancy=2 still reassembles correctly" {
     const data = "Redundant transfer test data with some padding!";
 
     var read_mock = MockTransport{};
-    read_mock.scriptRecv(&chunk.start_magic);
-    read_mock.scriptRecv(&chunk.ack_signal);
+    read_mock.scriptRecv(&xfer.chunk.start_magic);
+    read_mock.scriptRecv(&xfer.chunk.ack_signal);
 
     var rx = ReadX(MockTransport).init(&read_mock, data, .{ .mtu = mtu, .send_redundancy = 2 });
     try rx.run();
 
-    const total = chunk.chunksNeeded(data.len, mtu);
+    const total = xfer.chunk.chunksNeeded(data.len, mtu);
     try std.testing.expectEqual(total * 2, read_mock.sent_count);
 
     var write_mock = MockTransport{};

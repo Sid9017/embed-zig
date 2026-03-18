@@ -1,18 +1,8 @@
 const std = @import("std");
 const testing = std.testing;
 const embed = @import("embed");
-const module = embed.hal.board;
-const Board = module.Board;
-const from = module.from;
-const hal_marker = module.hal_marker;
+const board_mod = embed.hal.board;
 const rtc_mod = embed.hal.rtc;
-const getMarkedKind = module.getMarkedKind;
-const findPeripheralType = module.findPeripheralType;
-const findRtcReaderType = module.findRtcReaderType;
-const driverTypeOf = module.driverTypeOf;
-const validatePeripheralType = module.validatePeripheralType;
-const driverInit = module.driverInit;
-const driverDeinit = module.driverDeinit;
 
 test "Board init/deinit with rtc and led" {
     const rtc_driver = struct {
@@ -63,7 +53,7 @@ test "Board init/deinit with rtc and led" {
         pub const led = Led;
     };
 
-    const TestBoard = Board(board_spec);
+    const TestBoard = board_mod.Board(board_spec);
 
     var board: TestBoard = undefined;
     try board.init();

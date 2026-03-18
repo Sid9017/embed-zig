@@ -73,7 +73,7 @@ fn createTcpPair() !TcpPair {
 //   cd test/unit && zig build test
 // ---------------------------------------------------------------------------
 test "stress: RecordLayer over TCP loopback" {
-    const Crypto = runtime_std.Crypto;
+    const Runtime = runtime_std.Std;
 
     var pair = try createTcpPair();
     defer {
@@ -85,21 +85,21 @@ test "stress: RecordLayer over TCP loopback" {
     const key: [16]u8 = [_]u8{0xDE} ** 16;
     const iv: [12]u8 = [_]u8{0xAD} ** 12;
 
-    var client_rl = record.RecordLayer(TcpConn, Crypto).init(&pair.client);
+    var client_rl = record.RecordLayer(TcpConn, Runtime).init(&pair.client);
     client_rl.version = .tls_1_3;
-    const w_cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const w_cipher = try record.CipherState(Runtime).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
     client_rl.setWriteCipher(w_cipher);
 
-    var server_rl = record.RecordLayer(TcpConn, Crypto).init(&pair.server);
+    var server_rl = record.RecordLayer(TcpConn, Runtime).init(&pair.server);
     server_rl.version = .tls_1_3;
-    const r_cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const r_cipher = try record.CipherState(Runtime).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
     server_rl.setReadCipher(r_cipher);
 
     const msg_count = 100;
     const payload = "stress test payload over real TCP loopback";
 
     const writer_thread = try std.Thread.spawn(.{}, struct {
-        fn run(rl: *record.RecordLayer(TcpConn, Crypto)) void {
+        fn run(rl: *record.RecordLayer(TcpConn, Runtime)) void {
             var buf: [512]u8 = undefined;
             for (0..msg_count) |_| {
                 _ = rl.writeRecord(.application_data, payload, &buf) catch return;
@@ -123,7 +123,7 @@ test "stress: RecordLayer over TCP loopback" {
 }
 
 test "stress: concurrent TCP record layer writers" {
-    const Crypto = runtime_std.Crypto;
+    const Runtime = runtime_std.Std;
 
     var pair = try createTcpPair();
     defer {
@@ -135,21 +135,21 @@ test "stress: concurrent TCP record layer writers" {
     const key: [16]u8 = [_]u8{0xCA} ** 16;
     const iv: [12]u8 = [_]u8{0xFE} ** 12;
 
-    var client_rl = record.RecordLayer(TcpConn, Crypto).init(&pair.client);
+    var client_rl = record.RecordLayer(TcpConn, Runtime).init(&pair.client);
     client_rl.version = .tls_1_3;
-    const w_cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const w_cipher = try record.CipherState(Runtime).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
     client_rl.setWriteCipher(w_cipher);
 
-    var server_rl = record.RecordLayer(TcpConn, Crypto).init(&pair.server);
+    var server_rl = record.RecordLayer(TcpConn, Runtime).init(&pair.server);
     server_rl.version = .tls_1_3;
-    const r_cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const r_cipher = try record.CipherState(Runtime).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
     server_rl.setReadCipher(r_cipher);
 
     const msgs_per_thread = 25;
     var mu = std.Thread.Mutex{};
 
     const writer = struct {
-        fn run(rl: *record.RecordLayer(TcpConn, Crypto), m: *std.Thread.Mutex, payload: []const u8) void {
+        fn run(rl: *record.RecordLayer(TcpConn, Runtime), m: *std.Thread.Mutex, payload: []const u8) void {
             var buf: [512]u8 = undefined;
             for (0..msgs_per_thread) |_| {
                 m.lock();
@@ -181,7 +181,7 @@ test "stress: concurrent TCP record layer writers" {
 }
 
 test "stress: multiple TCP pairs simultaneous" {
-    const Crypto = runtime_std.Crypto;
+    const Runtime = runtime_std.Std;
 
     const pair_count = 4;
     const msgs_per_pair = 20;
@@ -206,25 +206,25 @@ test "stress: multiple TCP pairs simultaneous" {
     var total_received = std.atomic.Value(usize).init(0);
 
     var threads: [pair_count * 2]?std.Thread = [_]?std.Thread{null} ** (pair_count * 2);
-    var client_rls: [pair_count]record.RecordLayer(TcpConn, Crypto) = undefined;
-    var server_rls: [pair_count]record.RecordLayer(TcpConn, Crypto) = undefined;
+    var client_rls: [pair_count]record.RecordLayer(TcpConn, Runtime) = undefined;
+    var server_rls: [pair_count]record.RecordLayer(TcpConn, Runtime) = undefined;
 
     for (0..valid_pairs) |i| {
         const key: [16]u8 = [_]u8{@intCast(0x10 + i)} ** 16;
         const iv: [12]u8 = [_]u8{@intCast(0x20 + i)} ** 12;
 
-        client_rls[i] = record.RecordLayer(TcpConn, Crypto).init(&pairs[i].client);
+        client_rls[i] = record.RecordLayer(TcpConn, Runtime).init(&pairs[i].client);
         client_rls[i].version = .tls_1_3;
-        const wc = record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv) catch continue;
+        const wc = record.CipherState(Runtime).init(.TLS_AES_128_GCM_SHA256, &key, &iv) catch continue;
         client_rls[i].setWriteCipher(wc);
 
-        server_rls[i] = record.RecordLayer(TcpConn, Crypto).init(&pairs[i].server);
+        server_rls[i] = record.RecordLayer(TcpConn, Runtime).init(&pairs[i].server);
         server_rls[i].version = .tls_1_3;
-        const rc = record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv) catch continue;
+        const rc = record.CipherState(Runtime).init(.TLS_AES_128_GCM_SHA256, &key, &iv) catch continue;
         server_rls[i].setReadCipher(rc);
 
         threads[i * 2] = std.Thread.spawn(.{}, struct {
-            fn run(rl: *record.RecordLayer(TcpConn, Crypto)) void {
+            fn run(rl: *record.RecordLayer(TcpConn, Runtime)) void {
                 var buf: [512]u8 = undefined;
                 for (0..msgs_per_pair) |_| {
                     _ = rl.writeRecord(.application_data, "multi-pair-test", &buf) catch return;
@@ -233,7 +233,7 @@ test "stress: multiple TCP pairs simultaneous" {
         }.run, .{&client_rls[i]}) catch null;
 
         threads[i * 2 + 1] = std.Thread.spawn(.{}, struct {
-            fn run(rl: *record.RecordLayer(TcpConn, Crypto), counter: *std.atomic.Value(usize)) void {
+            fn run(rl: *record.RecordLayer(TcpConn, Runtime), counter: *std.atomic.Value(usize)) void {
                 var read_buf: [512]u8 = undefined;
                 var pt_out: [512]u8 = undefined;
                 for (0..msgs_per_pair) |_| {
@@ -254,7 +254,7 @@ test "stress: multiple TCP pairs simultaneous" {
 }
 
 test "stress: TCP loopback TLS 1.2 encrypted records" {
-    const Crypto = runtime_std.Crypto;
+    const Runtime = runtime_std.Std;
 
     var pair = try createTcpPair();
     defer {
@@ -266,20 +266,20 @@ test "stress: TCP loopback TLS 1.2 encrypted records" {
     const key: [16]u8 = [_]u8{0xBE} ** 16;
     const iv: [12]u8 = [_]u8{0xEF} ** 12;
 
-    var client_rl = record.RecordLayer(TcpConn, Crypto).init(&pair.client);
+    var client_rl = record.RecordLayer(TcpConn, Runtime).init(&pair.client);
     client_rl.version = .tls_1_2;
-    const w_cipher = try record.CipherState(Crypto).init(.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, &key, &iv);
+    const w_cipher = try record.CipherState(Runtime).init(.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, &key, &iv);
     client_rl.setWriteCipher(w_cipher);
 
-    var server_rl = record.RecordLayer(TcpConn, Crypto).init(&pair.server);
+    var server_rl = record.RecordLayer(TcpConn, Runtime).init(&pair.server);
     server_rl.version = .tls_1_2;
-    const r_cipher = try record.CipherState(Crypto).init(.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, &key, &iv);
+    const r_cipher = try record.CipherState(Runtime).init(.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, &key, &iv);
     server_rl.setReadCipher(r_cipher);
 
     const msg_count = 50;
 
     const writer_thread = try std.Thread.spawn(.{}, struct {
-        fn run(rl: *record.RecordLayer(TcpConn, Crypto)) void {
+        fn run(rl: *record.RecordLayer(TcpConn, Runtime)) void {
             var buf: [512]u8 = undefined;
             for (0..msg_count) |_| {
                 _ = rl.writeRecord(.application_data, "tls12 stress", &buf) catch return;
@@ -303,7 +303,7 @@ test "stress: TCP loopback TLS 1.2 encrypted records" {
 }
 
 test "stress: TCP loopback ChaCha20-Poly1305" {
-    const Crypto = runtime_std.Crypto;
+    const Runtime = runtime_std.Std;
 
     var pair = try createTcpPair();
     defer {
@@ -315,20 +315,20 @@ test "stress: TCP loopback ChaCha20-Poly1305" {
     const key: [32]u8 = [_]u8{0xCC} ** 32;
     const iv: [12]u8 = [_]u8{0xDD} ** 12;
 
-    var client_rl = record.RecordLayer(TcpConn, Crypto).init(&pair.client);
+    var client_rl = record.RecordLayer(TcpConn, Runtime).init(&pair.client);
     client_rl.version = .tls_1_3;
-    const w_cipher = try record.CipherState(Crypto).init(.TLS_CHACHA20_POLY1305_SHA256, &key, &iv);
+    const w_cipher = try record.CipherState(Runtime).init(.TLS_CHACHA20_POLY1305_SHA256, &key, &iv);
     client_rl.setWriteCipher(w_cipher);
 
-    var server_rl = record.RecordLayer(TcpConn, Crypto).init(&pair.server);
+    var server_rl = record.RecordLayer(TcpConn, Runtime).init(&pair.server);
     server_rl.version = .tls_1_3;
-    const r_cipher = try record.CipherState(Crypto).init(.TLS_CHACHA20_POLY1305_SHA256, &key, &iv);
+    const r_cipher = try record.CipherState(Runtime).init(.TLS_CHACHA20_POLY1305_SHA256, &key, &iv);
     server_rl.setReadCipher(r_cipher);
 
     const msg_count = 50;
 
     const writer_thread = try std.Thread.spawn(.{}, struct {
-        fn run(rl: *record.RecordLayer(TcpConn, Crypto)) void {
+        fn run(rl: *record.RecordLayer(TcpConn, Runtime)) void {
             var buf: [512]u8 = undefined;
             for (0..msg_count) |_| {
                 _ = rl.writeRecord(.application_data, "chacha stress", &buf) catch return;
@@ -352,7 +352,7 @@ test "stress: TCP loopback ChaCha20-Poly1305" {
 }
 
 test "stress: large payload over TCP" {
-    const Crypto = runtime_std.Crypto;
+    const Runtime = runtime_std.Std;
 
     var pair = try createTcpPair();
     defer {
@@ -364,14 +364,14 @@ test "stress: large payload over TCP" {
     const key: [16]u8 = [_]u8{0xEE} ** 16;
     const iv: [12]u8 = [_]u8{0xFF} ** 12;
 
-    var client_rl = record.RecordLayer(TcpConn, Crypto).init(&pair.client);
+    var client_rl = record.RecordLayer(TcpConn, Runtime).init(&pair.client);
     client_rl.version = .tls_1_3;
-    const w_cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const w_cipher = try record.CipherState(Runtime).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
     client_rl.setWriteCipher(w_cipher);
 
-    var server_rl = record.RecordLayer(TcpConn, Crypto).init(&pair.server);
+    var server_rl = record.RecordLayer(TcpConn, Runtime).init(&pair.server);
     server_rl.version = .tls_1_3;
-    const r_cipher = try record.CipherState(Crypto).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
+    const r_cipher = try record.CipherState(Runtime).init(.TLS_AES_128_GCM_SHA256, &key, &iv);
     server_rl.setReadCipher(r_cipher);
 
     var large_payload: [8192]u8 = undefined;
@@ -379,7 +379,7 @@ test "stress: large payload over TCP" {
 
     var write_buf: [common.MAX_CIPHERTEXT_LEN + 256]u8 = undefined;
     const writer_thread = try std.Thread.spawn(.{}, struct {
-        fn run(rl: *record.RecordLayer(TcpConn, Crypto), payload: []const u8, buf: []u8) void {
+        fn run(rl: *record.RecordLayer(TcpConn, Runtime), payload: []const u8, buf: []u8) void {
             for (0..10) |_| {
                 _ = rl.writeRecord(.application_data, payload, buf) catch return;
             }

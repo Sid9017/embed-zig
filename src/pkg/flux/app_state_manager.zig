@@ -20,7 +20,7 @@
 //!   pub fn render(*Framebuffer, *const State, *const Resources) void
 //!   pub const Resources: type       — immutable resources struct
 
-pub const Store = @import("store.zig").Store;
+const Store = @import("store.zig").Store;
 
 pub fn AppStateManager(comptime App: type) type {
     comptime {

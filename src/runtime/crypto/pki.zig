@@ -1,31 +1,37 @@
 //! Runtime crypto PKI/signature contracts.
 
-fn validateSignatureScheme(comptime Scheme: type, comptime scheme_name: []const u8) void {
-    if (!@hasDecl(Scheme, "Signature") or @TypeOf(Scheme.Signature) != type) {
-        @compileError(scheme_name ++ " missing Signature type");
-    }
-    if (!@hasDecl(Scheme, "PublicKey") or @TypeOf(Scheme.PublicKey) != type) {
-        @compileError(scheme_name ++ " missing PublicKey type");
+const Seal = struct {};
+
+pub fn Make(comptime Impl: type) type {
+    comptime {
+        _ = @as(*const fn ([]const u8, []const u8, []const u8) bool, &Impl.verifyEd25519);
+        _ = @as(*const fn ([]const u8, []const u8, []const u8) bool, &Impl.verifyEcdsaP256);
+        _ = @as(*const fn ([]const u8, []const u8, []const u8) bool, &Impl.verifyEcdsaP384);
     }
 
-    _ = @as(*const fn (Scheme.Signature, []const u8, Scheme.PublicKey) bool, &Scheme.verify);
+    return struct {
+        pub const seal: Seal = .{};
+        pub const BackendType = Impl;
+
+        pub fn verifyEd25519(sig: []const u8, msg: []const u8, pk: []const u8) bool {
+            return Impl.verifyEd25519(sig, msg, pk);
+        }
+
+        pub fn verifyEcdsaP256(sig: []const u8, msg: []const u8, pk: []const u8) bool {
+            return Impl.verifyEcdsaP256(sig, msg, pk);
+        }
+
+        pub fn verifyEcdsaP384(sig: []const u8, msg: []const u8, pk: []const u8) bool {
+            return Impl.verifyEcdsaP384(sig, msg, pk);
+        }
+    };
 }
 
-/// PKI contract validator.
-///
-/// Required declaration set:
-/// - `Ed25519`
-/// - `EcdsaP256Sha256`
-/// - `EcdsaP384Sha384`
-pub fn from(comptime Impl: type) type {
+pub fn is(comptime T: type) type {
     comptime {
-        if (!@hasDecl(Impl, "Ed25519")) @compileError("PKI missing Ed25519");
-        if (!@hasDecl(Impl, "EcdsaP256Sha256")) @compileError("PKI missing EcdsaP256Sha256");
-        if (!@hasDecl(Impl, "EcdsaP384Sha384")) @compileError("PKI missing EcdsaP384Sha384");
-
-        validateSignatureScheme(Impl.Ed25519, "Ed25519");
-        validateSignatureScheme(Impl.EcdsaP256Sha256, "EcdsaP256Sha256");
-        validateSignatureScheme(Impl.EcdsaP384Sha384, "EcdsaP384Sha384");
+        if (!@hasDecl(T, "seal") or @TypeOf(T.seal) != Seal) {
+            @compileError("Impl must have pub const seal: pki.Seal — use pki.Make(Backend) to construct");
+        }
     }
-    return Impl;
+    return T;
 }

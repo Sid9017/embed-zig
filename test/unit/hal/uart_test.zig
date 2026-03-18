@@ -1,12 +1,8 @@
-const module = @import("embed").hal.uart;
-const Error = module.Error;
-const PollFlags = module.PollFlags;
-const is = module.is;
-const from = module.from;
-const hal_marker = module.hal_marker;
-
 const std = @import("std");
 const testing = std.testing;
+const embed = @import("embed");
+
+const uart_mod = embed.hal.uart;
 
 test "uart wrapper" {
     const Mock = struct {
@@ -15,25 +11,25 @@ test "uart wrapper" {
         rx: [16]u8 = [_]u8{ 'O', 'K', 0 } ++ [_]u8{0} ** 13,
         rx_len: usize = 2,
 
-        pub fn read(self: *@This(), buf: []u8) Error!usize {
+        pub fn read(self: *@This(), buf: []u8) uart_mod.Error!usize {
             if (self.rx_len == 0) return error.WouldBlock;
             const n = @min(buf.len, self.rx_len);
             @memcpy(buf[0..n], self.rx[0..n]);
             self.rx_len = 0;
             return n;
         }
-        pub fn write(self: *@This(), buf: []const u8) Error!usize {
+        pub fn write(self: *@This(), buf: []const u8) uart_mod.Error!usize {
             const n = @min(buf.len, self.tx.len);
             @memcpy(self.tx[0..n], buf[0..n]);
             self.tx_len = n;
             return n;
         }
-        pub fn poll(self: *@This(), flags: PollFlags, _: i32) PollFlags {
+        pub fn poll(self: *@This(), flags: uart_mod.PollFlags, _: i32) uart_mod.PollFlags {
             return .{ .readable = flags.readable and self.rx_len > 0, .writable = flags.writable };
         }
     };
 
-    const Uart = from(struct {
+    const Uart = uart_mod.from(struct {
         pub const Driver = Mock;
         pub const meta = .{ .id = "uart.test" };
     });

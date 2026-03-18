@@ -1,10 +1,8 @@
 const std = @import("std");
-const hal = struct {
-    pub const led_strip = @import("../../../hal/led_strip.zig");
-};
+const embed = @import("../../../mod.zig");
 const frame_mod = @import("frame.zig");
 
-pub const Color = hal.led_strip.Color;
+const Color = embed.hal.led_strip.Color;
 
 pub fn stepChannel(cur: u8, tgt: u8, amount: u8) u8 {
     if (cur < tgt) {

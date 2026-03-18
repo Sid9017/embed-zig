@@ -11,8 +11,8 @@ const Seal = struct {};
 
 /// Construct a sealed Condition wrapper from a backend Impl and raw Mutex type.
 /// Impl must provide: init, deinit, wait, signal, broadcast, timedWait.
-pub fn Condition(comptime Impl: type, comptime MutexImpl: type) type {
-    const SealedMutex = mutex_mod.Mutex(MutexImpl);
+pub fn Make(comptime Impl: type, comptime MutexImpl: type) type {
+    const SealedMutex = mutex_mod.Make(MutexImpl);
 
     comptime {
         if (@hasDecl(Impl, "MutexType") and Impl.MutexType != MutexImpl) {
@@ -64,9 +64,8 @@ pub fn Condition(comptime Impl: type, comptime MutexImpl: type) type {
 pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: sync.ConditionSeal — use sync.Condition(Backend) to construct");
+            @compileError("Impl must have pub const seal: condition.Seal — use condition.Make(Backend) to construct");
         }
     }
     return Impl;
 }
- 

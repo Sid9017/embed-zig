@@ -4,7 +4,7 @@ const Seal = struct {};
 
 /// Construct a sealed Mutex wrapper from a backend Impl type.
 /// Impl must provide: init, deinit, lock, unlock.
-pub fn Mutex(comptime Impl: type) type {
+pub fn Make(comptime Impl: type) type {
     comptime {
         _ = @as(*const fn () Impl, &Impl.init);
         _ = @as(*const fn (*Impl) void, &Impl.deinit);
@@ -40,7 +40,7 @@ pub fn Mutex(comptime Impl: type) type {
 pub fn is(comptime Impl: type) type {
     comptime {
         if (!@hasDecl(Impl, "seal") or @TypeOf(Impl.seal) != Seal) {
-            @compileError("Impl must have pub const seal: sync.MutexSeal — use sync.Mutex(Backend) to construct");
+            @compileError("Impl must have pub const seal: mutex.Seal — use mutex.Make(Backend) to construct");
         }
     }
     return Impl;

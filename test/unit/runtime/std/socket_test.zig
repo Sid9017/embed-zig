@@ -1,11 +1,12 @@
 const std = @import("std");
 const embed = @import("embed");
-const socket = embed.runtime.std.std_socket;
-const thread = embed.runtime.std.std_thread;
+const Std = embed.runtime.std;
+const Socket = Std.Socket;
+const Thread = Std.Thread;
 
 fn tcpServerEcho(ctx: ?*anyopaque) void {
     const Ctx = struct {
-        server: *socket.Socket,
+        server: *Socket,
         ok: *std.atomic.Value(u32),
     };
 
@@ -23,7 +24,7 @@ fn tcpServerEcho(ctx: ?*anyopaque) void {
 }
 
 test "std socket tcp loopback echo" {
-    var server = try socket.Socket.tcp();
+    var server = try Socket.tcp();
     defer server.close();
 
     try server.bind(.{ 127, 0, 0, 1 }, 0);
@@ -32,14 +33,14 @@ test "std socket tcp loopback echo" {
 
     var ok = std.atomic.Value(u32).init(0);
     const Ctx = struct {
-        server: *socket.Socket,
+        server: *Socket,
         ok: *std.atomic.Value(u32),
     };
     var ctx = Ctx{ .server = &server, .ok = &ok };
 
-    var th = try thread.Thread.spawn(.{}, tcpServerEcho, @ptrCast(&ctx));
+    var th = try Thread.spawn(.{}, tcpServerEcho, @ptrCast(&ctx));
 
-    var client = try socket.Socket.tcp();
+    var client = try Socket.tcp();
     defer client.close();
     client.setRecvTimeout(1000);
     client.setSendTimeout(1000);
@@ -56,7 +57,7 @@ test "std socket tcp loopback echo" {
 }
 
 test "std socket udp recvFrom/sendTo" {
-    var server = try socket.Socket.udp();
+    var server = try Socket.udp();
     defer server.close();
     server.setRecvTimeout(1000);
     server.setSendTimeout(1000);
@@ -64,7 +65,7 @@ test "std socket udp recvFrom/sendTo" {
     try server.bind(.{ 127, 0, 0, 1 }, 0);
     const server_port = try server.getBoundPort();
 
-    var client = try socket.Socket.udp();
+    var client = try Socket.udp();
     defer client.close();
     client.setRecvTimeout(1000);
     client.setSendTimeout(1000);

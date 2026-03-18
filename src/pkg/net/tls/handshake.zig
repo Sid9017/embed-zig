@@ -1,18 +1,17 @@
 const std = @import("std");
-pub const runtime = struct {
-    pub const std = @import("../../../runtime/std.zig");
-};
-pub const common = @import("common.zig");
-pub const extensions = @import("extensions.zig");
-pub const record = @import("record.zig");
-pub const kdf = @import("kdf.zig");
+const embed = @import("../../../mod.zig");
+const runtime_suite = embed.runtime;
+const common = @import("common.zig");
+const extensions = @import("extensions.zig");
+const record = @import("record.zig");
+const kdf = @import("kdf.zig");
 
-pub const HandshakeType = common.HandshakeType;
-pub const ProtocolVersion = common.ProtocolVersion;
-pub const CipherSuite = common.CipherSuite;
-pub const NamedGroup = common.NamedGroup;
-pub const SignatureScheme = common.SignatureScheme;
-pub const ContentType = common.ContentType;
+const HandshakeType = common.HandshakeType;
+const ProtocolVersion = common.ProtocolVersion;
+const CipherSuite = common.CipherSuite;
+const NamedGroup = common.NamedGroup;
+const SignatureScheme = common.SignatureScheme;
+const ContentType = common.ContentType;
 
 pub const HandshakeHeader = struct {
     msg_type: HandshakeType,
@@ -35,17 +34,20 @@ pub const HandshakeHeader = struct {
     }
 };
 
-pub fn KeyExchange(comptime Crypto: type) type {
+pub fn KeyExchange(comptime Runtime: type) type {
+    comptime {
+        _ = runtime_suite.is(Runtime);
+    }
     return union(enum) {
-        x25519: X25519KeyExchange(Crypto),
-        secp256r1: P256KeyExchange(Crypto),
+        x25519: X25519KeyExchange(Runtime),
+        secp256r1: P256KeyExchange(Runtime),
 
         const Self = @This();
 
-        pub fn generate(group: NamedGroup, rng_fill: *const fn ([]u8) void) !Self {
+        pub fn generate(group: NamedGroup, rng: Runtime.Rng) !Self {
             return switch (group) {
-                .x25519 => .{ .x25519 = try X25519KeyExchange(Crypto).generate(rng_fill) },
-                .secp256r1 => .{ .secp256r1 = try P256KeyExchange(Crypto).generate(rng_fill) },
+                .x25519 => .{ .x25519 = try X25519KeyExchange(Runtime).generate(rng) },
+                .secp256r1 => .{ .secp256r1 = try P256KeyExchange(Runtime).generate(rng) },
                 else => error.UnsupportedGroup,
             };
         }
@@ -66,7 +68,10 @@ pub fn KeyExchange(comptime Crypto: type) type {
     };
 }
 
-pub fn X25519KeyExchange(comptime Crypto: type) type {
+pub fn X25519KeyExchange(comptime Runtime: type) type {
+    comptime {
+        _ = runtime_suite.is(Runtime);
+    }
     return struct {
         secret_key: [32]u8,
         public_key: [32]u8,
@@ -74,21 +79,21 @@ pub fn X25519KeyExchange(comptime Crypto: type) type {
 
         const Self = @This();
 
-        pub fn generate(rng_fill: *const fn ([]u8) void) !Self {
+        pub fn generate(rng: Runtime.Rng) !Self {
             var self = Self{
                 .secret_key = [_]u8{0} ** 32,
                 .public_key = [_]u8{0} ** 32,
                 .shared_secret = [_]u8{0} ** 32,
             };
-            rng_fill(&self.secret_key);
-            const kp = try Crypto.X25519.KeyPair.generateDeterministic(self.secret_key);
+            try rng.fill(&self.secret_key);
+            const kp = try Runtime.Crypto.X25519.generateDeterministic(self.secret_key);
             self.public_key = kp.public_key;
             return self;
         }
 
         pub fn computeSharedSecret(self: *Self, peer_public: []const u8) ![]const u8 {
             if (peer_public.len != 32) return error.InvalidPublicKey;
-            self.shared_secret = try Crypto.X25519.scalarmult(
+            self.shared_secret = try Runtime.Crypto.X25519.scalarmult(
                 self.secret_key,
                 peer_public[0..32].*,
             );
@@ -97,24 +102,26 @@ pub fn X25519KeyExchange(comptime Crypto: type) type {
     };
 }
 
-pub fn P256KeyExchange(comptime Crypto: type) type {
+pub fn P256KeyExchange(comptime Runtime: type) type {
+    comptime {
+        _ = runtime_suite.is(Runtime);
+    }
     return struct {
         secret_key: [32]u8,
         public_key: [65]u8,
         shared_secret: [32]u8,
 
         const Self = @This();
-        const P256 = Crypto.P256;
 
-        pub fn generate(rng_fill: *const fn ([]u8) void) !Self {
+        pub fn generate(rng: Runtime.Rng) !Self {
             var self = Self{
                 .secret_key = [_]u8{0} ** 32,
                 .public_key = [_]u8{0} ** 65,
                 .shared_secret = [_]u8{0} ** 32,
             };
-            rng_fill(&self.secret_key);
+            try rng.fill(&self.secret_key);
 
-            self.public_key = P256.computePublicKey(self.secret_key) catch {
+            self.public_key = Runtime.Crypto.P256.computePublicKey(self.secret_key) catch {
                 return error.IdentityElement;
             };
 
@@ -126,7 +133,7 @@ pub fn P256KeyExchange(comptime Crypto: type) type {
                 return error.InvalidPublicKey;
             }
 
-            self.shared_secret = P256.ecdh(self.secret_key, peer_public[0..65].*) catch {
+            self.shared_secret = Runtime.Crypto.P256.ecdh(self.secret_key, peer_public[0..65].*) catch {
                 return error.IdentityElement;
             };
 
@@ -148,14 +155,18 @@ pub const HandshakeState = enum {
     wait_server_hello_done,
 };
 
-pub fn TranscriptHash(comptime Crypto: type) type {
+pub fn TranscriptHash(comptime Runtime: type) type {
+    comptime {
+        _ = runtime_suite.is(Runtime);
+    }
+    const Sha256 = Runtime.Crypto.Hash.Sha256();
     return struct {
-        sha256: Crypto.Sha256,
+        sha256: Sha256,
 
         const Self = @This();
 
         pub fn init() Self {
-            return .{ .sha256 = Crypto.Sha256.init() };
+            return .{ .sha256 = Sha256.init() };
         }
 
         pub fn update(self: *Self, data: []const u8) void {
@@ -173,22 +184,24 @@ pub fn TranscriptHash(comptime Crypto: type) type {
     };
 }
 
-pub fn Tls12Prf(comptime Crypto: type) type {
+pub fn Tls12Prf(comptime Runtime: type) type {
+    comptime {
+        _ = runtime_suite.is(Runtime);
+    }
+    const HmacSha256 = Runtime.Crypto.Hmac.Sha256();
     return struct {
         pub fn prf(out: []u8, secret: []const u8, label: []const u8, seed: []const u8) void {
-            const Hmac = Crypto.HmacSha256;
-
             var label_seed: [128]u8 = undefined;
             @memcpy(label_seed[0..label.len], label);
             @memcpy(label_seed[label.len..][0..seed.len], seed);
             const ls = label_seed[0 .. label.len + seed.len];
 
             var a: [32]u8 = undefined;
-            Hmac.create(&a, ls, secret);
+            HmacSha256.create(&a, ls, secret);
 
             var pos: usize = 0;
             while (pos < out.len) {
-                var ctx = Hmac.init(secret);
+                var ctx = HmacSha256.init(secret);
                 ctx.update(&a);
                 ctx.update(ls);
                 const p = ctx.final();
@@ -197,20 +210,22 @@ pub fn Tls12Prf(comptime Crypto: type) type {
                 @memcpy(out[pos..][0..copy_len], p[0..copy_len]);
                 pos += copy_len;
 
-                Hmac.create(&a, &a, secret);
+                HmacSha256.create(&a, &a, secret);
             }
         }
     };
 }
 
 /// Client handshake state machine.
-/// Generic over `Conn` (transport) and `Crypto` (cryptographic primitives).
-/// `rng_fill` is passed at runtime via `init`.
-pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
-    const CaStore = if (@hasDecl(Crypto, "x509") and @hasDecl(Crypto.x509, "CaStore"))
-        Crypto.x509.CaStore
-    else
-        void;
+/// Generic over `Conn` (transport) and `Runtime` (sealed runtime suite).
+pub fn ClientHandshake(comptime Conn: type, comptime Runtime: type) type {
+    comptime {
+        _ = runtime_suite.is(Runtime);
+    }
+
+    const HkdfSha256 = Runtime.Crypto.Hkdf.Sha256();
+    const HmacSha256 = Runtime.Crypto.Hmac.Sha256();
+    const Sha256 = Runtime.Crypto.Hash.Sha256();
 
     return struct {
         state: HandshakeState,
@@ -220,7 +235,7 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
         client_random: [32]u8,
         server_random: [32]u8,
 
-        key_exchange: ?KeyExchange(Crypto),
+        key_exchange: ?KeyExchange(Runtime),
 
         handshake_secret: [48]u8,
         master_secret: [48]u8,
@@ -236,28 +251,25 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
         server_cert_der: [4096]u8,
         server_cert_der_len: u16,
 
-        transcript_hash: TranscriptHash(Crypto),
+        transcript_hash: TranscriptHash(Runtime),
 
-        records: record.RecordLayer(Conn, Crypto),
+        records: record.RecordLayer(Conn, Runtime),
 
         hostname: []const u8,
         allocator: std.mem.Allocator,
+        skip_verify: bool,
 
-        rng_fill: *const fn ([]u8) void,
-
-        ca_store: if (CaStore != void) ?CaStore else void,
+        rng: Runtime.Rng,
 
         const Self = @This();
-
-        pub const CaStoreType = CaStore;
 
         pub fn init(
             conn: *Conn,
             hostname: []const u8,
             allocator: std.mem.Allocator,
-            ca_store: if (CaStore != void) ?CaStore else void,
-            rng_fill: *const fn ([]u8) void,
-        ) Self {
+            skip_verify: bool,
+            rng: Runtime.Rng,
+        ) !Self {
             var self = Self{
                 .state = .initial,
                 .version = .tls_1_3,
@@ -276,15 +288,15 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
                 .tls12_named_group = .x25519,
                 .server_cert_der = [_]u8{0} ** 4096,
                 .server_cert_der_len = 0,
-                .transcript_hash = TranscriptHash(Crypto).init(),
-                .records = record.RecordLayer(Conn, Crypto).init(conn),
+                .transcript_hash = TranscriptHash(Runtime).init(),
+                .records = record.RecordLayer(Conn, Runtime).init(conn),
                 .hostname = hostname,
                 .allocator = allocator,
-                .rng_fill = rng_fill,
-                .ca_store = ca_store,
+                .skip_verify = skip_verify,
+                .rng = rng,
             };
 
-            rng_fill(&self.client_random);
+            try self.rng.fill(&self.client_random);
 
             return self;
         }
@@ -354,7 +366,7 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
             };
             try ext_builder.addSignatureAlgorithms(&sig_algs);
 
-            self.key_exchange = try KeyExchange(Crypto).generate(.x25519, self.rng_fill);
+            self.key_exchange = try KeyExchange(Runtime).generate(.x25519, self.rng);
             const key_share_entries = [_]extensions.KeyShareEntry{
                 .{ .group = .x25519, .key_exchange = self.key_exchange.?.publicKey() },
             };
@@ -580,23 +592,25 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
             @memcpy(self.server_cert_der[0..leaf_cert.len], leaf_cert);
             self.server_cert_der_len = @intCast(leaf_cert.len);
 
-            if (CaStore != void) {
-                if (self.ca_store) |store| {
-                    const builtin = @import("builtin");
-                    const now_sec: i64 = if (builtin.os.tag == .freestanding)
-                        0
-                    else
-                        std.time.timestamp();
+            if (!self.skip_verify) {
+                const builtin = @import("builtin");
+                const now_sec: i64 = if (builtin.os.tag == .freestanding)
+                    0
+                else
+                    std.time.timestamp();
 
-                    Crypto.x509.verifyChain(
-                        cert_chain[0..cert_count],
-                        if (self.hostname.len > 0) self.hostname else null,
-                        store,
-                        now_sec,
-                    ) catch {
-                        return error.CertificateVerificationFailed;
-                    };
-                }
+                var store = Runtime.Crypto.X509.init(self.allocator) catch {
+                    return error.CertificateVerificationFailed;
+                };
+                defer store.deinit();
+
+                store.verifyChain(
+                    cert_chain[0..cert_count],
+                    if (self.hostname.len > 0) self.hostname else null,
+                    now_sec,
+                ) catch {
+                    return error.CertificateVerificationFailed;
+                };
             }
 
             if (self.version == .tls_1_3) {
@@ -647,7 +661,7 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
 
             try verifySignature(sig_scheme, signed_data[0..total_len], signature, parsed);
 
-            self.key_exchange = try KeyExchange(Crypto).generate(named_group, self.rng_fill);
+            self.key_exchange = try KeyExchange(Runtime).generate(named_group, self.rng);
 
             if (pubkey_len > self.tls12_server_pubkey.len) return error.InvalidPublicKey;
 
@@ -693,8 +707,8 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
             var write_buf: [1024]u8 = undefined;
             _ = try self.records.writeRecord(.handshake, handshake_buf[0 .. 4 + pos], &write_buf);
 
-            const server_pubkey = self.tls12_server_pubkey[0..self.tls12_server_pubkey_len];
-            const shared_secret = try self.key_exchange.?.computeSharedSecret(server_pubkey);
+            const server_pubkey_slice = self.tls12_server_pubkey[0..self.tls12_server_pubkey_len];
+            const shared_secret = try self.key_exchange.?.computeSharedSecret(server_pubkey_slice);
 
             try self.deriveTls12Keys(shared_secret);
 
@@ -740,7 +754,7 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
         }
 
         fn deriveTls12Keys(self: *Self, pre_master_secret: []const u8) !void {
-            const Prf = Tls12Prf(Crypto);
+            const Prf = Tls12Prf(Runtime);
 
             var seed: [64]u8 = undefined;
             @memcpy(seed[0..32], &self.client_random);
@@ -771,8 +785,8 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
             @memcpy(server_iv[0..iv_len], server_write_iv);
             @memset(server_iv[iv_len..], 0);
 
-            const write_cipher = try record.CipherState(Crypto).init(self.cipher_suite, client_write_key, &client_iv);
-            const read_cipher = try record.CipherState(Crypto).init(self.cipher_suite, server_write_key, &server_iv);
+            const write_cipher = try record.CipherState(Runtime).init(self.cipher_suite, client_write_key, &client_iv);
+            const read_cipher = try record.CipherState(Runtime).init(self.cipher_suite, server_write_key, &server_iv);
 
             self.records.setWriteCipher(write_cipher);
             self.records.setReadCipher(read_cipher);
@@ -781,7 +795,7 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
         }
 
         fn computeVerifyData(self: *Self, is_client: bool) [12]u8 {
-            const Prf = Tls12Prf(Crypto);
+            const Prf = Tls12Prf(Runtime);
             const label = if (is_client) "client finished" else "server finished";
 
             const transcript = self.transcript_hash.peek();
@@ -828,34 +842,28 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
         ) !void {
             switch (sig_scheme) {
                 0x0403 => {
-                    const pk = Crypto.EcdsaP256Sha256.PublicKey.fromSec1(parsed_cert.pubKey()) catch {
-                        return error.InvalidPublicKey;
-                    };
-                    const sig = Crypto.EcdsaP256Sha256.Signature.fromDer(signature) catch {
-                        return error.InvalidSignature;
-                    };
-                    sig.verify(content, pk) catch return error.SignatureVerificationFailed;
+                    if (!Runtime.Crypto.Pki.verifyEcdsaP256(signature, content, parsed_cert.pubKey()))
+                        return error.SignatureVerificationFailed;
                 },
                 0x0503 => {
-                    const pk = Crypto.EcdsaP384Sha384.PublicKey.fromSec1(parsed_cert.pubKey()) catch {
-                        return error.InvalidPublicKey;
-                    };
-                    const sig = Crypto.EcdsaP384Sha384.Signature.fromDer(signature) catch {
-                        return error.InvalidSignature;
-                    };
-                    sig.verify(content, pk) catch return error.SignatureVerificationFailed;
+                    if (!Runtime.Crypto.Pki.verifyEcdsaP384(signature, content, parsed_cert.pubKey()))
+                        return error.SignatureVerificationFailed;
                 },
                 0x0401 => {
-                    try verifyRsaPkcs1(Crypto, .sha256, content, signature, parsed_cert.pubKey());
+                    Runtime.Crypto.Rsa.verifyPKCS1v1_5(signature, content, parsed_cert.pubKey(), .sha256) catch
+                        return error.SignatureVerificationFailed;
                 },
                 0x0501 => {
-                    try verifyRsaPkcs1(Crypto, .sha384, content, signature, parsed_cert.pubKey());
+                    Runtime.Crypto.Rsa.verifyPKCS1v1_5(signature, content, parsed_cert.pubKey(), .sha384) catch
+                        return error.SignatureVerificationFailed;
                 },
                 0x0804 => {
-                    try verifyRsaPss(Crypto, .sha256, content, signature, parsed_cert.pubKey());
+                    Runtime.Crypto.Rsa.verifyPSS(signature, content, parsed_cert.pubKey(), .sha256) catch
+                        return error.SignatureVerificationFailed;
                 },
                 0x0805 => {
-                    try verifyRsaPss(Crypto, .sha384, content, signature, parsed_cert.pubKey());
+                    Runtime.Crypto.Rsa.verifyPSS(signature, content, parsed_cert.pubKey(), .sha384) catch
+                        return error.SignatureVerificationFailed;
                 },
                 else => {
                     return error.UnsupportedSignatureAlgorithm;
@@ -863,69 +871,16 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
             }
         }
 
-        fn verifyRsaPkcs1(
-            comptime C: type,
-            comptime hash_type: C.rsa.HashType,
-            msg: []const u8,
-            sig: []const u8,
-            pub_key: []const u8,
-        ) !void {
-            const pk_components = C.rsa.PublicKey.parseDer(pub_key) catch return error.InvalidPublicKey;
-            const modulus = pk_components.modulus;
-            if (sig.len != modulus.len) return error.InvalidSignature;
-
-            if (modulus.len == 256) {
-                const public_key = C.rsa.PublicKey.fromBytes(pk_components.exponent, modulus) catch
-                    return error.InvalidPublicKey;
-                C.rsa.PKCS1v1_5Signature.verify(256, sig[0..256].*, msg, public_key, hash_type) catch
-                    return error.SignatureVerificationFailed;
-            } else if (modulus.len == 512) {
-                const public_key = C.rsa.PublicKey.fromBytes(pk_components.exponent, modulus) catch
-                    return error.InvalidPublicKey;
-                C.rsa.PKCS1v1_5Signature.verify(512, sig[0..512].*, msg, public_key, hash_type) catch
-                    return error.SignatureVerificationFailed;
-            } else {
-                return error.UnsupportedSignatureAlgorithm;
-            }
-        }
-
-        fn verifyRsaPss(
-            comptime C: type,
-            comptime hash_type: C.rsa.HashType,
-            msg: []const u8,
-            sig: []const u8,
-            pub_key: []const u8,
-        ) !void {
-            const pk_components = C.rsa.PublicKey.parseDer(pub_key) catch return error.InvalidPublicKey;
-            const modulus = pk_components.modulus;
-            if (sig.len != modulus.len) return error.InvalidSignature;
-
-            if (modulus.len == 256) {
-                const public_key = C.rsa.PublicKey.fromBytes(pk_components.exponent, modulus) catch
-                    return error.InvalidPublicKey;
-                C.rsa.PSSSignature.verify(256, sig[0..256].*, msg, public_key, hash_type) catch
-                    return error.SignatureVerificationFailed;
-            } else if (modulus.len == 512) {
-                const public_key = C.rsa.PublicKey.fromBytes(pk_components.exponent, modulus) catch
-                    return error.InvalidPublicKey;
-                C.rsa.PSSSignature.verify(512, sig[0..512].*, msg, public_key, hash_type) catch
-                    return error.SignatureVerificationFailed;
-            } else {
-                return error.UnsupportedSignatureAlgorithm;
-            }
-        }
-
         fn processFinished(self: *Self, data: []const u8, raw_msg: []const u8) !void {
             if (self.state != .wait_finished) return error.UnexpectedMessage;
 
             if (self.version == .tls_1_3) {
-                const Hkdf = Crypto.HkdfSha256;
                 const hash_len = 32;
 
                 if (data.len < hash_len) return error.InvalidHandshake;
 
                 const finished_key = kdf.hkdfExpandLabel(
-                    Hkdf,
+                    HkdfSha256,
                     self.server_handshake_traffic_secret[0..hash_len].*,
                     "finished",
                     "",
@@ -934,7 +889,7 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
 
                 const transcript = self.transcript_hash.peek();
                 var expected: [32]u8 = undefined;
-                Crypto.HmacSha256.create(&expected, &transcript, &finished_key);
+                HmacSha256.create(&expected, &transcript, &finished_key);
 
                 if (!std.mem.eql(u8, data[0..hash_len], &expected)) {
                     return error.BadRecordMac;
@@ -961,11 +916,10 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
         }
 
         fn sendTls13Finished(self: *Self) !void {
-            const Hkdf = Crypto.HkdfSha256;
             const hash_len = 32;
 
             const finished_key = kdf.hkdfExpandLabel(
-                Hkdf,
+                HkdfSha256,
                 self.client_handshake_traffic_secret[0..hash_len].*,
                 "finished",
                 "",
@@ -974,7 +928,7 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
 
             const transcript = self.transcript_hash.peek();
             var verify_data: [32]u8 = undefined;
-            Crypto.HmacSha256.create(&verify_data, &transcript, &finished_key);
+            HmacSha256.create(&verify_data, &transcript, &finished_key);
 
             var handshake_buf: [64]u8 = undefined;
             const header = HandshakeHeader{
@@ -989,21 +943,21 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
             const key_len = self.cipher_suite.keyLength();
             var client_key_buf: [32]u8 = undefined;
             if (key_len == 16) {
-                const ck16 = kdf.hkdfExpandLabel(Hkdf, self.client_handshake_traffic_secret[0..hash_len].*, "key", "", 16);
+                const ck16 = kdf.hkdfExpandLabel(HkdfSha256, self.client_handshake_traffic_secret[0..hash_len].*, "key", "", 16);
                 @memcpy(client_key_buf[0..16], &ck16);
             } else {
-                const ck32 = kdf.hkdfExpandLabel(Hkdf, self.client_handshake_traffic_secret[0..hash_len].*, "key", "", 32);
+                const ck32 = kdf.hkdfExpandLabel(HkdfSha256, self.client_handshake_traffic_secret[0..hash_len].*, "key", "", 32);
                 @memcpy(&client_key_buf, &ck32);
             }
             const client_iv = kdf.hkdfExpandLabel(
-                Hkdf,
+                HkdfSha256,
                 self.client_handshake_traffic_secret[0..hash_len].*,
                 "iv",
                 "",
                 12,
             );
 
-            const write_cipher = try record.CipherState(Crypto).init(self.cipher_suite, client_key_buf[0..key_len], &client_iv);
+            const write_cipher = try record.CipherState(Runtime).init(self.cipher_suite, client_key_buf[0..key_len], &client_iv);
             self.records.setWriteCipher(write_cipher);
 
             var write_buf: [128]u8 = undefined;
@@ -1011,33 +965,32 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
 
             var app_client_key_buf: [32]u8 = undefined;
             if (key_len == 16) {
-                const ck16 = kdf.hkdfExpandLabel(Hkdf, self.client_application_traffic_secret[0..hash_len].*, "key", "", 16);
+                const ck16 = kdf.hkdfExpandLabel(HkdfSha256, self.client_application_traffic_secret[0..hash_len].*, "key", "", 16);
                 @memcpy(app_client_key_buf[0..16], &ck16);
             } else {
-                const ck32 = kdf.hkdfExpandLabel(Hkdf, self.client_application_traffic_secret[0..hash_len].*, "key", "", 32);
+                const ck32 = kdf.hkdfExpandLabel(HkdfSha256, self.client_application_traffic_secret[0..hash_len].*, "key", "", 32);
                 @memcpy(&app_client_key_buf, &ck32);
             }
             const app_client_iv = kdf.hkdfExpandLabel(
-                Hkdf,
+                HkdfSha256,
                 self.client_application_traffic_secret[0..hash_len].*,
                 "iv",
                 "",
                 12,
             );
-            const app_write_cipher = try record.CipherState(Crypto).init(self.cipher_suite, app_client_key_buf[0..key_len], &app_client_iv);
+            const app_write_cipher = try record.CipherState(Runtime).init(self.cipher_suite, app_client_key_buf[0..key_len], &app_client_iv);
             self.records.setWriteCipher(app_write_cipher);
         }
 
         fn deriveHandshakeKeys(self: *Self, shared_secret: []const u8) !void {
-            const Hkdf = Crypto.HkdfSha256;
             const hash_len = 32;
 
             const zeros: [hash_len]u8 = [_]u8{0} ** hash_len;
-            const early_secret = Hkdf.extract(&zeros, &zeros);
+            const early_secret = HkdfSha256.extract(&zeros, &zeros);
 
             const empty_hash = emptyHash();
             const derived_secret = kdf.hkdfExpandLabel(
-                Hkdf,
+                HkdfSha256,
                 early_secret,
                 "derived",
                 &empty_hash,
@@ -1052,50 +1005,49 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
                 @memcpy(&hs_secret, shared_secret[0..hash_len]);
             }
             self.handshake_secret = undefined;
-            @memcpy(self.handshake_secret[0..hash_len], &Hkdf.extract(&derived_secret, &hs_secret));
+            @memcpy(self.handshake_secret[0..hash_len], &HkdfSha256.extract(&derived_secret, &hs_secret));
 
             const transcript = self.transcript_hash.peek();
             self.client_handshake_traffic_secret = undefined;
             @memcpy(
                 self.client_handshake_traffic_secret[0..hash_len],
-                &kdf.hkdfExpandLabel(Hkdf, self.handshake_secret[0..hash_len].*, "c hs traffic", &transcript, hash_len),
+                &kdf.hkdfExpandLabel(HkdfSha256, self.handshake_secret[0..hash_len].*, "c hs traffic", &transcript, hash_len),
             );
             self.server_handshake_traffic_secret = undefined;
             @memcpy(
                 self.server_handshake_traffic_secret[0..hash_len],
-                &kdf.hkdfExpandLabel(Hkdf, self.handshake_secret[0..hash_len].*, "s hs traffic", &transcript, hash_len),
+                &kdf.hkdfExpandLabel(HkdfSha256, self.handshake_secret[0..hash_len].*, "s hs traffic", &transcript, hash_len),
             );
 
             const key_len = self.cipher_suite.keyLength();
             var server_key_buf: [32]u8 = undefined;
             if (key_len == 16) {
-                const key16 = kdf.hkdfExpandLabel(Hkdf, self.server_handshake_traffic_secret[0..hash_len].*, "key", "", 16);
+                const key16 = kdf.hkdfExpandLabel(HkdfSha256, self.server_handshake_traffic_secret[0..hash_len].*, "key", "", 16);
                 @memcpy(server_key_buf[0..16], &key16);
             } else {
-                const key32 = kdf.hkdfExpandLabel(Hkdf, self.server_handshake_traffic_secret[0..hash_len].*, "key", "", 32);
+                const key32 = kdf.hkdfExpandLabel(HkdfSha256, self.server_handshake_traffic_secret[0..hash_len].*, "key", "", 32);
                 @memcpy(&server_key_buf, &key32);
             }
             const server_iv = kdf.hkdfExpandLabel(
-                Hkdf,
+                HkdfSha256,
                 self.server_handshake_traffic_secret[0..hash_len].*,
                 "iv",
                 "",
                 12,
             );
 
-            const cipher = try record.CipherState(Crypto).init(self.cipher_suite, server_key_buf[0..key_len], &server_iv);
+            const cipher = try record.CipherState(Runtime).init(self.cipher_suite, server_key_buf[0..key_len], &server_iv);
             self.records.setReadCipher(cipher);
 
             self.records.version = .tls_1_3;
         }
 
         fn deriveApplicationKeys(self: *Self) !void {
-            const Hkdf = Crypto.HkdfSha256;
             const hash_len = 32;
 
             const empty_hash = emptyHash();
             const derived = kdf.hkdfExpandLabel(
-                Hkdf,
+                HkdfSha256,
                 self.handshake_secret[0..hash_len].*,
                 "derived",
                 &empty_hash,
@@ -1103,51 +1055,51 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
             );
             const zeros: [hash_len]u8 = [_]u8{0} ** hash_len;
             self.master_secret = undefined;
-            @memcpy(self.master_secret[0..hash_len], &Hkdf.extract(&derived, &zeros));
+            @memcpy(self.master_secret[0..hash_len], &HkdfSha256.extract(&derived, &zeros));
 
             const transcript = self.transcript_hash.peek();
             self.client_application_traffic_secret = undefined;
             @memcpy(
                 self.client_application_traffic_secret[0..hash_len],
-                &kdf.hkdfExpandLabel(Hkdf, self.master_secret[0..hash_len].*, "c ap traffic", &transcript, hash_len),
+                &kdf.hkdfExpandLabel(HkdfSha256, self.master_secret[0..hash_len].*, "c ap traffic", &transcript, hash_len),
             );
             self.server_application_traffic_secret = undefined;
             @memcpy(
                 self.server_application_traffic_secret[0..hash_len],
-                &kdf.hkdfExpandLabel(Hkdf, self.master_secret[0..hash_len].*, "s ap traffic", &transcript, hash_len),
+                &kdf.hkdfExpandLabel(HkdfSha256, self.master_secret[0..hash_len].*, "s ap traffic", &transcript, hash_len),
             );
 
             const key_len = self.cipher_suite.keyLength();
             var client_key_buf: [32]u8 = undefined;
             var server_key_buf: [32]u8 = undefined;
             if (key_len == 16) {
-                const ck16 = kdf.hkdfExpandLabel(Hkdf, self.client_application_traffic_secret[0..hash_len].*, "key", "", 16);
-                const sk16 = kdf.hkdfExpandLabel(Hkdf, self.server_application_traffic_secret[0..hash_len].*, "key", "", 16);
+                const ck16 = kdf.hkdfExpandLabel(HkdfSha256, self.client_application_traffic_secret[0..hash_len].*, "key", "", 16);
+                const sk16 = kdf.hkdfExpandLabel(HkdfSha256, self.server_application_traffic_secret[0..hash_len].*, "key", "", 16);
                 @memcpy(client_key_buf[0..16], &ck16);
                 @memcpy(server_key_buf[0..16], &sk16);
             } else {
-                const ck32 = kdf.hkdfExpandLabel(Hkdf, self.client_application_traffic_secret[0..hash_len].*, "key", "", 32);
-                const sk32 = kdf.hkdfExpandLabel(Hkdf, self.server_application_traffic_secret[0..hash_len].*, "key", "", 32);
+                const ck32 = kdf.hkdfExpandLabel(HkdfSha256, self.client_application_traffic_secret[0..hash_len].*, "key", "", 32);
+                const sk32 = kdf.hkdfExpandLabel(HkdfSha256, self.server_application_traffic_secret[0..hash_len].*, "key", "", 32);
                 @memcpy(&client_key_buf, &ck32);
                 @memcpy(&server_key_buf, &sk32);
             }
             const client_iv = kdf.hkdfExpandLabel(
-                Hkdf,
+                HkdfSha256,
                 self.client_application_traffic_secret[0..hash_len].*,
                 "iv",
                 "",
                 12,
             );
             const server_iv = kdf.hkdfExpandLabel(
-                Hkdf,
+                HkdfSha256,
                 self.server_application_traffic_secret[0..hash_len].*,
                 "iv",
                 "",
                 12,
             );
 
-            const write_cipher = try record.CipherState(Crypto).init(self.cipher_suite, client_key_buf[0..key_len], &client_iv);
-            const read_cipher = try record.CipherState(Crypto).init(self.cipher_suite, server_key_buf[0..key_len], &server_iv);
+            const write_cipher = try record.CipherState(Runtime).init(self.cipher_suite, client_key_buf[0..key_len], &client_iv);
+            const read_cipher = try record.CipherState(Runtime).init(self.cipher_suite, server_key_buf[0..key_len], &server_iv);
 
             self.records.setWriteCipher(write_cipher);
             self.records.setReadCipher(read_cipher);
@@ -1155,7 +1107,7 @@ pub fn ClientHandshake(comptime Conn: type, comptime Crypto: type) type {
 
         fn emptyHash() [32]u8 {
             var hash: [32]u8 = undefined;
-            Crypto.Sha256.hash("", &hash);
+            Sha256.hash("", &hash);
             return hash;
         }
     };

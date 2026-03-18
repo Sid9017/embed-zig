@@ -142,22 +142,3 @@ pub fn statusText(code: u16) []const u8 {
         else => "Unknown",
     };
 }
-
-const testing = std.testing;
-
-pub const TestWriter = struct {
-    buf: [4096]u8 = undefined,
-    len: usize = 0,
-
-    pub fn writeFn(ctx: *anyopaque, data: []const u8) Response.WriteError!void {
-        const self: *TestWriter = @ptrCast(@alignCast(ctx));
-        const end = self.len + data.len;
-        if (end > self.buf.len) return error.BufferOverflow;
-        @memcpy(self.buf[self.len..end], data);
-        self.len = end;
-    }
-
-    pub fn output(self: *const TestWriter) []const u8 {
-        return self.buf[0..self.len];
-    }
-};
