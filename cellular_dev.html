@@ -846,9 +846,7 @@
 │   ├── cmux.zig           GSM 07.10 CMUX framing
 │   └── urcs.zig           typed URC definitions (comptime structs)
 ├── modem/
-│   ├── modem.zig          hardware driver — owns Io/CMUX/AtEngine, NO state machine
-│   ├── sim.zig            SIM card management (uses AtEngine)
-│   ├── signal.zig         signal quality monitoring (uses AtEngine)
+│   ├── modem.zig          hardware driver — owns Io/CMUX/AtEngine + SIM/IMEI/signal queries
 │   └── profiles/
 │       ├── quectel.zig    Quectel module profile
 │       ├── simcom.zig     SIMCom module profile
@@ -864,8 +862,7 @@
       <pre><code>Step 0  基础设施（UART 硬件通路）
   │
   ├─→ Step 1  types.zig  → Step 2  io.zig  → Step 3  parse.zig  → Step 4  engine.zig + commands.zig ★ 里程碑 #1
-  │                 ├─→ Step 5  sim.zig
-  │                 ├─→ Step 6  signal.zig
+  │                 ├─→ Step 5+6  modem.zig SIM/IMEI/signal 查询（已合并）
   │                 └─→ Step 7  cellular.zig reducer
   │                       └─→ Step 8  modem.zig 路由  → Step 9  cmux.zig ★ #2  → Step 10  modem.zig 完整 ★ #3
   │                             └─→ Step 11  cellular.zig 事件源 + Control ★ 最终里程碑
@@ -898,8 +895,7 @@
           <tr><td>2</td><td>io.zig</td><td><strong>烧录</strong></td><td>3</td><td>—</td></tr>
           <tr><td>3</td><td>parse.zig</td><td>Mock + 可选烧录</td><td>11</td><td>—</td></tr>
           <tr><td>4</td><td>engine.zig + commands.zig</td><td><strong>烧录</strong></td><td>19</td><td>★ 里程碑 #1</td></tr>
-          <tr><td>5</td><td>sim.zig</td><td><strong>烧录</strong></td><td>7</td><td>—</td></tr>
-          <tr><td>6</td><td>signal.zig</td><td><strong>烧录</strong></td><td>7</td><td>—</td></tr>
+          <tr><td>5+6</td><td>modem.zig SIM/IMEI/signal（原 sim.zig + signal.zig 已合并）</td><td><strong>烧录</strong></td><td>16</td><td>—</td></tr>
           <tr><td>7</td><td>cellular reducer（R44）</td><td>Mock</td><td>见 test-cellular</td><td>—</td></tr>
           <tr><td>8</td><td>modem 路由</td><td><strong>烧录</strong></td><td>13</td><td>—</td></tr>
           <tr><td>9</td><td>cmux.zig</td><td><strong>烧录</strong></td><td>10</td><td>★ 里程碑 #2</td></tr>
@@ -919,29 +915,34 @@
       <ul>
         <li><strong>Step 1：types.zig</strong> — 共享类型完整；<code>types_test.zig</code> 覆盖充分。</li>
         <li><strong>io/</strong> — <code>Io</code>、<code>fromUart</code>（真实包装）；<code>fromSpi</code> 仍为 stub；<code>MockIo</code> + <code>io_test.zig</code>（3 用例）。</li>
-        <li><strong>at/parse.zig</strong> — CSQ/CPIN/CREG 行解析、CME/CMS、rssi 换算等已实现；<code>parse_test.zig</code> 覆盖主要分支。</li>
+        <li><strong>at/parse.zig</strong> — CSQ/CPIN/CREG/IMEI/IMSI/ICCID 行解析、CME/CMS、rssi 换算等已实现；<code>parse_test.zig</code> 覆盖主要分支。</li>
         <li><strong>Step 0～3 烧录验证</strong> — <code>test/firmware/110-cellular/app.zig</code>：<code>[step0-uartSetup]</code> 就绪日志；Step2 发 <code>AT</code> 读回显；Step3 发 <code>AT+CSQ</code> / <code>AT+CPIN?</code> / <code>AT+CREG?</code> / <code>AT+CGREG?</code> / <code>AT+CEREG?</code>，<code>parseSummary</code> 单行摘要（含 CME/CMS、EPS/GSM 注册标签）。大缓冲用 BSS；摘要字符串写全局缓冲避免悬空指针。<code>runtime/log.zig</code>：Fmt 缓冲 384B，溢出安全降级。</li>
         <li><strong>esp-zig examples/cellular</strong> — H106 TIGA V4 真实 UART 模组通路已跑通；<strong>main 任务栈 8192</strong>（<code>core</code> + <code>esp_misc</code>，与 ota_led 一致），避免 Step3 栈溢出。</li>
         <li><strong>Step 4：Cellular 最小闭环</strong> — 四段 bootstrap（段内 <code>tick()</code> 至下一阶段或 <code>error</code>）；日志为 <code>[STATE=…]</code> + 本 tick 发送的 AT 文本；SIM 就绪单独一行 <code>SIM OK！</code>。<code>phase == registering</code> 时每次 tick 发 <code>AT+CEREG?</code>；首轮后若仍搜网可用较长间隔（<code>step4_reg_poll_interval_ms</code>）直至 <code>registered</code> 或 <code>error</code>，成功打印 <code>EPS registered!</code>。</li>
         <li><strong>真机验证（2026-03-18）</strong> — H106 + Quectel：<code>[step4-cellFsm]</code> 自 <code>powerOn</code> 经 probing→checking_sim→<code>SIM OK！</code>→registering（CPIN?/CEREG?）至 <code>registered_home</code>，<code>EPS registered!</code> 与终端日志一致。</li>
+        <li><strong>Step 5+6：modem.zig SIM/IMEI/signal 查询（Mock 通过，待烧录验证）</strong> — 原 <code>sim.zig</code> 和 <code>signal.zig</code> 已合并至 <code>modem.zig</code>。Modem 直接提供：<code>getSimStatus</code>（AT+CPIN?）、<code>getImsi</code>（AT+CIMI）、<code>getIccid</code>（AT+CCID）、<code>getImei</code>（AT+CGSN）、<code>getSignal</code>（AT+CSQ）、<code>getLastSignal</code>（缓存）。新增 AT 命令：<code>GetImei</code>、<code>GetImsi</code>、<code>GetIccid</code>。新增解析器：<code>parseImei</code>、<code>parseImsi</code>、<code>parseIccid</code>（共用 <code>parseDigitString</code>）。<code>modem_test.zig</code> 含 21 个测试（4 原有 + 7 SIM + 2 IMEI + 8 signal），全部通过。</li>
       </ul>
       <h3>单测现状</h3>
       <ul>
         <li><strong>R44 状态机</strong>：<code>cellular_test.zig</code> + <code>types_test.zig</code>；<code>zig build test-cellular</code>。</li>
-        <li><strong>AT 路径</strong>：<code>engine_test</code>、<code>commands_test</code>、<code>parse_test</code>、<code>modem_test</code>、<code>modem_tick_mock_test</code> 等有实质断言。</li>
-        <li><strong>placeholder</strong>：<code>cmux</code>、<code>urcs</code>、<code>sim</code>、<code>signal</code>、<code>trace</code> 部分 <code>*_test.zig</code>；<strong>Control 入队</strong>与真机 worker 尚未接满。</li>
+        <li><strong>AT 路径</strong>：<code>engine_test</code>、<code>commands_test</code>、<code>parse_test</code>、<code>modem_test</code>（含 SIM/IMEI/signal）、<code>modem_tick_mock_test</code> 等有实质断言。</li>
+        <li><strong>placeholder</strong>：<code>cmux</code>、<code>urcs</code>、<code>trace</code> 部分 <code>*_test.zig</code>；<strong>Control 入队</strong>与真机 worker 尚未接满。</li>
       </ul>
       <h3>未开始 / 占位</h3>
       <ul>
         <li><strong>CMUX / enterCmux</strong>、<strong>CellularControl</strong> 全链路、<strong>PPP tick</strong> 发 <code>dial_succeeded</code>/<code>ip_*</code>（当前 reducer 已预留事件）。</li>
         <li><strong>apn.zig</strong> / <strong>voice.zig</strong>（Phase 2）。</li>
       </ul>
+      <h3>架构变更记录</h3>
+      <ul>
+        <li><strong>sim.zig / signal.zig → modem.zig 合并（2026-03-18）</strong>：原设计将 SIM 和 signal 查询放在独立文件中，实际逻辑较薄（每个方法仅发一条 AT 命令 + 解析 + 存缓冲区），合并到 <code>modem.zig</code> 简化 API 和文件结构。同时新增 IMEI 查询（<code>AT+CGSN</code>）。<code>mod.zig</code> 导出中移除 <code>sim</code> / <code>signal</code>。</li>
+      </ul>
       <h3>板型说明</h3>
       <ul>
         <li><strong>h106_tiga_v4</strong>：真实蜂窝 UART + 电源脚，当前主力烧录验证板型。</li>
         <li><strong>esp32s3_devkit</strong>：BSP 上 cellular UART 仍为 stub（仅 Io 契约演示）；若仅 devkit 曾出现 log/栈问题，以 H106 真机路径为准。</li>
       </ul>
-      <p><em>最后更新：2026-03-18（Step4 真机闭环 + 单 phase registering）</em></p>
+      <p><em>最后更新：2026-03-18（Step 5+6 Mock 通过 + sim/signal 合并至 modem.zig）</em></p>
     </section>
 
     <section id="s5">
@@ -959,6 +960,7 @@
           <tr><td>8</td><td>文档统一</td><td>parse.zig/engine.zig 标题；21 tests；parseResponse 合约</td></tr>
           <tr><td>9</td><td>response_channel capacity</td><td><strong>1</strong>（单槽缓冲，worker 非阻塞 send）</td></tr>
           <tr><td>10</td><td>request_queue capacity</td><td><strong>4</strong>（一发一收模式，4 槽足够）</td></tr>
+          <tr><td>11</td><td>sim/signal 合并</td><td>原 sim.zig / signal.zig 合并至 modem.zig；IMEI 查询一并加入 modem</td></tr>
         </tbody>
       </table>
     </section>

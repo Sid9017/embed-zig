@@ -62,8 +62,6 @@ test {
     _ = @import("pkg/cellular/at/urcs_test.zig");
     _ = @import("pkg/cellular/modem/modem_test.zig");
     _ = @import("pkg/cellular/modem/modem_tick_mock_test.zig");
-    _ = @import("pkg/cellular/modem/sim_test.zig");
-    _ = @import("pkg/cellular/modem/signal_test.zig");
     _ = @import("pkg/cellular/modem/profiles/quectel_test.zig");
     _ = @import("pkg/cellular/modem/profiles/simcom_test.zig");
 

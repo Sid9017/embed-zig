@@ -134,6 +134,64 @@ pub const GetSignalQuality = struct {
     }
 };
 
+/// AT+CGSN — read IMEI (International Mobile Equipment Identity, 15 digits).
+pub const GetImei = struct {
+    pub const Response = []const u8;
+    pub const prefix: []const u8 = "";
+    pub const timeout_ms: u32 = 5000;
+
+    pub fn write(buf: []u8) usize {
+        const cmd = "AT+CGSN\r\n";
+        if (cmd.len > buf.len) return 0;
+        @memcpy(buf[0..cmd.len], cmd);
+        return cmd.len;
+    }
+
+    pub fn parseResponse(line: []const u8) ?Response {
+        return parse.parseImei(line);
+    }
+};
+
+/// AT+CIMI — read IMSI (International Mobile Subscriber Identity).
+pub const GetImsi = struct {
+    pub const Response = []const u8;
+    pub const prefix: []const u8 = "";
+    pub const timeout_ms: u32 = 5000;
+
+    pub fn write(buf: []u8) usize {
+        const cmd = "AT+CIMI\r\n";
+        if (cmd.len > buf.len) return 0;
+        @memcpy(buf[0..cmd.len], cmd);
+        return cmd.len;
+    }
+
+    pub fn parseResponse(line: []const u8) ?Response {
+        return parse.parseImsi(line);
+    }
+};
+
+/// AT+CCID — read ICCID (Integrated Circuit Card Identifier).
+pub const GetIccid = struct {
+    pub const Response = []const u8;
+    pub const prefix: []const u8 = "+CCID:";
+    pub const timeout_ms: u32 = 5000;
+
+    pub fn write(buf: []u8) usize {
+        const cmd = "AT+CCID\r\n";
+        if (cmd.len > buf.len) return 0;
+        @memcpy(buf[0..cmd.len], cmd);
+        return cmd.len;
+    }
+
+    /// Handles both `+CCID: <iccid>` and bare `<iccid>` response formats.
+    pub fn parseResponse(line: []const u8) ?Response {
+        if (parse.parsePrefix(line, "+CCID:")) |val| {
+            return parse.parseIccid(val);
+        }
+        return parse.parseIccid(line);
+    }
+};
+
 /// Module info (placeholder parse until Step 12).
 pub const GetModuleInfo = struct {
     pub const Response = types.ModemInfo;

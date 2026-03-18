@@ -339,8 +339,6 @@ pub const pkg = struct {
         };
         pub const modem = struct {
             pub const modem_mod = @import("pkg/cellular/modem/modem.zig");
-            pub const sim = @import("pkg/cellular/modem/sim.zig");
-            pub const signal = @import("pkg/cellular/modem/signal.zig");
             pub const profiles = struct {
                 pub const quectel = @import("pkg/cellular/modem/profiles/quectel.zig");
                 pub const simcom = @import("pkg/cellular/modem/profiles/simcom.zig");

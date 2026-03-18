@@ -126,6 +126,30 @@ pub fn parseCreg(value: []const u8) ?types.CellularRegStatus {
     };
 }
 
+/// Parses an IMEI string from AT+CGSN response. IMEI is exactly 15 digits (3GPP TS 23.003).
+pub fn parseImei(line: []const u8) ?[]const u8 {
+    return parseDigitString(line, 15, 15);
+}
+
+/// Parses an IMSI string from AT+CIMI response. IMSI is 6-15 digits (3GPP TS 23.003).
+pub fn parseImsi(line: []const u8) ?[]const u8 {
+    return parseDigitString(line, 6, 15);
+}
+
+/// Parses an ICCID string (ITU-T E.118, 18-22 digits).
+pub fn parseIccid(line: []const u8) ?[]const u8 {
+    return parseDigitString(line, 18, 22);
+}
+
+fn parseDigitString(line: []const u8, min_len: usize, max_len: usize) ?[]const u8 {
+    const trimmed = std.mem.trim(u8, line, " \r\n");
+    if (trimmed.len < min_len or trimmed.len > max_len) return null;
+    for (trimmed) |c| {
+        if (c < '0' or c > '9') return null;
+    }
+    return trimmed;
+}
+
 /// Converts CSQ (0–31) to approximate dBm. Formula: -113 + 2*csq (3GPP TS 27.007).
 pub fn rssiToDbm(csq: u8) i8 {
     if (csq > 31) return -113;
