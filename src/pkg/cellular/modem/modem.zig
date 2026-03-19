@@ -25,6 +25,9 @@ pub fn Modem(
     return struct {
         const Self = @This();
 
+        /// Init fails when neither io nor at_io is provided (plan Step 8 / MD-03).
+        pub const InitError = error{NoIo};
+
         pub const PowerPins = struct {
             power_pin: ?u8 = null,
             reset_pin: ?u8 = null,
@@ -43,26 +46,21 @@ pub fn Modem(
         };
 
         at_engine: At = undefined,
+        data_io: ?io.Io = null,
         config: types.ModemConfig = .{},
         sim_info: types.SimInfo = .{},
         modem_info: types.ModemInfo = .{},
         last_signal: ?types.CellularSignalInfo = null,
 
-        pub fn init(cfg: InitConfig) Self {
-            var d: u8 = 0;
-            const stub = io.Io{
-                .ctx = @as(*anyopaque, @ptrCast(&d)),
-                .readFn = _stubRead,
-                .writeFn = _stubWrite,
-                .pollFn = _stubPoll,
-            };
+        pub fn init(cfg: InitConfig) InitError!Self {
             const at_io: io.Io = blk: {
                 if (cfg.at_io) |x| break :blk x;
                 if (cfg.io) |x| break :blk x;
-                break :blk stub;
+                return error.NoIo;
             };
             return .{
                 .at_engine = At.init(at_io, cfg.time),
+                .data_io = cfg.data_io,
                 .config = cfg.config,
             };
         }
@@ -76,8 +74,12 @@ pub fn Modem(
         }
 
         pub fn pppIo(self: *Self) ?io.Io {
-            _ = self;
-            return null;
+            return self.data_io;
+        }
+
+        /// single_channel when data_io is null; multi_channel when data_io is provided (plan Step 8).
+        pub fn mode(self: *const Self) enum { single_channel, multi_channel } {
+            return if (self.data_io != null) .multi_channel else .single_channel;
         }
 
         pub fn enterCmux(self: *Self) !void {
@@ -175,14 +177,4 @@ pub fn Modem(
             return &self.modem_info;
         }
     };
-}
-
-fn _stubRead(_: *anyopaque, _: []u8) io.IoError!usize {
-    return error.WouldBlock;
-}
-fn _stubWrite(_: *anyopaque, buf: []const u8) io.IoError!usize {
-    return buf.len;
-}
-fn _stubPoll(_: *anyopaque, _: i32) io.PollFlags {
-    return .{};
 }

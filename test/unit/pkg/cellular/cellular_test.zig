@@ -71,7 +71,7 @@ fn countPhaseTo(rec: *const PayloadBuf, to: types.CellularPhase) usize {
 test "Cellular tick bootstrap: off through registered with seven ticks" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    const modem = ModemT().init(.{
+    const modem = try ModemT().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,
@@ -128,7 +128,7 @@ test "Cellular tick bootstrap: off through registered with seven ticks" {
 test "Cellular tick when off does not touch modem" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    const modem = ModemT().init(.{
+    const modem = try ModemT().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,
@@ -143,7 +143,7 @@ test "Cellular tick when off does not touch modem" {
 test "Cellular CPIN SIM PIN yields error payload" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    const modem = ModemT().init(.{
+    const modem = try ModemT().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,
@@ -174,7 +174,7 @@ test "Cellular CPIN SIM PIN yields error payload" {
 test "Cellular CEREG searching then poll until registered" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    const modem = ModemT().init(.{
+    const modem = try ModemT().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,
@@ -207,7 +207,7 @@ test "Cellular CEREG searching then poll until registered" {
 test "Cellular powerOff resets and emits phase to off" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    const modem = ModemT().init(.{
+    const modem = try ModemT().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,
@@ -227,7 +227,7 @@ test "Cellular powerOff resets and emits phase to off" {
 test "seed at_configuring+ate0 via events then tick sends ATE0" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    const modem = ModemT().init(.{
+    const modem = try ModemT().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,
@@ -249,7 +249,7 @@ test "seed at_configuring+ate0 via events then tick sends ATE0" {
 test "seed at_configuring+cmee via events then tick sends CMEE" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    const modem = ModemT().init(.{
+    const modem = try ModemT().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,
@@ -270,7 +270,7 @@ test "seed at_configuring+cmee via events then tick sends CMEE" {
 test "seed checking_sim+cpin via events then tick sends CPIN" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    const modem = ModemT().init(.{
+    const modem = try ModemT().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,
@@ -292,7 +292,7 @@ test "seed checking_sim+cpin via events then tick sends CPIN" {
 test "seed registering+cereg via events then tick sends CEREG" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    const modem = ModemT().init(.{
+    const modem = try ModemT().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,

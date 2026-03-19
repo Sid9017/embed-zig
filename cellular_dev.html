@@ -922,6 +922,8 @@
         <li><strong>真机验证（2026-03-18）</strong> — H106 + Quectel：<code>[step4-cellFsm]</code> 自 <code>powerOn</code> 经 probing→checking_sim→<code>SIM OK！</code>→registering（CPIN?/CEREG?）至 <code>registered_home</code>，<code>EPS registered!</code> 与终端日志一致。</li>
         <li><strong>Step 5+6：modem.zig SIM/IMEI/signal 查询（Mock + 烧录验证通过）</strong> — 原 <code>sim.zig</code> 和 <code>signal.zig</code> 已合并至 <code>modem.zig</code>。Modem 直接提供：<code>getSimStatus</code>（AT+CPIN?）、<code>getImsi</code>（AT+CIMI）、<code>getIccid</code>（AT+CCID）、<code>getImei</code>（AT+CGSN）、<code>getSignal</code>（AT+CSQ）、<code>getLastSignal</code>（缓存）。新增 AT 命令：<code>GetImei</code>、<code>GetImsi</code>、<code>GetIccid</code>。新增解析器：<code>parseImei</code>、<code>parseImsi</code>、<code>parseIccid</code>（共用 <code>parseDigitString</code>）。<code>modem_test.zig</code> 含 21 个测试（4 原有 + 7 SIM + 2 IMEI + 8 signal），全部通过。</li>
         <li><strong>Step 5+6 真机验证（2026-03-18）</strong> — <code>test/firmware/110-cellular/app.zig</code> 新增 <code>[step5-identity]</code>：EPS 注册成功后通过 <code>cell.modem.getImei()</code> / <code>getImsi()</code> / <code>getIccid()</code> 查询身份信息。H106 + Quectel 真机输出：<code>IMEI=869159089170371</code>、<code>IMSI=460019026214839</code>、<code>ICCID=89860123801328720044</code>，三项均正确返回。Mock 路径同步更新，逐条 feed 避免 MockIo 一次性读空问题。<code>zig build test-110-cellular-firmware</code> 通过。</li>
+        <li><strong>Step 7：cellular.zig reducer（已完成）</strong> — <code>cellularReduce</code> + <code>CellularFsmState</code>（R44/R45）；<code>cellular_test.zig</code> 覆盖 bootstrap / SIM / 驻网 / 拨号 / retry / error 等路径。<strong>验收</strong>：<code>zig build test-cellular</code> 全通过。plan 可选真机手动 dispatch 序列未做，不影响 Step 7 闭环。</li>
+        <li><strong>Step 8：modem.zig 路由（已完成）</strong> — 无效 init 报错（<code>InitError.NoIo</code>）、multi-channel 下保存并返回 <code>data_io</code>（<code>pppIo()</code>）、<code>mode()</code>；MD-01～07、MD-12 单测 + <code>test/firmware/110-cellular</code> Step 8 段落（quectel_stub、sendRaw、pppIo==null）。验收：<code>zig build test-cellular</code>、<code>zig build test-110-cellular-firmware</code> 通过。真机烧录见下方说明。</li>
       </ul>
       <h3>单测现状</h3>
       <ul>
@@ -943,7 +945,7 @@
         <li><strong>h106_tiga_v4</strong>：真实蜂窝 UART + 电源脚，当前主力烧录验证板型。</li>
         <li><strong>esp32s3_devkit</strong>：BSP 上 cellular UART 仍为 stub（仅 Io 契约演示）；若仅 devkit 曾出现 log/栈问题，以 H106 真机路径为准。</li>
       </ul>
-      <p><em>最后更新：2026-03-18（Step 5+6 真机验证通过：IMEI/IMSI/ICCID 查询 OK）</em></p>
+      <p><em>最后更新：2026-03-19（Step 8 modem 路由完成；下一步 Step 9 CMUX）</em></p>
     </section>
 
     <section id="s5">

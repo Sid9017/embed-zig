@@ -51,7 +51,7 @@ Reference: `x/c/esp/components/quectel` (C, ESP-IDF).
 | R44 | **Phase = 进行中，Event = 一步结束**（唯一命名来源：`types.zig` + `cellular.zig`）。`CellularPhase`：`off`→`probing`→`at_configuring`→`checking_sim`→`registering`（驻网前反复 `AT+CEREG?`）→`registered`→`dialing`→`connected`；`disconnecting` 预留。`ModemEvent`：bootstrap 三步、`sim_status_reported`、`network_registration`；意图 `power_on`/`dial_requested`/`retry`/`stop`/`power_off`；数据 `dial_succeeded`/`dial_failed`/`ip_obtained`/`ip_lost`/`signal_updated`；失败 `bootstrap_at_error`/`at_timeout`。已弃用旧名：`at_ready`、`sim_ready`、`dial_start`、`dial_connected`、`registration_failed`（事件）。**验证**：`zig build test-cellular`。 |
 | R45 | **实现**：`Store(CellularFsmState, ModemEvent)` + `cellularReduce`；`tick()` 只发 AT 并 `dispatch` 上述事件；`emitDiff` → `CellularPayload`。 |
 
-**进度（2026-03-18）：** `CellularPhase` 已去掉 `registration_pending`，驻网前统一为 `registering`（tick 内反复 `AT+CEREG?`）。`test/firmware/110-cellular` Step4 在 H106 + Quectel 真机验证：`probing`→…→`EPS registered!`。验证命令：`zig build test-cellular`、`zig build test-110-cellular-firmware`。
+**进度（2026-03-19）：** Step 8 modem 路由已完成：无效 init 报错、multi 下 pppIo()、mode()、MD-01～07/MD-12 UT、110-cellular Step 8 段落 + 真机烧录验证。下一步：Step 9 CMUX（见 § Step 9）。
 
 ---
 

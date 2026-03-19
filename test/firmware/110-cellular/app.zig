@@ -18,6 +18,7 @@ const step2_tag = "[step2-ioTest]";
 const step3_tag = "[step3-parseTest]";
 const step4_tag = "[step4-cellFsm]";
 const step5_tag = "[step5-identity]";
+const step8_tag = "[step8]";
 /// Bootstrap segments: probing, at_configuring, checking_sim, registering.
 const step4_state_total: u32 = 4;
 /// Safety cap per segment (in case the modem never advances).
@@ -84,6 +85,9 @@ pub fn run(comptime hw: type, env: anytype) void {
         return;
     }
 
+    // Step 8: Modem routing (quectel_stub + single-channel); same io as step3.
+    runStep8ModemRouting(io, Board.time, time, Board.log, log);
+
     time.sleepMs(500);
     runCellularFsm(io, Board.time, time, Board.log, log);
 }
@@ -91,6 +95,26 @@ pub fn run(comptime hw: type, env: anytype) void {
 /// True for the unit-test mock board (`zig build test-110-cellular-firmware`).
 fn isMockCellularHw(comptime hw: type) bool {
     return std.mem.eql(u8, hw.name, "mock_cellular");
+}
+
+/// Step 8: Modem routing with quectel_stub (single-channel). Plan: mode, at().sendRaw, pppIo() == null.
+fn runStep8ModemRouting(io: io_mod.Io, comptime TimeT: type, time: TimeT, comptime LogT: type, log: LogT) void {
+    const modem_mod = embed.pkg.cellular.modem.modem_mod;
+    const quectel_stub = embed.pkg.cellular.modem.profiles.quectel_stub;
+    const GpioPh = struct {};
+    const ModemStubT = modem_mod.Modem(struct {}, struct {}, TimeT, quectel_stub, GpioPh, 1024);
+    var modem_stub = ModemStubT.init(.{ .io = io, .time = time, .gpio = null }) catch |e| {
+        log.errFmt("{s} Modem init failed: {s}", .{ step8_tag, @errorName(e) });
+        return;
+    };
+    log.infoFmt("{s} === Step 8: Modem routing test ===", .{step8_tag});
+    log.infoFmt("{s} Modem mode: {s}", .{ step8_tag, @tagName(modem_stub.mode()) });
+    const step8_timeout_ms: u32 = 5000;
+    const r = modem_stub.at().sendRaw("AT\r\n", step8_timeout_ms);
+    log.infoFmt("{s} modem.at().sendRaw(\"AT\\r\\n\") -> status={s}", .{ step8_tag, @tagName(r.status) });
+    if (modem_stub.pppIo() == null) {
+        log.infoFmt("{s} modem.pppIo() = null (CMUX not active yet, expected)", .{step8_tag});
+    }
 }
 
 /// Drive `Cellular` bootstrap: per `[STATE=N/4]`, tick until leaving that phase or `error`.
@@ -118,7 +142,10 @@ fn runCellularFsm(
         }.f,
     };
 
-    const modem = ModemT.init(.{ .io = io, .time = time, .gpio = null });
+    const modem = ModemT.init(.{ .io = io, .time = time, .gpio = null }) catch |e| {
+        log.errFmt("{s} Modem init failed: {s}", .{ step4_tag, @errorName(e) });
+        return;
+    };
     var cell = CellularT.init(modem, injector);
 
     log.infoFmt("{s} [START] bootstrap + EPS poll until registered", .{step4_tag});
@@ -355,6 +382,19 @@ fn runCellularFsmMock(
     const io = io_mod.fromUart(mock_mod.MockIo, mock);
 
     const GpioPh = struct {};
+    const quectel_stub = embed.pkg.cellular.modem.profiles.quectel_stub;
+    const ModemStubT = modem_mod.Modem(struct {}, struct {}, TimeT, quectel_stub, GpioPh, 1024);
+    var modem_stub = ModemStubT.init(.{ .io = io, .time = time, .gpio = null }) catch @panic("Step8 stub init");
+    log.infoFmt("{s} === Step 8: Modem routing test ===", .{step8_tag});
+    log.infoFmt("{s} Modem mode: {s}", .{ step8_tag, @tagName(modem_stub.mode()) });
+    mock.feed("OK\r\n");
+    const step8_timeout_ms: u32 = 5000;
+    const r = modem_stub.at().sendRaw("AT\r\n", step8_timeout_ms);
+    log.infoFmt("{s} modem.at().sendRaw(\"AT\\r\\n\") -> status={s}", .{ step8_tag, @tagName(r.status) });
+    if (modem_stub.pppIo() == null) {
+        log.infoFmt("{s} modem.pppIo() = null (CMUX not active yet, expected)", .{step8_tag});
+    }
+
     const ModemT = modem_mod.Modem(struct {}, struct {}, TimeT, quectel, GpioPh, 1024);
     const CellularT = cellular_mod.Cellular(struct {}, struct {}, TimeT, quectel, GpioPh, 1024);
 
@@ -365,7 +405,7 @@ fn runCellularFsmMock(
         }.f,
     };
 
-    const modem = ModemT.init(.{ .io = io, .time = time, .gpio = null });
+    const modem = ModemT.init(.{ .io = io, .time = time, .gpio = null }) catch @panic("Modem init");
     var cell = CellularT.init(modem, injector);
 
     log.infoFmt("{s} [START] mock bootstrap + EPS", .{step4_tag});

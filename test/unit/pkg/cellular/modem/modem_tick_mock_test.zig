@@ -35,7 +35,7 @@ fn ModemUnderTest() type {
 test "tick path mock: Probe then ATE0 then CMEE then CPIN then CEREG" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    var m = ModemUnderTest().init(.{
+    var m = try ModemUnderTest().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,
@@ -86,7 +86,7 @@ test "tick path mock: Probe then ATE0 then CMEE then CPIN then CEREG" {
 test "tick path mock: CREG instead of CEREG (roaming stat 5)" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    var m = ModemUnderTest().init(.{
+    var m = try ModemUnderTest().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,
@@ -105,7 +105,7 @@ test "tick path mock: CREG instead of CEREG (roaming stat 5)" {
 test "tick path mock: CPIN requests PIN" {
     var mock = mock_mod.MockIo.init();
     var ms: u64 = 0;
-    var m = ModemUnderTest().init(.{
+    var m = try ModemUnderTest().init(.{
         .io = mock.io(),
         .time = .{ .ms = &ms },
         .gpio = null,
