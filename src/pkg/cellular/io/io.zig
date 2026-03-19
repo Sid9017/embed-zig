@@ -1,4 +1,4 @@
-//! Generic Io interface and HAL wrappers (fromUart / fromSpi).
+//! Generic Io interface and HAL wrappers (fromUart / fromUSB).
 //! Type-erased read/write/poll; platform implements this to talk to the modem.
 //! See plan.md §5.2 and cellular_dev.html.
 
@@ -80,10 +80,11 @@ pub fn fromUart(comptime UartType: type, ptr: *UartType) Io {
     };
 }
 
-/// Wraps an SPI HAL instance into Io. Implement when SPI transport is added.
-pub fn fromSpi(comptime SpiType: type, ptr: *SpiType) Io {
+/// Wraps a USB (e.g. CDC-ACM) transport into Io. Same contract as fromUart: read/write/poll.
+/// Stub until USB transport is implemented; implement when USB HAL adapter is added.
+pub fn fromUSB(comptime UsbType: type, ptr: *UsbType) Io {
     _ = ptr;
-    comptime _ = @sizeOf(SpiType);
+    comptime _ = @sizeOf(UsbType);
     var dummy: u8 = 0;
     return .{
         .ctx = @ptrCast(&dummy),

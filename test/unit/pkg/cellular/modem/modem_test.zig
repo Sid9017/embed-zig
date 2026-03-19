@@ -8,6 +8,8 @@ const mock_mod = embed.pkg.cellular.io.mock;
 const commands = embed.pkg.cellular.at.commands;
 const engine = embed.pkg.cellular.at.engine;
 const types = embed.pkg.cellular.types;
+const cmux_mod = embed.pkg.cellular.at.cmux;
+const thread_mod = embed.runtime.thread;
 
 const FakeTime = struct {
     ms: *u64,
@@ -21,10 +23,30 @@ const FakeTime = struct {
 
 const GpioPlaceholder = struct {};
 
+/// No-op thread for tests: spawn does not run the task so tests drive pump() explicitly.
+const NoOpThread = struct {
+    pub fn spawn(_: thread_mod.SpawnConfig, _: thread_mod.TaskFn, _: ?*anyopaque) anyerror!NoOpThread {
+        return .{};
+    }
+    pub fn join(_: *NoOpThread) void {}
+    pub fn detach(_: *NoOpThread) void {}
+};
+
+/// Notify stub for CMUX tests: init required by Modem; timedWait/signal used by channel poll.
+const NoOpNotify = struct {
+    pub fn init() NoOpNotify {
+        return .{};
+    }
+    pub fn timedWait(_: *NoOpNotify, _: u64) bool {
+        return false;
+    }
+    pub fn signal(_: *NoOpNotify) void {}
+};
+
 fn ModemUnderTest() type {
     return modem_mod.Modem(
-        struct {},
-        struct {},
+        NoOpThread,
+        NoOpNotify,
         FakeTime,
         embed.pkg.cellular.modem.profiles.quectel,
         GpioPlaceholder,
@@ -113,8 +135,118 @@ test "MD-12: multi-ch enterCmux is no-op" {
         .time = .{ .ms = &ms },
         .gpio = null,
     });
-    try m.enterCmux();
+    switch (m.enterCmux()) {
+        .ok => {},
+        .err => |e| std.debug.panic("enterCmux: {s} {s}", .{ @tagName(e.status), e.body }),
+    }
     try std.testing.expect(m.pppIo() != null);
+}
+
+// ---------------------------------------------------------------------------
+// Step 10 single-channel CMUX (MD-08～MD-11). Default config: dlci 1=ppp, 2=at.
+// ---------------------------------------------------------------------------
+
+/// Feeds OK plus Basic-mode (0xF9) UA for default single-ch config (DLCI 1).
+/// Pads with zeros so the post-AT+CMUX=0 drain in enterCmux does not consume the UA.
+fn feedOkAndUas(mock: *mock_mod.MockIo) void {
+    mock.feed("OK\r\n");
+    var pad: [64]u8 = undefined;
+    @memset(&pad, 0);
+    mock.feed(&pad);
+    var buf: [64]u8 = undefined;
+    const ua1 = cmux_mod.encodeFrameBasic(.{
+        .dlci = 1,
+        .control = @intFromEnum(cmux_mod.FrameType.ua),
+        .data = &.{},
+    }, &buf);
+    mock.feed(buf[0..ua1]);
+}
+
+test "MD-08: single-ch enterCmux sends AT+CMUX=0, UAs fed, isCmuxActive true" {
+    var mock = mock_mod.MockIo.init();
+    mock.max_read_per_call = 4;
+    feedOkAndUas(&mock);
+    var ms: u64 = 0;
+    var m = try ModemUnderTest().init(.{
+        .io = mock.io(),
+        .time = .{ .ms = &ms },
+        .gpio = null,
+    });
+    try std.testing.expectEqual(.single_channel, m.mode());
+    switch (m.enterCmux()) {
+        .ok => {},
+        .err => |e| std.debug.panic("enterCmux: {s} {s}", .{ @tagName(e.status), e.body }),
+    }
+    try std.testing.expect(m.isCmuxActive());
+    try std.testing.expect(std.mem.indexOf(u8, mock.sent(), "AT+CMUX=0") != null);
+}
+
+test "MD-09: single-ch CMUX AT: enterCmux then sendRaw, AT goes over CMUX channel" {
+    var mock = mock_mod.MockIo.init();
+    mock.max_read_per_call = 4;
+    feedOkAndUas(&mock);
+    var ms: u64 = 0;
+    var m = try ModemUnderTest().init(.{
+        .io = mock.io(),
+        .time = .{ .ms = &ms },
+        .gpio = null,
+    });
+    switch (m.enterCmux()) {
+        .ok => {},
+        .err => |e| std.debug.panic("enterCmux: {s} {s}", .{ @tagName(e.status), e.body }),
+    }
+    mock.max_read_per_call = null;
+    var resp_buf: [64]u8 = undefined;
+    const ui_len = cmux_mod.encodeFrameBasic(.{
+        .dlci = 1,
+        .control = 0xEF,
+        .data = "\r\nOK\r\n",
+    }, &resp_buf);
+    mock.feed(resp_buf[0..ui_len]);
+    m.pump();
+    const r = m.at().sendRaw("AT\r\n", 10_000);
+    try std.testing.expectEqual(engine.AtStatus.ok, r.status);
+    try std.testing.expect(std.mem.indexOf(u8, mock.sent(), "AT\r\n") != null);
+}
+
+test "MD-10: single-ch CMUX (AT only) pppIo stays null after enterCmux" {
+    var mock = mock_mod.MockIo.init();
+    mock.max_read_per_call = 4;
+    feedOkAndUas(&mock);
+    var ms: u64 = 0;
+    var m = try ModemUnderTest().init(.{
+        .io = mock.io(),
+        .time = .{ .ms = &ms },
+        .gpio = null,
+    });
+    try std.testing.expect(m.pppIo() == null);
+    switch (m.enterCmux()) {
+        .ok => {},
+        .err => |e| std.debug.panic("enterCmux: {s} {s}", .{ @tagName(e.status), e.body }),
+    }
+    try std.testing.expect(m.pppIo() == null);
+}
+
+test "MD-11: single-ch exitCmux restores raw Io, isCmuxActive false, pppIo null" {
+    var mock = mock_mod.MockIo.init();
+    mock.max_read_per_call = 4;
+    feedOkAndUas(&mock);
+    var ms: u64 = 0;
+    var m = try ModemUnderTest().init(.{
+        .io = mock.io(),
+        .time = .{ .ms = &ms },
+        .gpio = null,
+    });
+    switch (m.enterCmux()) {
+        .ok => {},
+        .err => |e| std.debug.panic("enterCmux: {s} {s}", .{ @tagName(e.status), e.body }),
+    }
+    try std.testing.expect(m.isCmuxActive());
+    m.exitCmux();
+    try std.testing.expect(!m.isCmuxActive());
+    try std.testing.expect(m.pppIo() == null);
+    mock.feed("OK\r\n");
+    try std.testing.expect(m.at().sendRaw("AT\r\n", 10_000).status == .ok);
 }
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ const mock_mod = embed.pkg.cellular.io.mock;
 const commands = embed.pkg.cellular.at.commands;
 const engine = embed.pkg.cellular.at.engine;
 const types = embed.pkg.cellular.types;
+const thread_mod = embed.runtime.thread;
 
 const FakeTime = struct {
     ms: *u64,
@@ -21,10 +22,28 @@ const FakeTime = struct {
 
 const GpioPlaceholder = struct {};
 
+const NoOpThread = struct {
+    pub fn spawn(_: thread_mod.SpawnConfig, _: thread_mod.TaskFn, _: ?*anyopaque) anyerror!NoOpThread {
+        return .{};
+    }
+    pub fn join(_: *NoOpThread) void {}
+    pub fn detach(_: *NoOpThread) void {}
+};
+
+const NoOpNotify = struct {
+    pub fn init() NoOpNotify {
+        return .{};
+    }
+    pub fn timedWait(_: *NoOpNotify, _: u64) bool {
+        return false;
+    }
+    pub fn signal(_: *NoOpNotify) void {}
+};
+
 fn ModemUnderTest() type {
     return modem_mod.Modem(
-        struct {},
-        struct {},
+        NoOpThread,
+        NoOpNotify,
         FakeTime,
         embed.pkg.cellular.modem.profiles.quectel,
         GpioPlaceholder,

@@ -345,11 +345,11 @@ test "CmuxChannelConfig: dlci and role" {
 
 test "ModemConfig: default cmux_channels and numeric fields" {
     const cfg: types.ModemConfig = .{};
-    try std.testing.expect(cfg.cmux_channels.len == 2);
+    try std.testing.expect(cfg.cmux_channels.len == 1);
     try std.testing.expectEqual(@as(u8, 1), cfg.cmux_channels[0].dlci);
-    try std.testing.expectEqual(types.CmuxChannelRole.ppp, cfg.cmux_channels[0].role);
-    try std.testing.expectEqual(@as(u8, 2), cfg.cmux_channels[1].dlci);
-    try std.testing.expectEqual(types.CmuxChannelRole.at, cfg.cmux_channels[1].role);
+    try std.testing.expectEqual(types.CmuxChannelRole.at, cfg.cmux_channels[0].role);
+    try std.testing.expect(cfg.use_basic_cmux == true);
+    try std.testing.expect(cfg.use_main_thread_pump == false);
     try std.testing.expectEqual(types.BaudRate.b921600, cfg.cmux_baud_rate);
     try std.testing.expectEqual(types.default_at_timeout_ms, cfg.at_timeout_ms);
     try std.testing.expectEqual(@as(u8, 16), cfg.max_urc_handlers);

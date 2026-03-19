@@ -229,12 +229,17 @@ pub const CmuxChannelConfig = struct {
     role: CmuxChannelRole,
 };
 
-/// Modem/CMUX/AT engine configuration. Defaults are for single-channel with DLCI 1=PPP, 2=AT.
+/// Modem/CMUX/AT engine configuration. Default: single AT channel on DLCI 1 (Quectel typical).
+/// use_basic_cmux: use Basic mode (0xF9 + CRC FCS) as esp_modem; try true if Advanced (0x7E) gets no UA.
 pub const ModemConfig = struct {
     cmux_channels: []const CmuxChannelConfig = &.{
-        .{ .dlci = 1, .role = .ppp },
-        .{ .dlci = 2, .role = .at },
+        .{ .dlci = 1, .role = .at },
     },
+    /// When true, use Basic CMUX (0xF9, esp_modem-style FCS). Set false to use Advanced (0x7E).
+    use_basic_cmux: bool = true,
+    /// When true, do not start a pump task; channel read will call pump() when buffer is empty (avoids
+    /// FreeRTOS task-delete heap free crash on ESP when using dynamic task creation).
+    use_main_thread_pump: bool = false,
     /// CMUX high-speed baud (Hz). Many modems support AT+IPR=921600 for lower latency on single UART.
     cmux_baud_rate: u32 = BaudRate.b921600,
     at_timeout_ms: u32 = default_at_timeout_ms,

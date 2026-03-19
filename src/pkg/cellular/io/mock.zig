@@ -6,12 +6,15 @@ const io_mod = @import("io.zig");
 
 /// Test double for Io. feed()/feedSequence() supply bytes for read(); sent()/drain() inspect write.
 /// Implement full API in Step 2.
+/// When max_read_per_call is set, each read() returns at most that many bytes (for staged tests).
 pub const MockIo = struct {
     tx_buf: [4096]u8 = [_]u8{0} ** 4096,
     tx_len: usize = 0,
     rx_buf: [4096]u8 = [_]u8{0} ** 4096,
     rx_len: usize = 0,
     rx_pos: usize = 0,
+    /// If non-null, readFn returns at most this many bytes per call.
+    max_read_per_call: ?usize = null,
 
     /// Create a MockIo. Use .io() to get the Io interface.
     pub fn init() MockIo {
@@ -31,7 +34,10 @@ pub const MockIo = struct {
     fn readFn(ctx: *anyopaque, buf: []u8) io_mod.IoError!usize {
         const self: *MockIo = @ptrCast(@alignCast(ctx));
         if (self.rx_pos >= self.rx_len) return error.WouldBlock;
-        const n = @min(buf.len, self.rx_len - self.rx_pos);
+        var n = @min(buf.len, self.rx_len - self.rx_pos);
+        if (self.max_read_per_call) |max_n| {
+            n = @min(n, max_n);
+        }
         @memcpy(buf[0..n], self.rx_buf[self.rx_pos..][0..n]);
         self.rx_pos += n;
         return n;
