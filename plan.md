@@ -51,7 +51,7 @@ Reference: `x/c/esp/components/quectel` (C, ESP-IDF).
 | R44 | **Phase = 进行中，Event = 一步结束**（唯一命名来源：`types.zig` + `cellular.zig`）。`CellularPhase`：`off`→`probing`→`at_configuring`→`checking_sim`→`registering`（驻网前反复 `AT+CEREG?`）→`registered`→`dialing`→`connected`；`disconnecting` 预留。`ModemEvent`：bootstrap 三步、`sim_status_reported`、`network_registration`；意图 `power_on`/`dial_requested`/`retry`/`stop`/`power_off`；数据 `dial_succeeded`/`dial_failed`/`ip_obtained`/`ip_lost`/`signal_updated`；失败 `bootstrap_at_error`/`at_timeout`。已弃用旧名：`at_ready`、`sim_ready`、`dial_start`、`dial_connected`、`registration_failed`（事件）。**验证**：`zig build test-cellular`。 |
 | R45 | **实现**：`Store(CellularFsmState, ModemEvent)` + `cellularReduce`；`tick()` 只发 AT 并 `dispatch` 上述事件；`emitDiff` → `CellularPayload`。 |
 
-**进度（2026-03-19）：** Step 8 modem 路由已完成：无效 init 报错、multi 下 pppIo()、mode()、MD-01～07/MD-12 UT、110-cellular Step 8 段落 + 真机烧录验证。下一步：Step 9 CMUX（见 § Step 9）。
+**进度（2026-03-19）：** Step 9 CMUX 已完成：cmux.zig 帧编解码、Cmux open/close/channelIo/pump、MX-01～MX-10 单测（openWithoutHandshake）、open() SABM/UA 握手保留；`zig build test` / `zig build test-cellular` 通过。下一步：Step 10 Modem CMUX 全链路（见 § Step 10 与 docs/cellular_step10_dev_plan.md）。
 
 ---
 
@@ -72,7 +72,7 @@ Modem does NOT know or care what transport is underneath.
 **Io abstraction原则：**
 - `Io` 是唯一的跨平台边界。上层 `pkg/cellular` 全部是纯 Zig，只依赖 `Io`。
 - 下层平台代码负责将具体硬件包装为 `Io`：
-  - 嵌入式：通过 `io.fromUart()` / `io.fromSpi()` 包装 HAL 驱动
+  - 嵌入式：通过 `io.fromUart()` / `io.fromUSB()` 包装 HAL 驱动
   - Linux/Mac/Win：通过 POSIX `open()` 或平台 API 打开串口设备文件，包装为 `Io`
   - 测试：通过 `MockIo`（两段线性 buffer）模拟任意通道
 
@@ -173,7 +173,7 @@ Modem auto-detects mode based on what is provided:
 |    urcs.zig -- typed URC definitions (comptime structs)    |
 |                                                            |
 |  io/                                                       |
-|    io.zig -- generic Io interface + fromUart/fromSpi       |
+|    io.zig -- generic Io interface + fromUart/fromUSB        |
 |    trace.zig -- TraceIo decorator (logs read/write bytes)  |
 |    mock.zig -- MockIo (linear buffers, test only)           |
 +-----------------------------------------------------------+
@@ -263,7 +263,7 @@ src/pkg/cellular/
 ├── types.zig              shared types + CellularEvent (no logic, no deps)
 ├── cellular.zig           event source + Control (Cellular) — owns Modem, Injector, request_queue, response_channel; .control() → CellularControl (R37)
 ├── io/
-│   ├── io.zig             generic Io interface + fromUart/fromSpi
+│   ├── io.zig             generic Io interface + fromUart/fromUSB
 │   ├── trace.zig          TraceIo decorator (logs read/write bytes)
 │   └── mock.zig           MockIo (linear buffers, test only)
 ├── at/
@@ -451,7 +451,7 @@ pub const Io = struct {
 
 -- Helpers to wrap HAL types into Io
 pub fn fromUart(comptime UartType: type, ptr: *UartType) Io;
-pub fn fromSpi(comptime SpiType: type, ptr: *SpiType) Io;
+pub fn fromUSB(comptime UsbType: type, ptr: *UsbType) Io;
 
 -- 测试用传输由 MockIo 提供（见 8.1），无需单独的 fromBufferPair。
 ```
@@ -2237,7 +2237,7 @@ cd test/unit && zig build test
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `src/pkg/cellular/io/io.zig` | 新建 | Io 接口 + fromUart/fromSpi |
+| `src/pkg/cellular/io/io.zig` | 新建 | Io 接口 + fromUart/fromUSB |
 | `src/pkg/cellular/io/mock.zig` | 新建 | MockIo（两段线性 buffer） |
 | `test/unit/pkg/cellular/io/io_test.zig` | 新建 | Io 接口单元测试 |
 | `test/firmware/110-cellular/app.zig` | 修改 | 追加 Io 透传验证逻辑 |
@@ -2246,7 +2246,7 @@ cd test/unit && zig build test
 - `Io` 结构体（ctx + readFn + writeFn，type-erased）
 - `Io.read()` / `Io.write()` 方法
 - `fromUart(comptime UartType, *UartType) Io` — 将 UART HAL 包装为 Io
-- `fromSpi(comptime SpiType, *SpiType) Io` — 将 SPI HAL 包装为 Io
+- `fromUSB(comptime UsbType, *UsbType) Io` — 将 USB 传输包装为 Io
 - `MockIo` — 测试用，基于两段线性 buffer（tx_buf/tx_len、rx_buf/rx_len/rx_pos）的 Io 实现
   - `init()` / `io()` / `feed()` / `feedSequence()` / `sent()` / `drain()`
 
@@ -3258,7 +3258,7 @@ cd test/unit && zig build test     # 运行全部单元测试（含 cellular）
    - Kept cmux_channels and cmux_baud_rate (for single-channel mode)
 
 7. io.zig updated:
-   - Added fromSpi() helper
+   - Added fromUSB() helper
    - MockIo 使用两段线性 buffer（tx_buf/tx_len、rx_buf/rx_len/rx_pos），与 pkg/net 的 MockConn 风格一致
    - Removed UART-specific assumptions
 
@@ -3477,7 +3477,7 @@ cd test/unit && zig build test     # 运行全部单元测试（含 cellular）
 
 1. 参考 `pkg/ble` 的目录结构（host/hci, host/l2cap, host/gap, gatt, xfer, term）
 2. 按层级依赖关系将 cellular 文件分为 4 个区域：
-   - `io/` — 传输层（最底层）：io.zig（接口定义 + fromUart/fromSpi）、mock.zig（MockIo）
+   - `io/` — 传输层（最底层）：io.zig（接口定义 + fromUart/fromUSB）、mock.zig（MockIo）
    - `at/` — AT 协议层（依赖 io）：engine.zig（AT 引擎）、parse.zig（纯解析）、cmux.zig（CMUX 复用）
    - `modem/` — 硬件驱动层（依赖 io + at）：modem.zig（核心路由）、sim.zig（SIM 管理）、signal.zig（信号查询）
    - 根目录 — types.zig（共享类型，所有层都用）、cellular.zig（事件源，最上层）
@@ -3884,7 +3884,7 @@ const modem = Modem(Thread, Notify, Time, quectel, MockGpio, 1024).init(.{
 **对实施者的影响：**
 - `io/io.zig` 无需实现 close/flush
 - `io/mock.zig` 无需实现 close/flush
-- `fromUart()` / `fromSpi()` 无需映射 close/flush
+- `fromUart()` / `fromUSB()` 无需映射 close/flush
 - CMUX virtual channel Io 无需实现 close/flush
 
 ---
@@ -3957,7 +3957,7 @@ Step 5: AT 引擎恢复到直连物理 Io，发 AT 验证模组正常
 **过度设计：**
 
 - [x] Q17: voice.zig 是否应从 Phase 2 移除？**保留**。voice 为业务层（基于 commands 层的 ATD/ATA/ATH 等封装 dial/answer/hangup），Phase 2 保留 voice.zig；后续视需求再决定是否拆分或迁到别处。
-- [x] Q18: fromSpi() 是否降级为按需添加？**不降级**。UART、SPI、USB 均在 Io 层做 comptime 抽象（fromUart/fromSpi 及多通道 USB 用法），接口与实现规划都保留；**真机/烧录验证 Phase 1 先只做 UART**，SPI/USB 真机测试后续按需补。
+- [x] Q18: fromUSB() 是否降级为按需添加？**不降级**。UART、USB 均在 Io 层做 comptime 抽象（fromUart/fromUSB 及多通道 USB 用法），接口与实现规划都保留；**真机/烧录验证 Phase 1 先只做 UART**，USB 真机测试后续按需补。
 - [x] Q19: Cmux comptime max_channels 泛型是否简化？**不简化**。由用户在实例化时配置：`Cmux(Thread, Notify, max_channels)`，传 2、3 或 4 等（常见 4G 模组上限为 4，esp_modem/Quectel 典型用 2）。不做成写死常量。
 - [x] Q20: CmuxChannelConfig/CmuxChannelRole 可配置性是否过度？**已解决（R41）**。保留可配置：CMUX 各通道的 DLCI 与用途（AT/PPP）由模组或用户约定，不同模组/固件可能不同，用户必须能配置。实现上：ModemConfig.cmux_channels 驱动 enterCmux 的 open(dlcis) 与 at/ppp 通道绑定；init 时校验「恰好一个 .at、一个 .ppp、dlci 不重复且合法」。详见 5.6.1 可配置通道实施规格。
 
