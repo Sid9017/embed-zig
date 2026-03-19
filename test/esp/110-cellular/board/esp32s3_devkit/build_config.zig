@@ -2,7 +2,12 @@ const modules = @import("idf").sdkconfig_components;
 const partition = @import("idf").partition;
 
 pub const config = .{
-    .core = modules.esp_system_config.Config.default,
+    .core = modules.esp_system_config.Config.withDefaultConfig(.{
+        .main_task_stack_size = 16384,
+    }),
+    .esp_misc = modules.esp_misc_config.Config.withDefaultConfig(.{
+        .esp_main_task_stack_size = 16384,
+    }),
     .freertos = modules.freertos_config.Config.default,
     .app_metadata = modules.app_metadata_config.Config.default,
     .app_trace = modules.app_trace_config.Config.default,
@@ -36,7 +41,6 @@ pub const config = .{
     .esp_https_server = modules.esp_https_server_config.Config.default,
     .esp_hw_support = modules.esp_hw_support_config.Config.default,
     .esp_lcd = modules.esp_lcd_config.Config.default,
-    .esp_misc = modules.esp_misc_config.Config.default,
     .esp_mm = modules.esp_mm_config.Config.default,
     .esp_netif = modules.esp_netif_config.Config.default,
     .esp_phy = modules.esp_phy_config.Config.default,

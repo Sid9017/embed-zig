@@ -10,6 +10,9 @@ pub const SpawnConfig = struct {
     name: [*:0]const u8 = "task",
     core_id: ?i32 = null,
     allocator: ?std.mem.Allocator = null,
+    /// Optional sleep for pump loop (e.g. on freestanding use runtime time.sleepMs instead of std.Thread.sleep).
+    sleep_ctx: ?*anyopaque = null,
+    sleep_ms: ?*const fn (*anyopaque, u32) void = null,
 };
 
 const Seal = struct {};

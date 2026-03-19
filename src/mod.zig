@@ -27,6 +27,9 @@ pub const runtime = struct {
     pub const thread = struct {
         pub const SpawnConfig = @import("runtime/thread.zig").SpawnConfig;
         pub const TaskFn = @import("runtime/thread.zig").TaskFn;
+        pub const types = struct {
+            pub const TaskFn = @import("runtime/thread.zig").TaskFn;
+        };
     };
 
     pub const system = struct {
